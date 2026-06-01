@@ -1,0 +1,31 @@
+name: Publish to npm
+
+# Trusted publishing via OIDC from GitHub Actions — no long-lived npm tokens.
+# Auto-generates provenance, cryptographically linking the published package to
+# this public repo (requires public repo + public package). See spec section 2.
+#
+# Setup once on npmjs.com: configure this package's "Trusted Publisher" to this
+# repository + workflow, then publishing needs no NODE_AUTH_TOKEN.
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # required for OIDC trusted publishing + provenance
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm test
+      - run: npm publish --provenance --access public
