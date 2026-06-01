@@ -1,0 +1,73 @@
+{
+  "name": "punchout-simulator",
+  "version": "0.1.0",
+  "description": "A developer tool for testing cXML PunchOut integrations by acting as a virtual counterparty (virtual buyer or virtual supplier).",
+  "keywords": [
+    "punchout",
+    "cxml",
+    "ariba",
+    "coupa",
+    "procurement",
+    "e-procurement",
+    "punchout-simulator",
+    "simulator",
+    "testing"
+  ],
+  "type": "module",
+  "license": "MIT",
+  "author": "Slawomir Szostak",
+  "homepage": "https://github.com/slawomir-szostak/punchout-simulator",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/slawomir-szostak/punchout-simulator.git"
+  },
+  "bugs": {
+    "url": "https://github.com/slawomir-szostak/punchout-simulator/issues"
+  },
+  "bin": {
+    "punchout-simulator": "dist/server/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev:web": "vite",
+    "dev:server": "tsx watch src/server/cli.ts --dev",
+    "dev": "concurrently -k -n web,server \"npm:dev:web\" \"npm:dev:server\"",
+    "build:web": "vite build",
+    "build:server": "tsup",
+    "build": "npm run build:web && npm run build:server",
+    "start": "node dist/server/cli.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.7",
+    "fast-xml-parser": "^4.5.1",
+    "hono": "^4.6.14",
+    "lowdb": "^7.0.1",
+    "nanoid": "^5.0.9",
+    "open": "^10.1.0"
+  },
+  "devDependencies": {
+    "@monaco-editor/react": "^4.6.0",
+    "@types/node": "^20.17.10",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
+    "monaco-editor": "^0.52.2",
+    "playwright": "^1.60.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tsup": "^8.3.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7",
+    "vitest": "^2.1.8"
+  }
+}
