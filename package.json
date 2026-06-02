@@ -1,6 +1,6 @@
 {
   "name": "punchout-simulator",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "A developer tool for testing cXML PunchOut integrations by acting as a virtual counterparty (virtual buyer or virtual supplier).",
   "keywords": [
     "punchout",
