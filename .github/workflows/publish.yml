@@ -25,9 +25,11 @@ jobs:
           registry-url: https://registry.npmjs.org
           cache: npm
       # OIDC trusted publishing (exchanging the GitHub OIDC token for a
-      # short-lived npm publish token) requires npm >= 11.5.1. Node 24 ships a
-      # recent npm, but pin to latest so the token exchange always works.
-      - run: npm install -g npm@latest
+      # short-lived npm publish token) requires npm >= 11.5.1. Pin to an exact,
+      # vetted version rather than @latest: this step runs in a privileged
+      # workflow (id-token: write), so an unexpected npm release should not be
+      # pulled implicitly. Bump deliberately when adopting a newer npm.
+      - run: npm install -g npm@11.5.1
       - run: npm ci
       - run: npm run typecheck
       - run: npm run build
