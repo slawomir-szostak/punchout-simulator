@@ -13,7 +13,9 @@ export default defineConfig({
   build: {
     outDir: "../../dist/web",
     emptyOutDir: true,
-    sourcemap: true,
+    // No sourcemaps in the published SPA: they add ~16 MB that end users never
+    // use, and keeping the tarball small keeps `npx` fast (spec section 6).
+    sourcemap: false,
   },
   server: {
     port: 5173,
