@@ -135,7 +135,11 @@ legend { color: var(--muted); font-size: .8rem; padding: 0 .4rem; }
 .attachments { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: .8rem; }
 .attachments-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: .5rem; }
 .file-btn { cursor: pointer; }
-.att-list { list-style: none; margin: .3rem 0; padding: 0; display: flex; flex-direction: column; gap: .3rem; font-size: .82rem; }
+.att-list { list-style: none; margin: .3rem 0; padding: 0; display: flex; flex-direction: column; gap: .4rem; font-size: .82rem; }
+.att-row { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+.att-file { color: var(--muted); }
+.att-scope { width: auto; padding: .25rem .4rem; font-size: .78rem; }
+.warn-hint { color: var(--warn); }
 .dangling-toggle { display: flex; gap: .5rem; align-items: flex-start; margin-top: .7rem; font-size: .82rem; color: var(--muted); }
 .dangling-toggle input { width: auto; margin-top: .15rem; }
 

@@ -111,6 +111,72 @@ describe("Mode A loopback", () => {
     expect(res.statusCode).toBe("200");
   });
 
+  const twoItems = [
+    { quantity: 1, supplierPartId: "AAA", unitPriceAmount: 10, currency: "USD", description: "a", uom: "EA", classification: "1", classificationDomain: "UNSPSC" },
+    { quantity: 2, supplierPartId: "BBB", unitPriceAmount: 5, currency: "USD", description: "b", uom: "EA", classification: "2", classificationDomain: "UNSPSC" },
+  ];
+
+  it("order/preview places an item-level attachment cid in the right ItemOut", async () => {
+    const preview = await fetch(`${base}/api/connections/demo-buyer/order/preview`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        items: twoItems,
+        currency: "USD",
+        attachments: [{ contentId: "item-doc", scope: 2 }],
+      }),
+    }).then((r) => r.json());
+    expect(preview.xml).toContain("cid:item-doc");
+    // The cid must appear after the second item's SupplierPartID, not the first.
+    expect(preview.xml.indexOf("cid:item-doc")).toBeGreaterThan(
+      preview.xml.indexOf("<SupplierPartID>BBB</SupplierPartID>"),
+    );
+  });
+
+  it("item-level attachment resolves; item-level dangling cid is detected", async () => {
+    const ok = await fetch(`${base}/api/connections/demo-buyer/order`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sessionId: "item-att-ok",
+        items: twoItems,
+        currency: "USD",
+        attachments: [{ contentId: "item-doc", scope: 2, contentType: "text/plain", dataBase64: Buffer.from("x").toString("base64") }],
+      }),
+    }).then((r) => r.json());
+    expect(ok.request.validation.issues.map((i: any) => i.code)).not.toContain("dangling-cid");
+
+    const bad = await fetch(`${base}/api/connections/demo-buyer/order`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sessionId: "item-att-bad",
+        items: twoItems,
+        currency: "USD",
+        danglingCid: true,
+        attachments: [{ contentId: "item-doc", scope: 2, contentType: "text/plain", dataBase64: Buffer.from("x").toString("base64") }],
+      }),
+    }).then((r) => r.json());
+    expect(bad.request.validation.issues.map((i: any) => i.code)).toContain("dangling-cid");
+    expect(bad.statusCode).toBe("400");
+  });
+
+  it("sends an edited OrderRequest cXML verbatim (retry path)", async () => {
+    const preview = await fetch(`${base}/api/connections/demo-buyer/order/preview`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ items: twoItems, currency: "USD" }),
+    }).then((r) => r.json());
+    const edited = preview.xml.replace("</OrderRequest>", "<!-- edited by user --></OrderRequest>");
+    const res = await fetch(`${base}/api/connections/demo-buyer/order`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sessionId: "edited-1", xml: edited, items: twoItems, currency: "USD" }),
+    }).then((r) => r.json());
+    expect(res.request.body).toContain("edited by user");
+    expect(res.statusCode).toBe("200");
+  });
+
   it("rejects a non-http(s) BrowserFormPost URL (no javascript: XSS)", async () => {
     const setupXml = `<cXML payloadID="p@h" timestamp="t"><Header>
       <From><Credential domain="DUNS"><Identity>123456789</Identity></Credential></From>

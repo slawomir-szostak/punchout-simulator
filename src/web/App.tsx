@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "./api";
 import { useStream } from "./hooks/useStream";
-import type { Cart, Connection, LogRecord } from "./types";
+import { emptySession, type Cart, type Connection, type FlowSession, type LogRecord } from "./types";
 import { ConnectionEditor } from "./components/ConnectionEditor";
 import { BuyerFlow } from "./components/BuyerFlow";
 import { LiveLog } from "./components/LiveLog";
@@ -14,6 +14,9 @@ export function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [panel, setPanel] = useState<Panel>("flow");
   const [carts, setCarts] = useState<Record<string, Cart>>({});
+  // Flow sessions persist per connection so switching tabs/connections never
+  // resets the in-progress order (see BuyerFlow).
+  const [sessions, setSessions] = useState<Record<string, FlowSession>>({});
   const [records, setRecords] = useState<LogRecord[]>([]);
   const [detail, setDetail] = useState<LogRecord | null>(null);
   const [callbackUrl, setCallbackUrl] = useState<string>("");
@@ -44,6 +47,27 @@ export function App() {
     onLog: (record) => setRecords((rs) => [...rs, record]),
     onCart: (_conn, cart) => setCarts((c) => ({ ...c, [cart.sessionId]: cart })),
   });
+
+  // Recover the cart from the server when a session has a BuyerCookie but no
+  // cached cart (e.g. after a page refresh), so the order can still be retried.
+  useEffect(() => {
+    const cookie = selectedId ? sessions[selectedId]?.buyerCookie : undefined;
+    if (!cookie || carts[cookie]) return;
+    api
+      .getCart(cookie)
+      .then((cart) => {
+        if (cart) setCarts((c) => ({ ...c, [cookie]: cart }));
+      })
+      .catch(() => {});
+  }, [selectedId, sessions, carts]);
+
+  const patchSession = useCallback((id: string, patch: Partial<FlowSession>) => {
+    setSessions((s) => ({ ...s, [id]: { ...(s[id] ?? emptySession()), ...patch } }));
+  }, []);
+
+  const newSession = useCallback((id: string) => {
+    setSessions((s) => ({ ...s, [id]: emptySession() }));
+  }, []);
 
   const saveConnection = async (data: Partial<Connection>) => {
     if (panel === "new" || !selected) {
@@ -134,7 +158,17 @@ export function App() {
               )}
 
               {panel === "flow" && selected.mode === "virtual-buyer" && (
-                <BuyerFlow connection={selected} carts={carts} />
+                <BuyerFlow
+                  connection={selected}
+                  session={sessions[selected.id] ?? emptySession()}
+                  cart={
+                    sessions[selected.id]?.buyerCookie
+                      ? carts[sessions[selected.id].buyerCookie] ?? null
+                      : null
+                  }
+                  onChange={(patch) => patchSession(selected.id, patch)}
+                  onNewSession={() => newSession(selected.id)}
+                />
               )}
 
               {panel === "flow" && selected.mode === "virtual-supplier" && (

@@ -50,6 +50,13 @@ export const api = {
       body: JSON.stringify(body),
     }).then((r) => jsonOrThrow<SetupResult>(r)),
 
+  orderPreview: (id: string, body: unknown) =>
+    fetch(`/api/connections/${id}/order/preview`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }).then((r) => jsonOrThrow<{ xml: string; orderId: string }>(r)),
+
   sendOrder: (id: string, body: unknown) =>
     fetch(`/api/connections/${id}/order`, {
       method: "POST",

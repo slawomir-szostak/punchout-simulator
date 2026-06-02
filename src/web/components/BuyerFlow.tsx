@@ -1,67 +1,45 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
-import type { Cart, Connection, OrderResult, SetupResult } from "../types";
+import type { AttachmentDraft, Cart, Connection, FlowSession } from "../types";
 import { CxmlEditor } from "./CxmlEditor";
 import { CartView } from "./CartView";
 import { ValidationPanel } from "./Validation";
 
 interface Props {
   connection: Connection;
-  carts: Record<string, Cart>;
+  session: FlowSession;
+  cart: Cart | null;
+  onChange: (patch: Partial<FlowSession>) => void;
+  /** Start a brand-new session (fresh BuyerCookie) for this connection. */
+  onNewSession: () => void;
 }
 
-interface AttachmentDraft {
-  contentId: string;
-  filename: string;
-  contentType: string;
-  dataBase64: string;
-  scope: "order" | number;
-}
-
-// The Mode A driver UI: build/edit the SetupRequest, send it, watch the cart
-// return, then build/edit and send the OrderRequest — with attachments and the
-// dangling-cid test.
-export function BuyerFlow({ connection, carts }: Props) {
-  const [buyerCookie, setBuyerCookie] = useState<string>("");
-  const [setupXml, setSetupXml] = useState<string>("");
-  const [setupResult, setSetupResult] = useState<SetupResult | null>(null);
+// The Mode A driver UI. State lives in App (per connection) so it survives
+// Flow/Settings tab switches and supports editing + retrying the OrderRequest.
+export function BuyerFlow({ connection, session, cart, onChange, onNewSession }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [attachmentsDirty, setAttachmentsDirty] = useState(false);
 
-  const [orderResult, setOrderResult] = useState<OrderResult | null>(null);
-  const [danglingCid, setDanglingCid] = useState(false);
-  const [attachments, setAttachments] = useState<AttachmentDraft[]>([]);
-
-  const cart = buyerCookie ? carts[buyerCookie] ?? null : null;
-
-  // Load a fresh SetupRequest preview whenever the connection changes.
+  // Lazily initialize the session's SetupRequest preview the first time this
+  // connection's session is empty. Persisted edits are never clobbered.
   useEffect(() => {
-    setSetupResult(null);
-    setOrderResult(null);
-    setAttachments([]);
-    setError(null);
+    if (session.buyerCookie || session.setupXml) return;
     api
       .setupPreview(connection.id)
-      .then((p) => {
-        setBuyerCookie(p.buyerCookie);
-        setSetupXml(p.xml);
-      })
+      .then((p) => onChange({ buyerCookie: p.buyerCookie, setupXml: p.xml }))
       .catch((e) => setError(String(e)));
-  }, [connection.id]);
-
-  const refreshPreview = async () => {
-    const p = await api.setupPreview(connection.id);
-    setBuyerCookie(p.buyerCookie);
-    setSetupXml(p.xml);
-    setSetupResult(null);
-  };
+  }, [connection.id, session.buyerCookie, session.setupXml]);
 
   const sendSetup = async () => {
     setBusy(true);
     setError(null);
     try {
-      const res = await api.sendSetup(connection.id, { buyerCookie, xml: setupXml });
-      setSetupResult(res);
+      const res = await api.sendSetup(connection.id, {
+        buyerCookie: session.buyerCookie,
+        xml: session.setupXml,
+      });
+      onChange({ setupResult: res, buyerCookie: res.buyerCookie });
       if (res.transportError) setError(`Transport error: ${res.transportError}`);
     } catch (e) {
       setError(String(e));
@@ -75,16 +53,54 @@ export function BuyerFlow({ connection, carts }: Props) {
     const drafts: AttachmentDraft[] = [];
     for (const file of Array.from(files)) {
       const buf = await file.arrayBuffer();
-      const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+      let binary = "";
+      const bytes = new Uint8Array(buf);
+      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
       drafts.push({
         contentId: file.name.replace(/[^a-zA-Z0-9._-]/g, "_"),
         filename: file.name,
         contentType: file.type || "application/octet-stream",
-        dataBase64: b64,
+        dataBase64: btoa(binary),
         scope: "order",
       });
     }
-    setAttachments((a) => [...a, ...drafts]);
+    onChange({ attachments: [...session.attachments, ...drafts] });
+    setAttachmentsDirty(true);
+  };
+
+  const updateAttachment = (i: number, patch: Partial<AttachmentDraft>) => {
+    onChange({
+      attachments: session.attachments.map((a, j) => (j === i ? { ...a, ...patch } : a)),
+    });
+    setAttachmentsDirty(true);
+  };
+
+  const removeAttachment = (i: number) => {
+    onChange({ attachments: session.attachments.filter((_, j) => j !== i) });
+    setAttachmentsDirty(true);
+  };
+
+  const attachmentMeta = () =>
+    session.attachments.map((a) => ({ contentId: a.contentId, scope: a.scope }));
+
+  const buildOrder = async () => {
+    if (!cart) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const { xml } = await api.orderPreview(connection.id, {
+        sessionId: session.buyerCookie,
+        items: cart.items,
+        currency: cart.total?.currency ?? "USD",
+        attachments: attachmentMeta(),
+      });
+      onChange({ orderXml: xml });
+      setAttachmentsDirty(false);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const sendOrder = async () => {
@@ -93,19 +109,14 @@ export function BuyerFlow({ connection, carts }: Props) {
     setError(null);
     try {
       const res = await api.sendOrder(connection.id, {
-        sessionId: buyerCookie,
+        sessionId: session.buyerCookie,
+        xml: session.orderXml || undefined, // send the edited cXML if present
         items: cart.items,
         currency: cart.total?.currency ?? "USD",
-        danglingCid,
-        attachments: attachments.map((a) => ({
-          contentId: a.contentId,
-          filename: a.filename,
-          contentType: a.contentType,
-          dataBase64: a.dataBase64,
-          scope: a.scope,
-        })),
+        danglingCid: session.danglingCid,
+        attachments: session.attachments,
       });
-      setOrderResult(res);
+      onChange({ orderResult: res });
       if (res.transportError) setError(`Transport error: ${res.transportError}`);
     } catch (e) {
       setError(String(e));
@@ -113,6 +124,8 @@ export function BuyerFlow({ connection, carts }: Props) {
       setBusy(false);
     }
   };
+
+  const itemScopeOptions = cart?.items ?? [];
 
   return (
     <div className="flow">
@@ -123,30 +136,32 @@ export function BuyerFlow({ connection, carts }: Props) {
           <span className="step-num">1</span> SetupRequest
         </h3>
         <div className="step-meta">
-          BuyerCookie: <code>{buyerCookie}</code>
-          <button className="btn-link" onClick={refreshPreview}>regenerate</button>
-        </div>
-        <CxmlEditor value={setupXml} onChange={setSetupXml} height={260} />
-        <div className="step-actions">
-          <button className="btn-primary" onClick={sendSetup} disabled={busy || !setupXml}>
-            {busy ? "Sending…" : "Send SetupRequest →"}
+          Session (BuyerCookie): <code>{session.buyerCookie || "…"}</code>
+          <button className="btn-link" onClick={onNewSession}>
+            new session
           </button>
         </div>
-        {setupResult && (
+        <CxmlEditor value={session.setupXml} onChange={(v) => onChange({ setupXml: v })} height={240} />
+        <div className="step-actions">
+          <button className="btn-primary" onClick={sendSetup} disabled={busy || !session.setupXml}>
+            {busy ? "Working…" : "Send SetupRequest →"}
+          </button>
+        </div>
+        {session.setupResult && (
           <div className="result">
             <div className="result-line">
-              HTTP {setupResult.httpStatus} · Status code {setupResult.statusCode ?? "—"}
+              HTTP {session.setupResult.httpStatus} · Status {session.setupResult.statusCode ?? "—"}
             </div>
-            {setupResult.startPage && (
+            {session.setupResult.startPage && (
               <div className="result-line">
                 StartPage:{" "}
-                <a href={setupResult.startPage} target="_blank" rel="noreferrer">
+                <a href={session.setupResult.startPage} target="_blank" rel="noreferrer">
                   open catalog in new tab ↗
                 </a>
               </div>
             )}
-            <ValidationPanel validation={setupResult.request.validation} />
-            <ValidationPanel validation={setupResult.response.validation} />
+            <ValidationPanel validation={session.setupResult.request.validation} />
+            <ValidationPanel validation={session.setupResult.response.validation} />
           </div>
         )}
       </section>
@@ -178,18 +193,32 @@ export function BuyerFlow({ connection, carts }: Props) {
                   <input type="file" multiple hidden onChange={(e) => addFiles(e.target.files)} />
                 </label>
               </div>
-              {attachments.length === 0 ? (
+              {session.attachments.length === 0 ? (
                 <p className="hint">No attachments. Add files to send a multipart/related OrderRequest.</p>
               ) : (
                 <ul className="att-list">
-                  {attachments.map((a, i) => (
-                    <li key={i}>
-                      <code>cid:{a.contentId}</code> · {a.filename} · {a.contentType} ·{" "}
-                      {Math.round((a.dataBase64.length * 3) / 4)} B
-                      <button
-                        className="btn-link"
-                        onClick={() => setAttachments((arr) => arr.filter((_, j) => j !== i))}
+                  {session.attachments.map((a, i) => (
+                    <li key={i} className="att-row">
+                      <code>cid:{a.contentId}</code>
+                      <span className="att-file">{a.filename}</span>
+                      <select
+                        className="att-scope"
+                        value={String(a.scope)}
+                        onChange={(e) =>
+                          updateAttachment(i, {
+                            scope: e.target.value === "order" ? "order" : Number(e.target.value),
+                          })
+                        }
+                        title="Attach to the whole order, or to a specific line item"
                       >
+                        <option value="order">whole order</option>
+                        {itemScopeOptions.map((it, idx) => (
+                          <option key={idx} value={idx + 1}>
+                            item {idx + 1}: {it.supplierPartId}
+                          </option>
+                        ))}
+                      </select>
+                      <button className="btn-link" onClick={() => removeAttachment(i)}>
                         remove
                       </button>
                     </li>
@@ -199,29 +228,56 @@ export function BuyerFlow({ connection, carts }: Props) {
               <label className="dangling-toggle">
                 <input
                   type="checkbox"
-                  checked={danglingCid}
-                  onChange={(e) => setDanglingCid(e.target.checked)}
-                  disabled={attachments.length === 0}
+                  checked={session.danglingCid}
+                  onChange={(e) => onChange({ danglingCid: e.target.checked })}
+                  disabled={session.attachments.length === 0}
                 />
                 Dangling-<code>cid</code> test — reference attachments that aren't in the envelope, to
                 verify the receiver detects the missing attachment
               </label>
             </div>
+
             <div className="step-actions">
-              <button className="btn-primary" onClick={sendOrder} disabled={busy}>
-                {busy ? "Sending…" : "Send OrderRequest →"}
+              <button className="btn-secondary" onClick={buildOrder} disabled={busy}>
+                {session.orderXml ? "Rebuild from cart & attachments" : "Build OrderRequest"}
               </button>
             </div>
+
+            {attachmentsDirty && session.orderXml && (
+              <p className="hint warn-hint">
+                Attachments changed — rebuild to refresh the <code>cid</code> references, or edit the
+                <code>&lt;Comments&gt;</code> below by hand.
+              </p>
+            )}
+
+            {session.orderXml && (
+              <>
+                <p className="hint">
+                  Edit the OrderRequest before sending — e.g. tweak <code>&lt;Comments&gt;</code>,
+                  addresses, or attachment references. This exact document is what gets sent.
+                </p>
+                <CxmlEditor
+                  value={session.orderXml}
+                  onChange={(v) => onChange({ orderXml: v })}
+                  height={300}
+                />
+                <div className="step-actions">
+                  <button className="btn-primary" onClick={sendOrder} disabled={busy}>
+                    {busy ? "Working…" : session.orderResult ? "Re-send OrderRequest ↻" : "Send OrderRequest →"}
+                  </button>
+                </div>
+              </>
+            )}
           </>
         )}
-        {orderResult && (
+        {session.orderResult && (
           <div className="result">
             <div className="result-line">
-              HTTP {orderResult.httpStatus} · Status {orderResult.statusCode ?? "—"}{" "}
-              {orderResult.statusText ?? ""}
+              HTTP {session.orderResult.httpStatus} · Status {session.orderResult.statusCode ?? "—"}{" "}
+              {session.orderResult.statusText ?? ""}
             </div>
-            <ValidationPanel validation={orderResult.request.validation} />
-            <ValidationPanel validation={orderResult.response.validation} />
+            <ValidationPanel validation={session.orderResult.request.validation} />
+            <ValidationPanel validation={session.orderResult.response.validation} />
           </div>
         )}
       </section>

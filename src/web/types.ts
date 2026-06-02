@@ -46,3 +46,39 @@ export interface OrderResult {
   request: import("../server/cxml/types").LogRecord;
   response: import("../server/cxml/types").LogRecord;
 }
+
+/** A draft attachment to send with the OrderRequest. scope: "order" or 1-based item index. */
+export interface AttachmentDraft {
+  contentId: string;
+  filename: string;
+  contentType: string;
+  dataBase64: string;
+  scope: "order" | number;
+}
+
+/**
+ * One flow session for a connection (≈ one order roundtrip). Lifted into App so
+ * it survives Flow/Settings tab switches and connection switches, and so the
+ * OrderRequest can be edited and re-sent (retry) after a supplier rejection.
+ */
+export interface FlowSession {
+  buyerCookie: string;
+  setupXml: string;
+  setupResult: SetupResult | null;
+  orderXml: string;
+  orderResult: OrderResult | null;
+  attachments: AttachmentDraft[];
+  danglingCid: boolean;
+}
+
+export function emptySession(): FlowSession {
+  return {
+    buyerCookie: "",
+    setupXml: "",
+    setupResult: null,
+    orderXml: "",
+    orderResult: null,
+    attachments: [],
+    danglingCid: false,
+  };
+}

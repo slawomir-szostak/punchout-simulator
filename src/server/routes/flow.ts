@@ -148,6 +148,49 @@ interface OrderBody {
   billTo?: any;
 }
 
+// Build the OrderRequest cXML from a request body. Shared by the preview and
+// send endpoints so the document you edit in the UI is exactly what gets sent.
+function buildOrderXml(conn: Connection, body: OrderBody): { xml: string; orderId: string } {
+  const items = body.items ?? [];
+  const currency = body.currency || items[0]?.currency || "USD";
+  const total =
+    body.total ?? items.reduce((s, it) => s + (it.unitPriceAmount ?? 0) * it.quantity, 0);
+  const orderId = body.orderId || `PO-${nanoid(8)}`;
+  const attMeta: OrderAttachmentMeta[] = (body.attachments ?? []).map((a) => ({
+    contentId: a.contentId,
+    scope: a.scope === "order" || a.scope == null ? "order" : { itemIndex: Number(a.scope) },
+  }));
+  const xml = buildOrderRequest({
+    from: conn.from,
+    to: conn.to,
+    sender: conn.sender,
+    sharedSecret: conn.sharedSecret,
+    orderId,
+    orderDate: new Date().toISOString(),
+    payloadId: makePayloadId(host(), new Date().toISOString()),
+    timestamp: new Date().toISOString(),
+    deploymentMode: conn.deploymentMode,
+    currency,
+    total,
+    items,
+    shipTo: body.shipTo,
+    billTo: body.billTo,
+    attachments: attMeta,
+  });
+  return { xml, orderId };
+}
+
+// Preview the OrderRequest cXML (built from the cart + attachment plan) without
+// sending it, so the user can edit Comments/anything before dispatch.
+flowRoute.post("/:id/order/preview", async (c) => {
+  const conn = getConnection(c.req.param("id"));
+  const err = requireVirtualBuyer(conn);
+  if (err) return c.json({ error: err }, 400);
+  const body = (await c.req.json().catch(() => ({}))) as OrderBody;
+  const { xml, orderId } = buildOrderXml(conn!, body);
+  return c.json({ xml, orderId });
+});
+
 flowRoute.post("/:id/order", async (c) => {
   const conn = getConnection(c.req.param("id"));
   const err = requireVirtualBuyer(conn);
@@ -155,42 +198,15 @@ flowRoute.post("/:id/order", async (c) => {
 
   const body = (await c.req.json().catch(() => ({}))) as OrderBody;
   const sessionId = body.sessionId || `pos-${nanoid(16)}`;
-  const items = body.items ?? [];
-  const currency = body.currency || items[0]?.currency || "USD";
-  const total =
-    body.total ??
-    items.reduce((s, it) => s + (it.unitPriceAmount ?? 0) * it.quantity, 0);
-  const orderId = body.orderId || `PO-${nanoid(8)}`;
   const dangling = !!body.danglingCid;
 
-  // Build the multipart attachment plan. In dangling-cid test mode the XML still
-  // references cid:<id> but the actual part carries a DIFFERENT Content-ID, so a
-  // correct receiver must report the attachment as missing (spec section 11).
+  // In dangling-cid test mode the XML still references cid:<id> but the actual
+  // part carries a DIFFERENT Content-ID, so a correct receiver must report the
+  // attachment as missing (spec section 11).
   const inputAtts = body.attachments ?? [];
-  const attMeta: OrderAttachmentMeta[] = inputAtts.map((a) => ({
-    contentId: a.contentId,
-    scope: a.scope === "order" || a.scope == null ? "order" : { itemIndex: Number(a.scope) },
-  }));
 
-  const xml =
-    body.xml ||
-    buildOrderRequest({
-      from: conn!.from,
-      to: conn!.to,
-      sender: conn!.sender,
-      sharedSecret: conn!.sharedSecret,
-      orderId,
-      orderDate: new Date().toISOString(),
-      payloadId: makePayloadId(host(), new Date().toISOString()),
-      timestamp: new Date().toISOString(),
-      deploymentMode: conn!.deploymentMode,
-      currency,
-      total,
-      items,
-      shipTo: body.shipTo,
-      billTo: body.billTo,
-      attachments: attMeta,
-    });
+  // Use the (possibly edited) XML the client sent, otherwise build it fresh.
+  const xml = body.xml || buildOrderXml(conn!, body).xml;
 
   // Assemble the wire body: multipart/related when there are attachments.
   let wireBody: string | Buffer = xml;

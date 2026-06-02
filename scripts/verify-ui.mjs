@@ -62,10 +62,25 @@ try {
   const rows = await page.locator(".cart-table tbody tr").count();
   rows === 2 ? pass("cart rendered live (2 items)") : fail(`cart rows = ${rows}`);
 
-  // Send the OrderRequest
+  // Session persists across Flow/Settings tab switches
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByText(/Shared Secret/).first().waitFor({ timeout: 5000 });
+  await page.getByRole("button", { name: "Flow" }).click();
+  const rowsAfter = await page.locator(".cart-table tbody tr").count();
+  rowsAfter === 2 ? pass("session survives Flow/Settings switch (cart still there)") : fail(`cart lost on tab switch: ${rowsAfter}`);
+
+  // Build the OrderRequest (editable), then send it
+  await page.getByRole("button", { name: /Build OrderRequest/ }).click();
+  await page.getByText(/This exact document is what gets sent/).waitFor({ timeout: 8000 });
+  pass("OrderRequest built and editable before send");
+
   await page.getByRole("button", { name: /Send OrderRequest/ }).click();
   await page.getByText(/Status 200/).waitFor({ timeout: 10000 });
   pass("OrderRequest sent, supplier returned Status 200");
+
+  // Retry path: the editor stays and the button becomes Re-send
+  await page.getByRole("button", { name: /Re-send OrderRequest/ }).waitFor({ timeout: 5000 });
+  pass("retry available (Re-send OrderRequest)");
 
   // Live log populated
   const logRows = await page.locator(".log-row").count();
