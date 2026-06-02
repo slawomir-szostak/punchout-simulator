@@ -1,4 +1,5 @@
 import Editor from "@monaco-editor/react";
+import { useTheme } from "../hooks/useTheme";
 
 interface Props {
   value: string;
@@ -12,12 +13,13 @@ interface Props {
 // Monaco-backed cXML editor (XML highlighting + edit-before-send). Read-only
 // mode is used for displaying captured documents in the log.
 export function CxmlEditor({ value, onChange, readOnly, height = 320, language = "xml" }: Props) {
+  const theme = useTheme();
   return (
     <div className="editor-shell">
       <Editor
         height={height}
         language={language}
-        theme="vs-dark"
+        theme={theme === "light" ? "vs" : "vs-dark"}
         value={value}
         onChange={(v) => onChange?.(v ?? "")}
         options={{

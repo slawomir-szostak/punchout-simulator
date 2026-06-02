@@ -10,7 +10,30 @@
   --ok: #34d399;
   --warn: #fbbf24;
   --error: #f87171;
+  --link: #93c5fd;
+  --code: #c7d2fe;
 }
+
+:root[data-theme="light"] {
+  --bg: #f5f7fb;
+  --panel: #ffffff;
+  --panel-2: #eef1f7;
+  --border: #d4dae8;
+  --text: #1e293b;
+  --muted: #5b6b86;
+  --accent: #6366f1;
+  --accent-hover: #4f46e5;
+  --ok: #059669;
+  --warn: #b45309;
+  --error: #dc2626;
+  --link: #2563eb;
+  --code: #4338ca;
+}
+:root[data-theme="light"] .badge-ok { background: #d1fae5; }
+:root[data-theme="light"] .badge-warn { background: #fef3c7; }
+:root[data-theme="light"] .badge-error { background: #fee2e2; }
+:root[data-theme="light"] .badge-muted { background: #e2e8f0; }
+:root[data-theme="light"] .conn-list li.active { background: #e7ecf7; }
 
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
@@ -20,8 +43,8 @@ body {
   color: var(--text);
   font-size: 14px;
 }
-code { font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; font-size: .85em; color: #c7d2fe; }
-a { color: #93c5fd; }
+code { font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; font-size: .85em; color: var(--code); }
+a { color: var(--link); }
 
 .app { display: flex; flex-direction: column; height: 100vh; }
 
@@ -32,13 +55,22 @@ a { color: #93c5fd; }
 .brand { font-weight: 600; font-size: 1.05rem; }
 .logo { color: var(--accent); margin-right: .4rem; }
 .topbar-meta { color: var(--muted); font-size: .8rem; }
+.topbar-right { display: flex; align-items: center; gap: .9rem; }
+.theme-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; padding: 0;
+  background: transparent; border: 1px solid var(--border); border-radius: 7px;
+  color: var(--muted); cursor: pointer; transition: color .15s, border-color .15s;
+}
+.theme-toggle:hover { color: var(--text); border-color: var(--accent); }
+.theme-toggle svg { width: 16px; height: 16px; }
 
 .layout {
   display: grid; grid-template-columns: 240px 1fr 360px; flex: 1; min-height: 0;
 }
 .sidebar { background: var(--panel-2); border-right: 1px solid var(--border); overflow-y: auto; }
-.viewtabs { display: flex; padding: .5rem; gap: .25rem; border-bottom: 1px solid var(--border); }
-.viewtab { flex: 1; background: transparent; border: 1px solid var(--border); color: var(--muted); padding: .35rem; border-radius: 6px; cursor: pointer; font-size: .72rem; text-transform: capitalize; }
+.viewtabs { display: flex; flex-wrap: wrap; padding: .5rem; gap: .25rem; border-bottom: 1px solid var(--border); }
+.viewtab { flex: 1 1 calc(50% - .25rem); background: transparent; border: 1px solid var(--border); color: var(--muted); padding: .35rem .25rem; border-radius: 6px; cursor: pointer; font-size: .72rem; text-transform: capitalize; white-space: nowrap; }
 .viewtab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 .cred-pair { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
 .catalog-row { display: grid; grid-template-columns: 1.2fr 1.6fr .7fr .5fr .5fr .9fr auto; gap: .35rem; align-items: center; margin-bottom: .4rem; }
@@ -55,6 +87,9 @@ a { color: #93c5fd; }
 .conn-list li:hover { background: var(--panel); }
 .conn-list li.active { background: #1c2942; }
 .conn-list li.entity-row { grid-template-columns: 1fr; }
+/* Entity rows (buyers/suppliers/profiles) have no mode dot: stack the name on
+   the first line and the identity/subtitle on the second, full width. */
+.conn-list li.entity-row .conn-mode { grid-column: 1; }
 .mode-dot { width: 8px; height: 8px; border-radius: 50%; grid-row: span 2; }
 .mode-virtual-buyer { background: var(--accent); }
 .mode-virtual-supplier { background: var(--ok); }
@@ -85,10 +120,13 @@ a { color: #93c5fd; }
 
 .editor-shell { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
 
-.editor-form { max-width: 640px; display: flex; flex-direction: column; gap: .9rem; margin-top: 1rem; }
+.editor-form { max-width: 720px; display: flex; flex-direction: column; gap: .9rem; margin-top: 1rem; }
 .form-row { display: flex; flex-direction: column; gap: .3rem; }
 .form-row label { font-size: .8rem; color: var(--muted); }
-.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .9rem; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .9rem; align-items: end; }
+/* Reserve two lines for labels inside a grid so a wrapped label in one column
+   doesn't push its input out of alignment with the neighbouring column. */
+.form-grid > .form-row > label { min-height: 2.4em; }
 input, select {
   background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
   border-radius: 6px; padding: .5rem .6rem; font-size: .9rem; width: 100%;
@@ -108,7 +146,7 @@ legend { color: var(--muted); font-size: .8rem; padding: 0 .4rem; }
 .btn-secondary { background: var(--panel); color: var(--text); border: 1px solid var(--border); padding: .4rem .8rem; border-radius: 7px; cursor: pointer; font-size: .82rem; }
 .btn-secondary:hover { border-color: var(--accent); }
 .btn-danger { background: transparent; color: var(--error); border: 1px solid var(--error); padding: .55rem 1.1rem; border-radius: 7px; cursor: pointer; }
-.btn-link { background: none; border: 0; color: #93c5fd; cursor: pointer; text-decoration: underline; font-size: .82rem; margin-left: .5rem; padding: 0; }
+.btn-link { background: none; border: 0; color: var(--link); cursor: pointer; text-decoration: underline; font-size: .82rem; margin-left: .5rem; padding: 0; }
 
 .badge { display: inline-block; padding: .12rem .5rem; border-radius: 999px; font-size: .72rem; font-weight: 600; }
 .badge-ok { background: #0f3d2e; color: var(--ok); }
@@ -128,7 +166,7 @@ legend { color: var(--muted); font-size: .8rem; padding: 0 .4rem; }
 .issue-error .issue-sev { color: var(--error); }
 .issue-warning .issue-sev { color: var(--warn); }
 .issue-info .issue-sev { color: #60a5fa; }
-.issue-code { color: #c7d2fe; font-family: ui-monospace, monospace; }
+.issue-code { color: var(--code); font-family: ui-monospace, monospace; }
 .issue-msg { flex: 1; }
 .issue-path { color: var(--muted); font-family: ui-monospace, monospace; font-size: .72rem; }
 

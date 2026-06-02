@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "./api";
 import { useStream } from "./hooks/useStream";
+import { toggleTheme, useTheme } from "./hooks/useTheme";
 import {
   emptySession,
   type Buyer,
@@ -164,7 +165,10 @@ export function App() {
     <div className="app">
       <header className="topbar">
         <div className="brand"><span className="logo">⇄</span> punchout-simulator</div>
-        <div className="topbar-meta">callback: <code>{callbackUrl || "…"}</code></div>
+        <div className="topbar-right">
+          <span className="topbar-meta">callback: <code>{callbackUrl || "…"}</code></span>
+          <ThemeToggle />
+        </div>
       </header>
 
       <div className="layout">
@@ -285,6 +289,32 @@ export function App() {
 
       {detail && <MessageDetail record={detail} onClose={() => setDetail(null)} />}
     </div>
+  );
+}
+
+function ThemeToggle() {
+  const theme = useTheme();
+  const next = theme === "dark" ? "light" : "dark";
+  return (
+    <button
+      className="theme-toggle"
+      onClick={toggleTheme}
+      title={`Switch to ${next} theme`}
+      aria-label={`Switch to ${next} theme`}
+    >
+      {theme === "dark" ? (
+        // sun (click → light)
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+        </svg>
+      ) : (
+        // moon (click → dark)
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
+        </svg>
+      )}
+    </button>
   );
 }
 

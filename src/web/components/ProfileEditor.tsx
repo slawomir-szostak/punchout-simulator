@@ -139,7 +139,7 @@ export function ProfileEditor({ profile, onSave, onDelete }: { profile: Profile 
           </select>
         </div>
         <div className="form-row">
-          <label>Attachment encoding <span className="hint">(default; connection can override)</span></label>
+          <label>Attachment encoding <span className="hint">(connection overrides)</span></label>
           <select value={draft.attachmentEncoding ?? "binary"} onChange={(e) => setDraft({ ...draft, attachmentEncoding: e.target.value as any })}>
             <option value="binary">binary</option>
             <option value="base64">base64</option>
