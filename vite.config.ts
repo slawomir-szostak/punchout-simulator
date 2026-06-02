@@ -19,10 +19,13 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    // Anchored regexes (not bare prefixes): a bare "/api" prefix also matches the
+    // SPA's own module URL "/api.ts" (src/web/api.ts), proxying it to the backend
+    // and blanking the app in dev. Match only the actual route namespaces.
     proxy: {
-      "/api": { target: BACKEND, changeOrigin: true, ws: true },
-      "/punchout": { target: BACKEND, changeOrigin: true },
-      "/sim": { target: BACKEND, changeOrigin: true },
+      "^/api/": { target: BACKEND, changeOrigin: true, ws: true },
+      "^/punchout/": { target: BACKEND, changeOrigin: true },
+      "^/sim/": { target: BACKEND, changeOrigin: true },
     },
   },
 });
