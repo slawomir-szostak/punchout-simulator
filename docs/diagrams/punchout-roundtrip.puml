@@ -1,0 +1,25 @@
+@startuml punchout-roundtrip
+!theme plain
+title cXML PunchOut round-trip
+
+actor "Buyer user" as User
+participant "Procurement platform\n(Ariba / Coupa / Jaggaer ...)" as Buyer
+participant "User's browser" as Browser
+participant "Supplier catalog\n(your system)" as Supplier
+
+== 1. Session setup (server-to-server) ==
+Buyer -> Supplier : POST PunchOutSetupRequest\n(credentials, BrowserFormPost URL, operation, deploymentMode)
+Supplier -> Buyer : PunchOutSetupResponse\n(StartPage URL)
+
+== 2. Shopping (browser) ==
+Buyer -> Browser : redirect to StartPage
+Browser -> Supplier : browse catalog, build cart
+
+== 3. Cart return (browser-mediated POST) ==
+Supplier -> Browser : HTML page that auto-submits a form\n(action = BrowserFormPost URL)
+Browser -> Buyer : POST PunchOutOrderMessage\n(cart, as cxml-urlencoded / cxml-base64 / raw)
+
+== 4. Order (later, server-to-server) ==
+Buyer -> Supplier : POST OrderRequest\n(optionally multipart/related with attachments)
+Supplier -> Buyer : OrderResponse (Status 200/4xx)
+@enduml

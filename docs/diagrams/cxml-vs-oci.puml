@@ -1,0 +1,17 @@
+@startuml cxml-vs-oci
+!theme plain
+title Cart return: cXML vs OCI
+
+participant "Supplier" as S
+participant "Browser" as B
+
+group cXML (Ariba / Coupa / Jaggaer)
+  S -> B : form with cxml-urlencoded =\n<cXML><PunchOutOrderMessage>...</...>
+  B -> "cXML buyer" as CB : POST structured XML document
+end
+
+group OCI (SAP SRM)
+  S -> B : form with flat fields\nNEW_ITEM-DESCRIPTION[1], NEW_ITEM-PRICE[1] ...
+  B -> "OCI buyer (HOOK_URL)" as OB : POST key/value pairs
+end
+@enduml
