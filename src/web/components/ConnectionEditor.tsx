@@ -16,6 +16,7 @@ const blank = (): Partial<Connection> => ({
   sharedSecret: "",
   deploymentMode: "test",
   authStyle: "SharedSecret",
+  attachmentEncoding: "binary",
 });
 
 // A connection pairs a Buyer and a Supplier and holds only pair-specific data
@@ -140,6 +141,20 @@ export function ConnectionEditor({ connection, buyers, suppliers, onSave, onDele
             <option value="MAC">MAC</option>
           </select>
         </div>
+      </div>
+
+      <div className="form-row">
+        <label>
+          Attachment encoding{" "}
+          <span className="hint">(Content-Transfer-Encoding for OrderRequest attachment parts)</span>
+        </label>
+        <select
+          value={form.attachmentEncoding ?? "binary"}
+          onChange={(e) => set({ attachmentEncoding: e.target.value as any })}
+        >
+          <option value="binary">binary — raw bytes (compact; valid over HTTP)</option>
+          <option value="base64">base64 — what most Ariba/Coupa receivers expect</option>
+        </select>
       </div>
 
       {err && <div className="form-error">{err}</div>}

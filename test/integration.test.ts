@@ -210,6 +210,48 @@ describe("Mode A loopback", () => {
     expect(checkoutHtml).not.toContain("javascript:");
   });
 
+  it("base64 connection: supplier accepts the order and the raw view shows the encoded envelope", async () => {
+    // A connection that sends attachments as Content-Transfer-Encoding: base64.
+    const conn = await fetch(`${base}/api/connections`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "B64 Buyer → Supplier",
+        buyerId: "demo-buyer",
+        supplierId: "demo-supplier",
+        mode: "virtual-buyer",
+        sharedSecret: "demo-secret",
+        attachmentEncoding: "base64",
+      }),
+    }).then((r) => r.json());
+    expect(conn.attachmentEncoding).toBe("base64");
+
+    const res = await fetch(`${base}/api/connections/${conn.id}/order`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sessionId: "b64-1",
+        items: [{ quantity: 1, supplierPartId: "A", unitPriceAmount: 1, currency: "USD", description: "x", uom: "EA", classification: "1", classificationDomain: "UNSPSC" }],
+        currency: "USD",
+        attachments: [{ contentId: "doc", filename: "d.txt", contentType: "text/plain", dataBase64: Buffer.from("hello base64").toString("base64"), scope: "order" }],
+      }),
+    }).then((r) => r.json());
+
+    // The supplier (Mode B) must decode the base64 part, resolve the cid, accept.
+    expect(res.request.validation.issues.map((i: any) => i.code)).not.toContain("dangling-cid");
+    expect(res.statusCode).toBe("200");
+    expect(res.request.attachmentEncoding).toBe("base64");
+
+    // The raw view reconstructs the base64-encoded multipart envelope.
+    const raw = await fetch(
+      `${base}/api/sessions/${encodeURIComponent("b64-1")}/records/${res.request.id}/raw`,
+    ).then((r) => r.text());
+    expect(raw).toContain("multipart/related");
+    expect(raw).toContain("Content-Transfer-Encoding: base64");
+    expect(raw).toContain(Buffer.from("hello base64").toString("base64"));
+    expect(raw).toContain("cid:doc"); // the XML still references the attachment
+  });
+
   it("dangling-cid is detected by the buyer build AND rejected by the supplier", async () => {
     const res = await fetch(`${base}/api/connections/demo/order`, {
       method: "POST",

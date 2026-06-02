@@ -108,10 +108,22 @@ receiver detects the missing attachment. `<Comments>` (and therefore
   anything; the exact document you see is what gets sent.
 - **Attachments are scoped per item or per order**, so the `cid` reference lands
   in the right `ItemOut/Comments` or `OrderRequestHeader/Comments`.
+- **Transfer encoding is a per-connection setting** (`attachmentEncoding`):
+  `binary` writes the raw bytes into each MIME part (valid over HTTP and more
+  compact), while `base64` is the `Content-Transfer-Encoding` most real
+  Ariba/Coupa receivers expect. Switch it in the connection editor to exercise
+  either ingestion path; the built-in mock supplier (Mode B) decodes whichever
+  it receives. Defaults to `binary`.
 - The flow is a **persistent per-connection session**: switching between the
   Flow and Settings tabs (or connections) keeps your in-progress order, and you
   can **edit and re-send** after a supplier rejection. "New session" starts a
   fresh `BuyerCookie`.
+- Every logged message has a **cXML / Raw toggle**. "Raw" shows the full wire
+  message — headers plus, for an order with attachments, the reassembled
+  `multipart/related` envelope (boundaries, part headers, `Content-ID`, the cXML
+  and each attachment part) — with a one-click **Copy**. The raw body is
+  reconstructed on demand from the document + the attachments on disk, so the
+  log stays free of inlined base64.
 
 ---
 
@@ -155,7 +167,7 @@ The config is normalized into three entities:
 
 - **Buyer** — a reusable party holding its own cXML identity (the `From` credential).
 - **Supplier** — a reusable party holding its cXML identity (`To`) plus its **endpoints** (PunchOut URL, Order URL) and an optional mock catalog. Endpoints are intrinsic to the supplier — defined once, not per relationship.
-- **Connection** — the edge pairing one Buyer with one Supplier. It holds only what is specific to that pair: which side the tool simulates (`mode`), the `sharedSecret`, an optional per-pair Sender identity override (defaults to the buyer's identity), `authStyle`, and `deploymentMode`.
+- **Connection** — the edge pairing one Buyer with one Supplier. It holds only what is specific to that pair: which side the tool simulates (`mode`), the `sharedSecret`, an optional per-pair Sender identity override (defaults to the buyer's identity), `authStyle`, `deploymentMode`, and `attachmentEncoding` (see below).
 
 At send time: `From` = buyer identity, `To` = supplier identity, `Sender` = the connection's override (or the buyer), and the request targets the supplier's endpoints. The mock-supplier endpoints are keyed by supplier id (`/sim/<supplierId>/…`).
 

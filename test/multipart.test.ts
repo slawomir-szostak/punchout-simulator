@@ -59,4 +59,37 @@ describe("multipart round-trip", () => {
     const parsed = parseMultipartRelated(built.body, built.contentType);
     expect(Array.from(parsed.byContentId.get("bin")!.body)).toEqual(Array.from(bytes));
   });
+
+  it("base64-encodes attachment parts and decodes them back on parse", () => {
+    // Binary that would corrupt as raw text but survives base64 cleanly.
+    const bytes = Buffer.from([0, 255, 13, 10, 0, 200, 100, 1, 2]);
+    const built = buildMultipartRelated(
+      "<cXML/>",
+      [{ contentId: "bin", contentType: "application/pdf", data: bytes }],
+      { attachmentEncoding: "base64" },
+    );
+
+    const wire = built.body.toString("utf8");
+    expect(wire).toContain("Content-Transfer-Encoding: base64");
+    expect(wire).toContain(bytes.toString("base64"));
+
+    // The parser decodes base64 parts back to their exact original bytes.
+    const parsed = parseMultipartRelated(built.body, built.contentType);
+    expect(parsed.byContentId.get("bin")!.headers["content-transfer-encoding"]).toBe("base64");
+    expect(Array.from(parsed.byContentId.get("bin")!.body)).toEqual(Array.from(bytes));
+  });
+
+  it("wraps long base64 payloads at 76 columns (RFC 2045)", () => {
+    const built = buildMultipartRelated(
+      "<cXML/>",
+      [{ contentId: "big", contentType: "application/octet-stream", data: Buffer.alloc(300, 0x41) }],
+      { attachmentEncoding: "base64" },
+    );
+    const b64Lines = built.body
+      .toString("utf8")
+      .split("\r\n")
+      .filter((l) => /^[A-Za-z0-9+/=]+$/.test(l) && l.length > 4);
+    expect(b64Lines.length).toBeGreaterThan(1);
+    expect(Math.max(...b64Lines.map((l) => l.length))).toBeLessThanOrEqual(76);
+  });
 });

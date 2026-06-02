@@ -5,6 +5,8 @@
 export type ConnectionMode = "virtual-buyer" | "virtual-supplier";
 export type DeploymentMode = "test" | "production";
 export type AuthStyle = "SharedSecret" | "MAC";
+/** MIME Content-Transfer-Encoding used for OrderRequest attachment parts. */
+export type AttachmentEncoding = "binary" | "base64";
 
 /** A cXML credential: the `domain`/identity pair used in From/To/Sender. */
 export interface Credential {
@@ -75,6 +77,13 @@ export interface Connection {
 
   deploymentMode: DeploymentMode;
   authStyle: AuthStyle;
+  /**
+   * Content-Transfer-Encoding for OrderRequest attachment parts sent over this
+   * connection. `binary` writes raw bytes (valid over HTTP, more compact);
+   * `base64` is what many real Ariba/Coupa receivers expect. Defaults to
+   * `binary` when unset.
+   */
+  attachmentEncoding?: AttachmentEncoding;
 
   createdAt: string;
   updatedAt: string;
@@ -140,6 +149,11 @@ export interface LogRecord {
   contentType?: string;
   validation?: ValidationResult;
   attachments?: AttachmentRef[];
+  /**
+   * Transfer encoding used for the multipart attachment parts on the wire, so
+   * the raw-message view can reconstruct the envelope byte-for-byte.
+   */
+  attachmentEncoding?: AttachmentEncoding;
   /** Optional human label, e.g. "dangling-cid test". */
   note?: string;
 }

@@ -29,12 +29,24 @@ export function stripCidScheme(url: string | undefined): string {
   return url.trim().replace(/^cid:/i, "").trim();
 }
 
+/** Encode a buffer as base64 wrapped at 76 chars per RFC 2045 (CRLF separators). */
+function base64Wrapped(data: Buffer): Buffer {
+  const lines = data.toString("base64").match(/.{1,76}/g) ?? [];
+  return Buffer.from(lines.join("\r\n"), "utf8");
+}
+
 export function buildMultipartRelated(
   cxml: string,
   attachments: MultipartAttachment[],
-  opts: { mainContentId?: string } = {},
+  opts: {
+    mainContentId?: string;
+    boundary?: string;
+    /** Transfer encoding for attachment parts. Defaults to "binary" (raw bytes). */
+    attachmentEncoding?: "binary" | "base64";
+  } = {},
 ): BuiltMultipart {
-  const boundary = `cxml-${nanoid(20)}`;
+  const boundary = opts.boundary || `cxml-${nanoid(20)}`;
+  const useBase64 = opts.attachmentEncoding === "base64";
   const mainCid = opts.mainContentId ?? `cxml-main@punchout-simulator`;
   const CRLF = "\r\n";
   const parts: Buffer[] = [];
@@ -62,11 +74,11 @@ export function buildMultipartRelated(
     pushPart(
       [
         `Content-Type: ${att.contentType}`,
-        `Content-Transfer-Encoding: binary`,
+        `Content-Transfer-Encoding: ${useBase64 ? "base64" : "binary"}`,
         `Content-ID: <${normalizeContentId(att.contentId)}>`,
         disposition,
       ],
-      att.data,
+      useBase64 ? base64Wrapped(att.data) : att.data,
     );
   }
 
@@ -96,6 +108,12 @@ export interface ParsedMultipart {
 export function getBoundary(contentType: string): string | undefined {
   const m = /boundary="?([^";]+)"?/i.exec(contentType);
   return m?.[1];
+}
+
+/** Extract the `start` parameter (the root part's Content-ID) from a multipart content-type. */
+export function getStartCid(contentType: string): string | undefined {
+  const m = /start="?<?([^">]+)>?"?/i.exec(contentType);
+  return m ? normalizeContentId(m[1]) : undefined;
 }
 
 export function isMultipart(contentType: string | undefined): boolean {
@@ -135,6 +153,11 @@ export function parseMultipartRelated(
           .slice(idx + 1)
           .trim();
       }
+    }
+    // Decode the part to its actual content bytes per its transfer encoding, so
+    // every consumer sees the real file (a base64 part decodes back to binary).
+    if (headers["content-transfer-encoding"]?.toLowerCase() === "base64") {
+      bodyBuf = Buffer.from(bodyBuf.toString("utf8"), "base64");
     }
     parts.push({
       headers,

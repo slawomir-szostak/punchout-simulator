@@ -96,6 +96,11 @@ export const api = {
   getSession: (id: string) =>
     fetch(`/api/sessions/${encodeURIComponent(id)}`).then((r) => jsonOrThrow<LogRecord[]>(r)),
 
+  rawMessage: (sessionId: string, recordId: string) =>
+    fetch(
+      `/api/sessions/${encodeURIComponent(sessionId)}/records/${encodeURIComponent(recordId)}/raw`,
+    ).then((r) => (r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`)))),
+
   recent: (limit = 200) =>
     fetch(`/api/recent?limit=${limit}`).then((r) => jsonOrThrow<LogRecord[]>(r)),
 

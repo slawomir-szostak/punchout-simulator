@@ -15,7 +15,7 @@ import {
 import { buildMultipartRelated, type MultipartAttachment } from "../cxml/multipart.js";
 import { getStartPage, getStatus, parseXml } from "../cxml/parse.js";
 import { validateDocument, type ExpectedCredentials } from "../cxml/validate.js";
-import type { AttachmentRef, CartItem, Credential, ResolvedConnection } from "../cxml/types.js";
+import type { AttachmentEncoding, AttachmentRef, CartItem, Credential, ResolvedConnection } from "../cxml/types.js";
 
 // Mode A (virtual-buyer): drive the SetupRequest and OrderRequest server-to-server,
 // validate + log every document in both directions (spec sections 8, 10).
@@ -40,6 +40,7 @@ interface BuyerContext {
   orderUrl?: string;
   deploymentMode: string;
   connectionId: string;
+  attachmentEncoding: AttachmentEncoding;
   expected: ExpectedCredentials;
 }
 
@@ -57,6 +58,7 @@ function buyerContext(r: ResolvedConnection): BuyerContext {
     orderUrl: supplier.orderUrl,
     deploymentMode: connection.deploymentMode,
     connectionId: connection.id,
+    attachmentEncoding: connection.attachmentEncoding ?? "binary",
     expected: { from, to, sender, sharedSecret: connection.sharedSecret, authStyle: connection.authStyle },
   };
 }
@@ -262,7 +264,7 @@ flowRoute.post("/:id/order", async (c) => {
         data,
       };
     });
-    const built = buildMultipartRelated(xml, parts);
+    const built = buildMultipartRelated(xml, parts, { attachmentEncoding: ctx.attachmentEncoding });
     wireBody = built.body;
     wireContentType = built.contentType;
   }
@@ -283,6 +285,7 @@ flowRoute.post("/:id/order", async (c) => {
     contentType: wireContentType,
     validation: reqValidation,
     attachments: savedRefs,
+    attachmentEncoding: inputAtts.length > 0 ? ctx.attachmentEncoding : undefined,
     note: dangling ? "dangling-cid test" : undefined,
   });
 

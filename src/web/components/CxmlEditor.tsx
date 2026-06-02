@@ -5,16 +5,18 @@ interface Props {
   onChange?: (value: string) => void;
   readOnly?: boolean;
   height?: number | string;
+  /** Monaco language id; defaults to "xml". Use "plaintext" for raw wire dumps. */
+  language?: string;
 }
 
 // Monaco-backed cXML editor (XML highlighting + edit-before-send). Read-only
 // mode is used for displaying captured documents in the log.
-export function CxmlEditor({ value, onChange, readOnly, height = 320 }: Props) {
+export function CxmlEditor({ value, onChange, readOnly, height = 320, language = "xml" }: Props) {
   return (
     <div className="editor-shell">
       <Editor
         height={height}
-        defaultLanguage="xml"
+        language={language}
         theme="vs-dark"
         value={value}
         onChange={(v) => onChange?.(v ?? "")}

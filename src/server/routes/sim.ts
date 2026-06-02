@@ -21,7 +21,7 @@ import {
   parseMultipartRelated,
 } from "../cxml/multipart.js";
 import { validateDocument, type ExpectedCredentials } from "../cxml/validate.js";
-import type { AttachmentRef, CartItem, CatalogItem, Credential, Supplier } from "../cxml/types.js";
+import type { AttachmentEncoding, AttachmentRef, CartItem, CatalogItem, Credential, Supplier } from "../cxml/types.js";
 
 // Mode B (virtual-supplier / mock catalog) — spec sections 4, 10, 14. Endpoints
 // are keyed by SUPPLIER id, because the PunchOut/Order URLs are intrinsic to the
@@ -250,6 +250,7 @@ simRoute.post("/:id/order", async (c) => {
   let xml: string;
   const availableContentIds = new Set<string>();
   const savedRefs: AttachmentRef[] = [];
+  let attachmentEncoding: AttachmentEncoding | undefined;
 
   if (isMultipart(ct)) {
     const mp = parseMultipartRelated(raw, ct);
@@ -258,8 +259,13 @@ simRoute.post("/:id/order", async (c) => {
       if (part === mp.root) continue;
       const cid = normalizeContentId(part.contentId);
       if (cid) availableContentIds.add(cid);
+      if ((part.headers["content-transfer-encoding"] ?? "").toLowerCase() === "base64") {
+        attachmentEncoding = "base64";
+      }
+      // part.body is already decoded to its content bytes by the parser.
       savedRefs.push(saveAttachment(part.body, { contentId: cid, contentType: part.contentType ?? "application/octet-stream" }));
     }
+    if (savedRefs.length > 0 && !attachmentEncoding) attachmentEncoding = "binary";
   } else {
     xml = raw.toString("utf8");
   }
@@ -284,6 +290,7 @@ simRoute.post("/:id/order", async (c) => {
     contentType: ct,
     validation,
     attachments: savedRefs,
+    attachmentEncoding,
   });
 
   const ok = validation.ok;
