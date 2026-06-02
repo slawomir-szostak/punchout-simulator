@@ -56,10 +56,23 @@ function safeHttpUrl(u: string | undefined): string {
   if (!u) return "";
   try {
     const p = new URL(u.trim());
-    return p.protocol === "http:" || p.protocol === "https:" ? u.trim() : "";
+    // Return the *normalized* href (percent-encodes <, >, " etc.) — not the raw
+    // input — so the value is safe to embed in an HTML attribute or a <script>.
+    return p.protocol === "http:" || p.protocol === "https:" ? p.href : "";
   } catch {
     return "";
   }
+}
+
+// JSON safe to embed inside an inline <script>: JSON.stringify does NOT escape
+// </script> or the U+2028/U+2029 line separators, so we escape them ourselves.
+function jsonForScript(value: unknown): string {
+  return JSON.stringify(value)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
 }
 
 // Build the expected-credentials context for validating an inbound document,
@@ -269,9 +282,9 @@ ${inner}
     <noscript><button type="submit">Continue</button></noscript>
   </form>
   <script>
-    fetch(${JSON.stringify(formpost)}, { method: "POST",
+    fetch(${jsonForScript(formpost)}, { method: "POST",
       headers: { "Content-Type": "text/xml; charset=UTF-8" },
-      body: ${JSON.stringify(xml)} })
+      body: ${jsonForScript(xml)} })
       .then(function () {
         document.body.replaceChildren();
         var p = document.createElement("p");
