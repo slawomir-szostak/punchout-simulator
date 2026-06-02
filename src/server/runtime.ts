@@ -9,6 +9,8 @@ interface Runtime {
   publicUrl: string;
   /** When set, /api/* requires this token (used when the tool is exposed). */
   token?: string;
+  /** The package version of the running process (set by the CLI at boot). */
+  version?: string;
 }
 
 const runtime: Runtime = {
@@ -27,6 +29,11 @@ export function getPort(): number {
 /** The API token, or undefined when none is required (plain localhost runs). */
 export function getToken(): string | undefined {
   return runtime.token;
+}
+
+/** The running package version, if the CLI provided it. */
+export function getVersion(): string | undefined {
+  return runtime.version;
 }
 
 export function getPublicUrl(): string {

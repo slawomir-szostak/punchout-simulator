@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { nanoid } from "nanoid";
@@ -82,6 +83,16 @@ function hostnameOf(url: string): string {
   }
 }
 
+// package.json sits two levels above this file in BOTH src/server/ (dev, tsx) and
+// dist/server/ (built), so the same relative resolve works in either case.
+function readVersion(): string | undefined {
+  try {
+    return JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")).version;
+  } catch {
+    return undefined;
+  }
+}
+
 function printHelp(): void {
   console.log(`punchout-simulator — test cXML PunchOut integrations as a virtual counterparty
 
@@ -114,7 +125,7 @@ async function main() {
   const token = flags.token || (exposed ? nanoid(24) : undefined);
 
   setDataDir(flags.dataDir);
-  setRuntime({ port: flags.port, publicUrl, token });
+  setRuntime({ port: flags.port, publicUrl, token, version: readVersion() });
   await initConfig();
   if (flags.seed) await seedDemoIfEmpty();
 

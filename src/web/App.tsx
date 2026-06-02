@@ -43,6 +43,8 @@ export function App() {
   const [detail, setDetail] = useState<LogRecord | null>(null);
   const [publicUrl, setPublicUrl] = useState<string>("");
   const [callbackUrl, setCallbackUrl] = useState<string>("");
+  const [version, setVersion] = useState<string>("");
+  const [bootError, setBootError] = useState<string | null>(null);
 
   const selectedConn = useMemo(
     () => connections.find((c) => c.id === selectedConnId) ?? null,
@@ -60,15 +62,26 @@ export function App() {
   const reloadProfiles = useCallback(async () => setProfiles(await api.profiles.list()), []);
 
   useEffect(() => {
-    reloadConnections();
-    reloadBuyers();
-    reloadSuppliers();
-    reloadProfiles();
+    Promise.all([
+      reloadConnections(),
+      reloadBuyers(),
+      reloadSuppliers(),
+      reloadProfiles(),
+      api.runtime().then((r) => {
+        setPublicUrl(r.publicUrl);
+        setCallbackUrl(r.callbackUrl);
+        setVersion(r.version ?? "");
+      }),
+    ])
+      .then(() => setBootError(null))
+      .catch((e) =>
+        setBootError(
+          e instanceof Error && /401|unauthor/i.test(e.message)
+            ? "Could not load: the API requires a token (open the printed ?token= URL)."
+            : "Could not reach the server. Is it still running?",
+        ),
+      );
     api.recent(200).then(setRecords).catch(() => {});
-    api.runtime().then((r) => {
-      setPublicUrl(r.publicUrl);
-      setCallbackUrl(r.callbackUrl);
-    });
   }, [reloadConnections, reloadBuyers, reloadSuppliers, reloadProfiles]);
 
   useStream({
@@ -164,18 +177,33 @@ export function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <div className="brand"><span className="logo">⇄</span> punchout-simulator</div>
+        <div className="brand">
+          <span className="logo">⇄</span> punchout-simulator
+          {version && <span className="brand-version">v{version}</span>}
+        </div>
         <div className="topbar-right">
           <span className="topbar-meta">callback: <code>{callbackUrl || "…"}</code></span>
           <ThemeToggle />
         </div>
       </header>
 
+      {bootError && (
+        <div className="app-banner" role="alert">
+          <span>{bootError}</span>
+          <button className="btn-link" onClick={() => setBootError(null)}>dismiss ✕</button>
+        </div>
+      )}
+
       <div className="layout">
         <aside className="sidebar">
           <div className="viewtabs">
             {(["connections", "buyers", "suppliers", "profiles"] as View[]).map((v) => (
-              <button key={v} className={view === v ? "viewtab active" : "viewtab"} onClick={() => setView(v)}>
+              <button
+                key={v}
+                className={view === v ? "viewtab active" : "viewtab"}
+                aria-current={view === v ? "page" : undefined}
+                onClick={() => setView(v)}
+              >
                 {v}
               </button>
             ))}
@@ -234,8 +262,8 @@ export function App() {
                   <div className="main-head">
                     <h2>{selectedConn.name}</h2>
                     <div className="tabs">
-                      <button className={panel === "flow" ? "tab active" : "tab"} onClick={() => setPanel("flow")}>Flow</button>
-                      <button className={panel === "edit" ? "tab active" : "tab"} onClick={() => setPanel("edit")}>Settings</button>
+                      <button className={panel === "flow" ? "tab active" : "tab"} aria-current={panel === "flow" ? "page" : undefined} onClick={() => setPanel("flow")}>Flow</button>
+                      <button className={panel === "edit" ? "tab active" : "tab"} aria-current={panel === "edit" ? "page" : undefined} onClick={() => setPanel("edit")}>Settings</button>
                     </div>
                   </div>
 

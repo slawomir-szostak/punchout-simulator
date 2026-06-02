@@ -148,5 +148,7 @@ export const api = {
     authFetch(`/api/recent?limit=${limit}`).then((r) => jsonOrThrow<LogRecord[]>(r)),
 
   runtime: () =>
-    authFetch("/api/runtime").then((r) => jsonOrThrow<{ publicUrl: string; callbackUrl: string }>(r)),
+    authFetch("/api/runtime").then((r) =>
+      jsonOrThrow<{ publicUrl: string; callbackUrl: string; version?: string }>(r),
+    ),
 };

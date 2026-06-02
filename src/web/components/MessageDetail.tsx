@@ -118,12 +118,14 @@ export function MessageDetail({ record, onClose }: { record: LogRecord; onClose:
           <div className="tabs">
             <button
               className={`tab ${view === "cxml" ? "active" : ""}`}
+              aria-pressed={view === "cxml"}
               onClick={() => setView("cxml")}
             >
               cXML
             </button>
             <button
               className={`tab ${view === "raw" ? "active" : ""}`}
+              aria-pressed={view === "raw"}
               onClick={() => setView("raw")}
             >
               Raw{isMultipart ? " (multipart)" : ""}

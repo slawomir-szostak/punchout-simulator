@@ -67,6 +67,16 @@ a { color: var(--link); }
 }
 .brand { font-weight: 600; font-size: 1.05rem; }
 .logo { color: var(--accent); margin-right: .4rem; }
+.brand-version {
+  margin-left: .5rem; font-size: .7rem; font-weight: 500; color: var(--muted);
+  border: 1px solid var(--border); border-radius: 999px; padding: .05rem .45rem; vertical-align: middle;
+}
+.app-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: .55rem 1.2rem; background: #3b1d1d; color: #fecaca; border-bottom: 1px solid var(--error);
+  font-size: .85rem;
+}
+:root[data-theme="light"] .app-banner { background: #fee2e2; color: #991b1b; }
 .topbar-meta { color: var(--muted); font-size: .8rem; }
 .topbar-right { display: flex; align-items: center; gap: .9rem; }
 .theme-toggle {

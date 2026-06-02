@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { getCart } from "../cart-store.js";
 import { readAttachment } from "../store/attachments.js";
 import { listSessions, readAllRecent, readSession } from "../store/log.js";
-import { getPublicUrl } from "../runtime.js";
+import { getPublicUrl, getVersion } from "../runtime.js";
 import {
   buildMultipartRelated,
   getBoundary,
@@ -47,7 +47,7 @@ function rawMessage(record: LogRecord): string {
 dataRoute.get("/health", (c) => c.json({ ok: true }));
 
 dataRoute.get("/runtime", (c) =>
-  c.json({ publicUrl: getPublicUrl(), callbackUrl: `${getPublicUrl()}/punchout/return` }),
+  c.json({ publicUrl: getPublicUrl(), callbackUrl: `${getPublicUrl()}/punchout/return`, version: getVersion() }),
 );
 
 dataRoute.get("/sessions", (c) => c.json(listSessions()));

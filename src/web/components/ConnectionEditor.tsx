@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Buyer, Connection, ConnectionMode, Supplier } from "../types";
+import { ConfirmButton } from "./PartyEditors";
 
 interface Props {
   connection: Connection | null; // null => new connection draft
@@ -164,9 +165,7 @@ export function ConnectionEditor({ connection, buyers, suppliers, onSave, onDele
         <button className="btn-primary" onClick={save} disabled={saving || noParties}>
           {saving ? "Saving…" : connection ? "Save changes" : "Create connection"}
         </button>
-        {connection && onDelete && (
-          <button className="btn-danger" onClick={() => onDelete(connection.id)}>Delete</button>
-        )}
+        {connection && onDelete && <ConfirmButton onConfirm={() => onDelete(connection.id)} />}
       </div>
     </div>
   );

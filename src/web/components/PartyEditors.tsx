@@ -45,6 +45,35 @@ export interface SaveProps {
   onDelete?: (id: string) => Promise<void>;
 }
 
+/** Two-step delete button: first click arms it, second click confirms.
+ *  Auto-disarms after 3s. Avoids accidental destructive clicks. */
+export function ConfirmButton({
+  onConfirm,
+  label = "Delete",
+  confirmLabel = "Confirm delete?",
+}: {
+  onConfirm: () => void;
+  label?: string;
+  confirmLabel?: string;
+}) {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(false), 3000);
+    return () => clearTimeout(t);
+  }, [armed]);
+  return (
+    <button
+      type="button"
+      className="btn-danger"
+      aria-label={armed ? confirmLabel : label}
+      onClick={() => (armed ? onConfirm() : setArmed(true))}
+    >
+      {armed ? confirmLabel : label}
+    </button>
+  );
+}
+
 export function Actions({
   saving,
   err,
@@ -67,11 +96,7 @@ export function Actions({
         <button className="btn-primary" onClick={onSave} disabled={saving}>
           {saving ? "Saving…" : isNew ? `Create ${noun}` : "Save changes"}
         </button>
-        {!isNew && onDelete && (
-          <button className="btn-danger" onClick={onDelete}>
-            Delete
-          </button>
-        )}
+        {!isNew && onDelete && <ConfirmButton onConfirm={onDelete} />}
       </div>
     </>
   );
