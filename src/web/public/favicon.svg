@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="7" fill="#0f172a"/>
+  <!-- OUT ↑ (magenta) and IN ↓ (cyan): the bidirectional PunchOut exchange. -->
+  <g fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M11 22 V11 M7.5 14.5 L11 11 L14.5 14.5" stroke="#f0abfc"/>
+    <path d="M21 10 V21 M17.5 17.5 L21 21 L24.5 17.5" stroke="#67e8f9"/>
+  </g>
+</svg>
