@@ -97,7 +97,17 @@ export function ConnectionEditor({ connection, buyers, suppliers, onSave, onDele
         <legend>Credentials for this pair</legend>
         <div className="form-row">
           <label>Shared Secret <span className="hint">(the "password" this buyer uses at this supplier)</span></label>
-          <input value={form.sharedSecret ?? ""} onChange={(e) => set({ sharedSecret: e.target.value })} placeholder="shared secret" />
+          <input
+            type="password"
+            autoComplete="off"
+            value={form.sharedSecret ?? ""}
+            onChange={(e) => set({ sharedSecret: e.target.value })}
+            placeholder={
+              (connection as { hasSharedSecret?: boolean } | null)?.hasSharedSecret
+                ? "•••••• (set — leave blank to keep)"
+                : "shared secret"
+            }
+          />
         </div>
 
         <label className="dangling-toggle">

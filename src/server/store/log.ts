@@ -11,10 +11,20 @@ import { ensureDirs, sessionFile, sessionsDir } from "./paths.js";
 
 export type LogInput = Omit<LogRecord, "id" | "ts"> & Partial<Pick<LogRecord, "id" | "ts">>;
 
+// Never persist or surface the live Sender SharedSecret. The real secret still
+// goes on the wire (the body sent to the supplier is independent of what we log);
+// only the stored/streamed/displayed copy is masked. Applied centrally so every
+// appendLog caller (flow, sim, punchout-return) is covered.
+function redactSecrets(body: string | undefined): string {
+  if (!body) return body ?? "";
+  return body.replace(/(<SharedSecret>)[\s\S]*?(<\/SharedSecret>)/g, "$1***$2");
+}
+
 export function appendLog(input: LogInput): LogRecord {
   ensureDirs();
   const record: LogRecord = {
     ...input,
+    body: redactSecrets(input.body),
     id: input.id ?? nanoid(12),
     ts: input.ts ?? new Date().toISOString(),
   };

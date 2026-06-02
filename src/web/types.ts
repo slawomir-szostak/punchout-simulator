@@ -32,6 +32,8 @@ import type { Buyer, Connection, Supplier } from "../server/cxml/types";
 export interface ConnectionWithParties extends Connection {
   buyer?: Buyer;
   supplier?: Supplier;
+  /** Server masks `sharedSecret` to "" on read and reports presence here. */
+  hasSharedSecret?: boolean;
 }
 
 export interface SessionSummary {

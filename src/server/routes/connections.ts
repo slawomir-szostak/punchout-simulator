@@ -48,11 +48,17 @@ function withLabel(input: ConnectionInput): ConnectionInput {
   return { ...input, name: `${buyer?.name ?? "Buyer"} → ${supplier?.name ?? "Supplier"}` };
 }
 
+// The shared secret is write-only over the API: never echo it back. Callers see
+// whether one is set (hasSharedSecret) and re-submit a value only to change it.
+function maskSecret<T extends { sharedSecret?: string }>(conn: T): T & { hasSharedSecret: boolean } {
+  return { ...conn, sharedSecret: "", hasSharedSecret: !!conn.sharedSecret };
+}
+
 // Returns connections enriched with resolved buyer/supplier for convenient display.
 connectionsRoute.get("/", (c) =>
   c.json(
     listConnections().map((conn) => ({
-      ...conn,
+      ...maskSecret(conn),
       buyer: getBuyer(conn.buyerId),
       supplier: getSupplier(conn.supplierId),
     })),
@@ -63,23 +69,27 @@ connectionsRoute.post("/", async (c) => {
   const input = normalize(await c.req.json().catch(() => ({})));
   const errors = validate(input);
   if (errors.length) return c.json({ errors }, 400);
-  return c.json(await createConnection(withLabel(input)), 201);
+  return c.json(maskSecret(await createConnection(withLabel(input))), 201);
 });
 
 connectionsRoute.get("/:id", (c) => {
   const resolved = resolveConnection(c.req.param("id"));
-  if (resolved) return c.json({ ...resolved.connection, buyer: resolved.buyer, supplier: resolved.supplier });
+  if (resolved) return c.json({ ...maskSecret(resolved.connection), buyer: resolved.buyer, supplier: resolved.supplier });
   const conn = getConnection(c.req.param("id"));
-  return conn ? c.json(conn) : c.json({ error: "not found" }, 404);
+  return conn ? c.json(maskSecret(conn)) : c.json({ error: "not found" }, 404);
 });
 
 connectionsRoute.put("/:id", async (c) => {
   const existing = getConnection(c.req.param("id"));
   if (!existing) return c.json({ error: "not found" }, 404);
-  const input = normalize({ ...existing, ...(await c.req.json().catch(() => ({}))) });
+  const body = await c.req.json().catch(() => ({}));
+  // A blank sharedSecret on update means "unchanged" (it is never sent back to
+  // the client to begin with), so keep the stored one rather than clearing it.
+  if (!body || !body.sharedSecret) delete (body as any).sharedSecret;
+  const input = normalize({ ...existing, ...body });
   const errors = validate(input);
   if (errors.length) return c.json({ errors }, 400);
-  return c.json(await updateConnection(c.req.param("id"), withLabel(input)));
+  return c.json(maskSecret(await updateConnection(c.req.param("id"), withLabel(input)) as any));
 });
 
 connectionsRoute.delete("/:id", async (c) => {
