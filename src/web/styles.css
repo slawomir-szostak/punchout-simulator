@@ -54,6 +54,7 @@ a { color: #93c5fd; }
 }
 .conn-list li:hover { background: var(--panel); }
 .conn-list li.active { background: #1c2942; }
+.conn-list li.entity-row { grid-template-columns: 1fr; }
 .mode-dot { width: 8px; height: 8px; border-radius: 50%; grid-row: span 2; }
 .mode-virtual-buyer { background: var(--accent); }
 .mode-virtual-supplier { background: var(--ok); }

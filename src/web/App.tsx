@@ -264,7 +264,7 @@ function EntityList<T extends { id: string; name: string }>({
       </div>
       <ul className="conn-list">
         {items.map((it) => (
-          <li key={it.id} className={it.id === selectedId ? "active" : ""} onClick={() => onSelect(it.id)}>
+          <li key={it.id} className={`entity-row ${it.id === selectedId ? "active" : ""}`} onClick={() => onSelect(it.id)}>
             <div className="conn-name">{it.name}</div>
             <div className="conn-mode">{subtitle(it)}</div>
           </li>
