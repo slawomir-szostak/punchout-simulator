@@ -111,6 +111,33 @@ describe("Mode A loopback", () => {
     expect(res.statusCode).toBe("200");
   });
 
+  it("rejects a non-http(s) BrowserFormPost URL (no javascript: XSS)", async () => {
+    const setupXml = `<cXML payloadID="p@h" timestamp="t"><Header>
+      <From><Credential domain="DUNS"><Identity>123456789</Identity></Credential></From>
+      <To><Credential domain="DUNS"><Identity>987654321</Identity></Credential></To>
+      <Sender><Credential domain="DUNS"><Identity>123456789</Identity><SharedSecret>demo-secret</SharedSecret></Credential></Sender>
+      </Header><Request><PunchOutSetupRequest operation="create">
+        <BuyerCookie>evil-1</BuyerCookie>
+        <BrowserFormPost><URL>javascript:alert(document.cookie)</URL></BrowserFormPost>
+      </PunchOutSetupRequest></Request></cXML>`;
+    const respXml = await fetch(`${base}/sim/demo-supplier/punchout`, {
+      method: "POST",
+      headers: { "content-type": "text/xml" },
+      body: setupXml,
+    }).then((r) => r.text());
+    const startPage = decodeHtml(/<URL>([\s\S]*?)<\/URL>/.exec(respXml)![1]);
+    const formpost = new URL(startPage).searchParams.get("formpost");
+    expect(formpost).toBe(""); // dropped, not the javascript: URL
+
+    // And the checkout page must never render a javascript: action.
+    const checkoutHtml = await fetch(`${base}/sim/demo-supplier/checkout`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ cookie: "x", formpost: "javascript:alert(1)", q_0: "1" }).toString(),
+    }).then((r) => r.text());
+    expect(checkoutHtml).not.toContain("javascript:");
+  });
+
   it("dangling-cid is detected by the buyer build AND rejected by the supplier", async () => {
     const res = await fetch(`${base}/api/connections/demo-buyer/order`, {
       method: "POST",

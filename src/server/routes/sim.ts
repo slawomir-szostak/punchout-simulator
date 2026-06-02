@@ -67,6 +67,20 @@ function host(): string {
   }
 }
 
+// The BrowserFormPost URL is buyer-supplied (from the SetupRequest). It is later
+// rendered as an auto-submitted <form action>, so a non-http(s) scheme such as
+// `javascript:` would be an XSS vector — escaping HTML entities does not
+// neutralize the scheme. Allow only http(s); otherwise drop it.
+function safeHttpUrl(u: string | undefined): string {
+  if (!u) return "";
+  try {
+    const parsed = new URL(u.trim());
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? u.trim() : "";
+  } catch {
+    return "";
+  }
+}
+
 function catalogOf(conn: Connection): CatalogItem[] {
   return conn.catalog && conn.catalog.length > 0 ? conn.catalog : DEMO_CATALOG;
 }
@@ -88,7 +102,7 @@ simRoute.post("/:id/punchout", async (c) => {
   const doc = parseXml(reqXml);
   const reqRoot = root(doc)?.Request?.PunchOutSetupRequest;
   const buyerCookie = text(reqRoot?.BuyerCookie) || `pos-${nanoid(16)}`;
-  const formPost = text(reqRoot?.BrowserFormPost?.URL) || "";
+  const formPost = safeHttpUrl(text(reqRoot?.BrowserFormPost?.URL));
 
   const reqValidation = validateDocument(reqXml, {
     connection: conn,
@@ -190,7 +204,9 @@ simRoute.post("/:id/checkout", async (c) => {
 
   const form = await c.req.parseBody();
   const cookie = String(form.cookie ?? `pos-${nanoid(16)}`);
-  const formpost = String(form.formpost ?? "");
+  // Re-validate the scheme here too: this value round-trips through the catalog
+  // page, so never trust it blind when rendering the auto-submitted form action.
+  const formpost = safeHttpUrl(String(form.formpost ?? ""));
   const catalog = catalogOf(conn!);
 
   const items: CartItem[] = [];
