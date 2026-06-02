@@ -188,14 +188,20 @@ export function App() {
                 <button className="btn-secondary" onClick={() => { setPanel("new"); setSelectedConnId(null); }}>+ New</button>
               </div>
               <ul className="conn-list">
-                {connections.map((c) => (
+                {connections.map((c) => {
+                  const select = () => { setSelectedConnId(c.id); setPanel("flow"); };
+                  return (
                   <li key={c.id} className={c.id === selectedConnId && panel !== "new" ? "active" : ""}
-                      onClick={() => { setSelectedConnId(c.id); setPanel("flow"); }}>
+                      role="button" tabIndex={0}
+                      aria-current={c.id === selectedConnId && panel !== "new" ? "true" : undefined}
+                      onClick={select}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select(); } }}>
                     <span className={`mode-dot mode-${c.mode}`} />
                     <div className="conn-name">{c.name}</div>
                     <div className="conn-mode">{c.buyer?.name} → {c.supplier?.name}</div>
                   </li>
-                ))}
+                  );
+                })}
               </ul>
             </>
           )}
@@ -332,7 +338,15 @@ function EntityList<T extends { id: string; name: string }>({
       </div>
       <ul className="conn-list">
         {items.map((it) => (
-          <li key={it.id} className={`entity-row ${it.id === selectedId ? "active" : ""}`} onClick={() => onSelect(it.id)}>
+          <li
+            key={it.id}
+            className={`entity-row ${it.id === selectedId ? "active" : ""}`}
+            role="button"
+            tabIndex={0}
+            aria-current={it.id === selectedId ? "true" : undefined}
+            onClick={() => onSelect(it.id)}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(it.id); } }}
+          >
             <div className="conn-name">{it.name}</div>
             <div className="conn-mode">{subtitle(it)}</div>
           </li>

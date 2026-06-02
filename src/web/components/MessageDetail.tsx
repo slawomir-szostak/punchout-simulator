@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { LogRecord } from "../types";
 import { api, withToken } from "../api";
 import { CxmlEditor } from "./CxmlEditor";
@@ -11,6 +11,7 @@ export function MessageDetail({ record, onClose }: { record: LogRecord; onClose:
   const [raw, setRaw] = useState<string | null>(null);
   const [rawError, setRawError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const modalRef = useRef<HTMLDivElement>(null);
 
   const isMultipart = /^multipart\//i.test(record.contentType ?? "");
 
@@ -21,6 +22,40 @@ export function MessageDetail({ record, onClose }: { record: LogRecord; onClose:
     setRawError(null);
     setCopied(false);
   }, [record.id]);
+
+  // Accessibility: move focus into the dialog on open, restore it on close,
+  // close on Esc, and trap Tab within the dialog.
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    modalRef.current?.focus();
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+        return;
+      }
+      if (e.key !== "Tab" || !modalRef.current) return;
+      const focusable = modalRef.current.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])',
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const activeEl = document.activeElement;
+      if (e.shiftKey && activeEl === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && activeEl === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      previouslyFocused?.focus?.();
+    };
+  }, [onClose]);
 
   // Lazily fetch the reconstructed raw wire message the first time it's shown.
   useEffect(() => {
@@ -42,7 +77,15 @@ export function MessageDetail({ record, onClose }: { record: LogRecord; onClose:
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${record.docType} message detail`}
+        tabIndex={-1}
+        ref={modalRef}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal-head">
           <div>
             <span className={`dir dir-${record.direction}`}>{record.direction === "out" ? "OUT ↑" : "IN ↓"}</span>
