@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyExtrinsicTokens,
   buildOrderRequest,
   buildPunchOutOrderMessage,
   buildSetupRequest,
@@ -107,5 +108,49 @@ describe("buildPunchOutOrderMessage", () => {
     });
     expect(xml).toContain('<Money currency="USD">59.00</Money>');
     expect(xml).toContain("<BuyerCookie>c1</BuyerCookie>");
+  });
+
+  it("honors a custom operationAllowed and DTD version", () => {
+    const xml = buildPunchOutOrderMessage({
+      from: supplier, to: buyer, sender: supplier, buyerCookie: "c1",
+      payloadId: "p@h", timestamp: "2026-01-01T00:00:00.000Z", currency: "USD",
+      items: [], dtdVersion: "1.2.023", operationAllowed: "edit",
+    });
+    expect(xml).toContain("cXML/1.2.023/cXML.dtd");
+    expect(xml).toContain('operationAllowed="edit"');
+  });
+});
+
+describe("profile-driven cXML (version / UserAgent / operation / extrinsics)", () => {
+  const base = {
+    from: buyer, to: supplier, sender: buyer, sharedSecret: "s3cret",
+    buyerCookie: "cookie-1", browserFormPostUrl: "http://localhost:8080/punchout/return",
+    payloadId: "p@h", timestamp: "2026-01-01T00:00:00.000Z",
+  };
+
+  it("defaults to DTD 1.2.045 when no version is given (backward compatible)", () => {
+    expect(buildSetupRequest(base)).toContain("cXML/1.2.045/cXML.dtd");
+  });
+
+  it("emits a per-document DTD version, UserAgent, operation and Extrinsic", () => {
+    const xml = buildSetupRequest({
+      ...base,
+      dtdVersion: "1.2.014",
+      userAgent: "Coupa Procurement",
+      operation: "edit",
+      extrinsics: [{ name: "User", value: "cookie-1" }],
+    });
+    expect(xml).toContain("cXML/1.2.014/cXML.dtd");
+    expect(xml).toContain("<UserAgent>Coupa Procurement</UserAgent>");
+    expect(xml).toContain('operation="edit"');
+    expect(xml).toContain('<Extrinsic name="User">cookie-1</Extrinsic>');
+  });
+});
+
+describe("applyExtrinsicTokens", () => {
+  it("substitutes ${token} placeholders", () => {
+    expect(applyExtrinsicTokens("u=${buyerCookie}", { buyerCookie: "abc" })).toBe("u=abc");
+    expect(applyExtrinsicTokens("o=${orderId}", { orderId: "PO-9" })).toBe("o=PO-9");
+    expect(applyExtrinsicTokens("none", {})).toBe("none");
   });
 });

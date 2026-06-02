@@ -15,7 +15,6 @@ const blank = (): Partial<Connection> => ({
   mode: "virtual-buyer",
   sharedSecret: "",
   deploymentMode: "test",
-  authStyle: "SharedSecret",
   attachmentEncoding: "binary",
 });
 
@@ -132,13 +131,6 @@ export function ConnectionEditor({ connection, buyers, suppliers, onSave, onDele
           <select value={form.deploymentMode} onChange={(e) => set({ deploymentMode: e.target.value as any })}>
             <option value="test">test</option>
             <option value="production">production</option>
-          </select>
-        </div>
-        <div className="form-row">
-          <label>Auth style</label>
-          <select value={form.authStyle} onChange={(e) => set({ authStyle: e.target.value as any })}>
-            <option value="SharedSecret">SharedSecret</option>
-            <option value="MAC">MAC</option>
           </select>
         </div>
       </div>

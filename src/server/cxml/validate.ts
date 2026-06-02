@@ -14,7 +14,6 @@ import {
   type ParsedDoc,
 } from "./parse.js";
 import type {
-  AuthStyle,
   Credential,
   DocType,
   ValidationIssue,
@@ -33,7 +32,6 @@ export interface ExpectedCredentials {
   to?: Credential;
   sender?: Credential;
   sharedSecret?: string;
-  authStyle?: AuthStyle;
 }
 
 export interface ValidationContext {
@@ -128,7 +126,7 @@ function checkGeneral(doc: ParsedDoc, ctx: ValidationContext, issues: Issues) {
 
 function checkSharedSecret(doc: ParsedDoc, ctx: ValidationContext, issues: Issues) {
   const exp = ctx.expected;
-  if (!exp || exp.authStyle !== "SharedSecret") return;
+  if (!exp) return;
   const creds = getHeaderCredentials(doc);
   if (!creds.sharedSecret) {
     issues.warn(

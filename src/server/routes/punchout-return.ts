@@ -70,7 +70,6 @@ punchoutReturnRoute.post("/return", async (c) => {
         from: resolved.buyer.identity,
         to: resolved.supplier.identity,
         sender: resolved.connection.senderIdentity ?? resolved.supplier.identity,
-        authStyle: resolved.connection.authStyle,
       }
     : undefined;
 

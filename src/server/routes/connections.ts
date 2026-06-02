@@ -30,7 +30,6 @@ function normalize(body: any): ConnectionInput {
     sharedSecret: String(body?.sharedSecret ?? ""),
     senderIdentity: sender,
     deploymentMode: body?.deploymentMode === "production" ? "production" : "test",
-    authStyle: body?.authStyle === "MAC" ? "MAC" : "SharedSecret",
     attachmentEncoding: body?.attachmentEncoding === "base64" ? "base64" : "binary",
   };
 }

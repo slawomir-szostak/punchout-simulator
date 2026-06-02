@@ -5,6 +5,7 @@ import type {
   ConnectionWithParties,
   LogRecord,
   OrderResult,
+  Profile,
   SessionSummary,
   SetupResult,
   Supplier,
@@ -37,6 +38,9 @@ function crud<T>(base: string) {
 export const api = {
   buyers: crud<Buyer>("/api/buyers"),
   suppliers: crud<Supplier>("/api/suppliers"),
+  profiles: crud<Profile>("/api/profiles"),
+
+  listProfilePresets: () => fetch("/api/profile-presets").then((r) => jsonOrThrow<Profile[]>(r)),
 
   listConnections: () =>
     fetch("/api/connections").then((r) => jsonOrThrow<ConnectionWithParties[]>(r)),

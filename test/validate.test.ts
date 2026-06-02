@@ -6,7 +6,6 @@ const expected: ExpectedCredentials = {
   to: { domain: "DUNS", identity: "222" },
   sender: { domain: "DUNS", identity: "111" },
   sharedSecret: "s3cret",
-  authStyle: "SharedSecret",
 };
 
 const codes = (xml: string, ctx = {}) =>
@@ -24,6 +23,23 @@ describe("SetupResponse validation", () => {
     const c = codes(xml);
     expect(c).toContain("status-not-200");
     expect(c).toContain("missing-startpage");
+  });
+});
+
+describe("shared-secret validation", () => {
+  // A SetupRequest with no <SharedSecret> in the Sender.
+  const noSecret = `<cXML payloadID="p@h" timestamp="t"><Header>
+    <From><Credential domain="DUNS"><Identity>111</Identity></Credential></From>
+    <To><Credential domain="DUNS"><Identity>222</Identity></Credential></To>
+    <Sender><Credential domain="DUNS"><Identity>111</Identity></Credential><UserAgent>x</UserAgent></Sender>
+    </Header><Request><PunchOutSetupRequest operation="create"><BuyerCookie>c</BuyerCookie>
+    <BrowserFormPost><URL>http://localhost/return</URL></BrowserFormPost></PunchOutSetupRequest></Request></cXML>`;
+
+  it("warns about a missing SharedSecret when credentials are expected", () => {
+    expect(codes(noSecret, { expected, forceDocType: "SetupRequest" })).toContain("missing-sharedsecret");
+  });
+  it("does not check the SharedSecret when no expected credentials are provided", () => {
+    expect(codes(noSecret, { forceDocType: "SetupRequest" })).not.toContain("missing-sharedsecret");
   });
 });
 

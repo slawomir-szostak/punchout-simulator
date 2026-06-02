@@ -4,9 +4,58 @@
 
 export type ConnectionMode = "virtual-buyer" | "virtual-supplier";
 export type DeploymentMode = "test" | "production";
-export type AuthStyle = "SharedSecret" | "MAC";
 /** MIME Content-Transfer-Encoding used for OrderRequest attachment parts. */
 export type AttachmentEncoding = "binary" | "base64";
+/** How the browser posts the punchback (PunchOutOrderMessage) back to the buyer. */
+export type CartReturnTransport = "cxml-urlencoded" | "cxml-base64" | "raw";
+/** PunchOutSetupRequest operation. */
+export type SetupOperation = "create" | "edit" | "inspect";
+/** Which outbound document a profile Extrinsic is injected into. */
+export type ExtrinsicScope = "setup" | "order";
+
+/** A profile Extrinsic template. `value` may contain ${buyerCookie} / ${orderId} tokens. */
+export interface ProfileExtrinsic {
+  name: string;
+  value: string;
+  scope: ExtrinsicScope;
+}
+
+/**
+ * Per-document-type cXML DTD versions (e.g. "1.2.045"). `default` is the
+ * fallback used for any document type without an explicit entry. Keys match the
+ * DocType union (note: PunchOutSetupRequest maps to `SetupRequest`).
+ */
+export interface DtdVersionMap {
+  default: string;
+  SetupRequest?: string;
+  SetupResponse?: string;
+  PunchOutOrderMessage?: string;
+  OrderRequest?: string;
+  OrderResponse?: string;
+}
+
+/**
+ * A reusable procurement-platform profile (Ariba/Coupa/Jaggaer/...). It holds
+ * the platform-intrinsic DEFAULTS for the cXML a buyer running that platform
+ * emits. A Connection's own fields (sharedSecret, senderIdentity, and the
+ * concrete attachmentEncoding) still override these per pair.
+ */
+export interface Profile {
+  id: string;
+  name: string;
+  /** Free-text platform label, e.g. "Coupa". */
+  platform?: string;
+  dtdVersions: DtdVersionMap;
+  userAgent: string;
+  setupOperation: SetupOperation;
+  attachmentEncoding: AttachmentEncoding;
+  cartReturnTransport: CartReturnTransport;
+  extrinsics: ProfileExtrinsic[];
+  /** True for code-seeded presets. */
+  builtin?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
 
 /** A cXML credential: the `domain`/identity pair used in From/To/Sender. */
 export interface Credential {
@@ -37,6 +86,11 @@ export interface Buyer {
   id: string;
   name: string;
   identity: Credential;
+  /**
+   * Optional reference to a procurement-platform Profile. When unset, the
+   * built-in "Generic" profile defaults apply (today's behavior).
+   */
+  profileId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -76,7 +130,6 @@ export interface Connection {
   senderIdentity?: Credential;
 
   deploymentMode: DeploymentMode;
-  authStyle: AuthStyle;
   /**
    * Content-Transfer-Encoding for OrderRequest attachment parts sent over this
    * connection. `binary` writes raw bytes (valid over HTTP, more compact);

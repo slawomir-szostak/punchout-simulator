@@ -27,7 +27,11 @@ const cred = (c: any): Credential => ({
 export const buyersRoute = new Hono();
 
 function normalizeBuyer(body: any): BuyerInput {
-  return { name: String(body?.name ?? "Untitled buyer"), identity: cred(body?.identity) };
+  return {
+    name: String(body?.name ?? "Untitled buyer"),
+    identity: cred(body?.identity),
+    profileId: body?.profileId ? String(body.profileId) : undefined,
+  };
 }
 
 buyersRoute.get("/", (c) => c.json(listBuyers()));

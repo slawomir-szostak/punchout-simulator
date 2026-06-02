@@ -152,7 +152,7 @@ backend, so there is no CORS between them).
 | XML parsing | `fast-xml-parser` |
 | cXML building | template literals (full control over shape/ordering/`xml:lang`) |
 | multipart/related | hand-assembled (`Buffer` + boundary) |
-| Storage | `lowdb` (`config.json`) for buyers/suppliers/connections · append-only JSONL per session for logs · separate files for attachments |
+| Storage | `lowdb` (`config.json`) for buyers/suppliers/connections/profiles · append-only JSONL per session for logs · separate files for attachments |
 
 ```
 src/
@@ -163,17 +163,46 @@ src/
 
 ### Data model
 
-The config is normalized into three entities:
+The config is normalized into four entities:
 
-- **Buyer** — a reusable party holding its own cXML identity (the `From` credential).
+- **Buyer** — a reusable party holding its own cXML identity (the `From` credential) and an optional **platform profile** reference (see below).
 - **Supplier** — a reusable party holding its cXML identity (`To`) plus its **endpoints** (PunchOut URL, Order URL) and an optional mock catalog. Endpoints are intrinsic to the supplier — defined once, not per relationship.
-- **Connection** — the edge pairing one Buyer with one Supplier. It holds only what is specific to that pair: which side the tool simulates (`mode`), the `sharedSecret`, an optional per-pair Sender identity override (defaults to the buyer's identity), `authStyle`, `deploymentMode`, and `attachmentEncoding` (see below).
+- **Connection** — the edge pairing one Buyer with one Supplier. It holds only what is specific to that pair: which side the tool simulates (`mode`), the `sharedSecret`, an optional per-pair Sender identity override (defaults to the buyer's identity), `authStyle`, `deploymentMode`, and `attachmentEncoding`.
+- **Profile** — a reusable **procurement-platform profile** (Ariba/Coupa/Jaggaer/…) referenced by a Buyer. See below.
 
 At send time: `From` = buyer identity, `To` = supplier identity, `Sender` = the connection's override (or the buyer), and the request targets the supplier's endpoints. The mock-supplier endpoints are keyed by supplier id (`/sim/<supplierId>/…`).
+
+### Simulating different procurement platforms (Buyer profiles)
+
+Real procurement systems emit cXML differently. A **Profile** captures a platform's
+emission behavior and is assigned to a Buyer, so you can drive a supplier as if it were
+Ariba, Coupa, Jaggaer, Oracle, SAP, or Workday:
+
+| Profile field | Effect on the documents the buyer emits |
+|---|---|
+| `dtdVersions` | The `<!DOCTYPE … cXML/<version>/cXML.dtd>` **per document type** (e.g. Coupa: SetupRequest `1.2.014`, PunchOutOrderMessage `1.2.023`). |
+| `userAgent` | The `<UserAgent>` in the Sender. |
+| `setupOperation` | `PunchOutSetupRequest@operation` (`create`/`edit`/`inspect`). |
+| `attachmentEncoding` | Default `Content-Transfer-Encoding` for OrderRequest attachments (`binary`/`base64`). |
+| `cartReturnTransport` | How the punchback is returned in Mode B: `cxml-urlencoded`, `cxml-base64`, or `raw`. |
+| `extrinsics` | `<Extrinsic>` templates injected into the setup/order documents (values may use `${buyerCookie}` / `${orderId}`). |
+
+Built-in presets (Ariba, Coupa, Jaggaer, Oracle, SAP, Workday, Generic) ship out of the box
+and can be **loaded into the editor** as a starting point, then customized. A Profile holds
+the *defaults*; a Connection's own `attachmentEncoding` overrides it per pair. A Buyer with no
+profile uses the **Generic** defaults (`1.2.045` / `punchout-simulator` / binary /
+cxml-urlencoded) — i.e. the tool's original behavior.
+
+> Authentication is **SharedSecret** only. (MAC / `CredentialMac` — used by network-routed
+> Ariba/SAP flows — is intentionally out of scope for now.)
+>
+> SAP SRM in reality speaks **OCI** (form parameters), which this cXML-only tool cannot emit;
+> the SAP profile models the cXML/Business-Network side (base64 attachments + cart return).
 
 ### Endpoints
 
 - `*/api/buyers`, `*/api/suppliers` — CRUD for the reusable parties
+- `*/api/profiles` — CRUD for procurement-platform profiles · `GET /api/profile-presets` — the built-in preset library
 - `*/api/connections` — CRUD for connection edges (reference a buyer + supplier)
 - `GET /api/connections/:id/setup/preview` · `POST …/setup` — preview / send the SetupRequest
 - `POST /api/connections/:id/order/preview` · `POST …/order` — preview / send the OrderRequest (multipart if attachments)

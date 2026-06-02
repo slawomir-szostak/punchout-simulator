@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { Buyer, CatalogItem, Credential, Supplier } from "../types";
+import type { Buyer, CatalogItem, Credential, Profile, Supplier } from "../types";
 
 // Editors for the standalone Buyer and Supplier entities. Each holds only the
 // attributes intrinsic to that party (see the normalized model).
@@ -34,18 +34,18 @@ function CredentialFields({
   );
 }
 
-function useDraft<T>(initial: T, depsKey: string) {
+export function useDraft<T>(initial: T, depsKey: string) {
   const [draft, setDraft] = useState<T>(initial);
   useEffect(() => setDraft(initial), [depsKey]);
   return [draft, setDraft] as const;
 }
 
-interface SaveProps {
+export interface SaveProps {
   onSave: (data: any) => Promise<void>;
   onDelete?: (id: string) => Promise<void>;
 }
 
-function Actions({
+export function Actions({
   saving,
   err,
   isNew,
@@ -79,7 +79,12 @@ function Actions({
 
 const blankCred = (): Credential => ({ domain: "DUNS", identity: "" });
 
-export function BuyerEditor({ buyer, onSave, onDelete }: { buyer: Buyer | null } & SaveProps) {
+export function BuyerEditor({
+  buyer,
+  profiles,
+  onSave,
+  onDelete,
+}: { buyer: Buyer | null; profiles: Profile[] } & SaveProps) {
   const [draft, setDraft] = useDraft<Partial<Buyer>>(
     buyer ?? { name: "", identity: blankCred() },
     buyer?.id ?? "new",
@@ -111,6 +116,23 @@ export function BuyerEditor({ buyer, onSave, onDelete }: { buyer: Buyer | null }
         value={draft.identity ?? blankCred()}
         onChange={(identity) => setDraft({ ...draft, identity })}
       />
+      <div className="form-row">
+        <label>
+          Platform profile{" "}
+          <span className="hint">(how this buyer's cXML is emitted — version, UserAgent, transport…)</span>
+        </label>
+        <select
+          value={draft.profileId ?? ""}
+          onChange={(e) => setDraft({ ...draft, profileId: e.target.value || undefined })}
+        >
+          <option value="">Generic (default)</option>
+          {profiles.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+      </div>
       <Actions saving={saving} err={err} isNew={!buyer} noun="buyer" onSave={save} onDelete={buyer && onDelete ? () => onDelete(buyer.id) : undefined} />
     </div>
   );

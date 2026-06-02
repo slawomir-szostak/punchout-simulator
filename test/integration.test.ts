@@ -252,6 +252,38 @@ describe("Mode A loopback", () => {
     expect(raw).toContain("cid:doc"); // the XML still references the attachment
   });
 
+  it("emits the buyer's platform profile cXML (Coupa demo buyer: DTD 1.2.014 + UserAgent)", async () => {
+    const setup = await fetch(`${base}/api/connections/demo/setup`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    }).then((r) => r.json());
+    expect(setup.request.body).toContain("cXML/1.2.014/cXML.dtd");
+    expect(setup.request.body).toContain("<UserAgent>Coupa Procurement</UserAgent>");
+  });
+
+  it("returns the cart using the buyer profile's transport (base64 for an SAP profile)", async () => {
+    // A buyer on the sap-srm preset (cartReturnTransport: cxml-base64) wired to the demo supplier.
+    const buyer = await fetch(`${base}/api/buyers`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "SAP Buyer", identity: { domain: "DUNS", identity: "55555" }, profileId: "sap-srm" }),
+    }).then((r) => r.json());
+    await fetch(`${base}/api/connections`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ buyerId: buyer.id, supplierId: "demo-supplier", mode: "virtual-buyer", sharedSecret: "demo-secret" }),
+    });
+
+    const checkoutHtml = await fetch(`${base}/sim/demo-supplier/checkout`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ cookie: "sap-1", formpost: `${base}/punchout/return`, bd: "DUNS", bi: "55555", q_0: "1" }).toString(),
+    }).then((r) => r.text());
+    expect(checkoutHtml).toContain('name="cxml-base64"');
+    expect(checkoutHtml).not.toContain('name="cxml-urlencoded"');
+  });
+
   it("dangling-cid is detected by the buyer build AND rejected by the supplier", async () => {
     const res = await fetch(`${base}/api/connections/demo/order`, {
       method: "POST",

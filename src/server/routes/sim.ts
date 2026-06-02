@@ -1,8 +1,11 @@
 import { Hono } from "hono";
 import { nanoid } from "nanoid";
 import {
+  dtdVersionFor,
+  effectiveProfile,
   findConnectionBySupplierAndBuyerIdentity,
   getSupplier,
+  type EffectiveProfile,
 } from "../store/config.js";
 import { appendLog } from "../store/log.js";
 import { saveAttachment } from "../store/attachments.js";
@@ -69,8 +72,15 @@ function expectedFor(supplierId: string, from: Credential | undefined): Expected
     to: r.supplier.identity,
     sender: r.connection.senderIdentity ?? r.buyer.identity,
     sharedSecret: r.connection.sharedSecret,
-    authStyle: r.connection.authStyle,
   };
+}
+
+// Effective platform profile of the buyer talking to this supplier (if a
+// matching connection exists). Lets the mock supplier mirror the buyer's
+// platform when emitting its responses/punchback (DTD version, cart transport).
+function effFor(supplierId: string, from: Credential | undefined): EffectiveProfile | undefined {
+  const r = findConnectionBySupplierAndBuyerIdentity(supplierId, from);
+  return r ? effectiveProfile(r.connection, r.buyer) : undefined;
 }
 
 // --- 1. PunchOutSetupRequest in -> PunchOutSetupResponse out ------------------
@@ -102,6 +112,7 @@ simRoute.post("/:id/punchout", async (c) => {
     `&formpost=${encodeURIComponent(formPost)}` +
     `&bd=${encodeURIComponent(buyerCred.domain)}&bi=${encodeURIComponent(buyerCred.identity)}`;
 
+  const eff = effFor(supplier.id, from);
   const respXml = buildSetupResponse({
     payloadId: makePayloadId(host(), new Date().toISOString()),
     timestamp: new Date().toISOString(),
@@ -109,6 +120,7 @@ simRoute.post("/:id/punchout", async (c) => {
     from: supplier.identity,
     to: buyerCred,
     sender: supplier.identity,
+    dtdVersion: eff ? dtdVersionFor(eff, "SetupResponse") : undefined,
   });
   appendLog({
     sessionId: buyerCookie,
@@ -206,6 +218,7 @@ simRoute.post("/:id/checkout", async (c) => {
   });
 
   const currency = items[0]?.currency ?? "USD";
+  const eff = effFor(supplier.id, buyerCred);
   const xml = buildPunchOutOrderMessage({
     from: supplier.identity,
     to: buyerCred,
@@ -215,6 +228,7 @@ simRoute.post("/:id/checkout", async (c) => {
     timestamp: new Date().toISOString(),
     currency,
     items,
+    dtdVersion: eff ? dtdVersionFor(eff, "PunchOutOrderMessage") : undefined,
   });
 
   appendLog({
@@ -227,16 +241,56 @@ simRoute.post("/:id/checkout", async (c) => {
     validation: validateDocument(xml, { forceDocType: "PunchOutOrderMessage" }),
   });
 
-  return c.html(`<!doctype html><html lang="en"><head><meta charset="utf-8">
+  // The buyer's platform dictates how the browser returns the cart. Default
+  // (and <noscript> fallback) is the urlencoded hidden field; base64 swaps the
+  // field; raw POSTs the cXML as a text/xml body (needs JS — a plain form can't).
+  const transport = eff?.cartReturnTransport ?? "cxml-urlencoded";
+  return c.html(cartReturnPage(formpost, xml, transport));
+});
+
+// Build the auto-submit page that returns the punchback to the buyer's callback.
+function cartReturnPage(
+  formpost: string,
+  xml: string,
+  transport: "cxml-urlencoded" | "cxml-base64" | "raw",
+): string {
+  const shell = (inner: string) => `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <title>Returning cart…</title></head>
-<body onload="document.forms[0].submit()" style="font-family:system-ui;background:#0f172a;color:#e2e8f0">
+<body style="font-family:system-ui;background:#0f172a;color:#e2e8f0">
   <p style="padding:2rem">Returning cart to the buyer…</p>
-  <form method="post" action="${escapeXml(formpost)}">
+${inner}
+</body></html>`;
+
+  if (transport === "raw") {
+    // No <input> can carry a raw text/xml body from a form, so post via fetch
+    // and fall back to a urlencoded form for no-JS clients.
+    return shell(`  <form method="post" action="${escapeXml(formpost)}">
     <input type="hidden" name="cxml-urlencoded" value="${escapeXml(xml)}">
     <noscript><button type="submit">Continue</button></noscript>
   </form>
-</body></html>`);
-});
+  <script>
+    fetch(${JSON.stringify(formpost)}, { method: "POST",
+      headers: { "Content-Type": "text/xml; charset=UTF-8" },
+      body: ${JSON.stringify(xml)} })
+      .then(function () {
+        document.body.replaceChildren();
+        var p = document.createElement("p");
+        p.style.padding = "2rem";
+        p.textContent = "Cart returned to the buyer. You can close this tab.";
+        document.body.appendChild(p);
+      })
+      .catch(function () { document.forms[0].submit(); });
+  </script>`);
+  }
+
+  const field = transport === "cxml-base64" ? "cxml-base64" : "cxml-urlencoded";
+  const value = transport === "cxml-base64" ? Buffer.from(xml, "utf8").toString("base64") : xml;
+  return shell(`  <form method="post" action="${escapeXml(formpost)}">
+    <input type="hidden" name="${field}" value="${escapeXml(value)}">
+    <noscript><button type="submit">Continue</button></noscript>
+  </form>
+  <script>document.forms[0].submit()</script>`);
+}
 
 // --- 4. OrderRequest in -> OrderResponse out ----------------------------------
 
@@ -294,6 +348,7 @@ simRoute.post("/:id/order", async (c) => {
   });
 
   const ok = validation.ok;
+  const eff = effFor(supplier.id, from);
   const respXml = buildResponseStatus({
     payloadId: makePayloadId(host(), new Date().toISOString()),
     timestamp: new Date().toISOString(),
@@ -302,6 +357,7 @@ simRoute.post("/:id/order", async (c) => {
     from: supplier.identity,
     to: from ?? { domain: "", identity: "" },
     sender: supplier.identity,
+    dtdVersion: eff ? dtdVersionFor(eff, "OrderResponse") : undefined,
   });
   appendLog({
     sessionId,

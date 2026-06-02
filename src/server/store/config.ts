@@ -2,12 +2,20 @@ import { Low } from "lowdb";
 import { JSONFile } from "lowdb/node";
 import { nanoid } from "nanoid";
 import type {
+  AttachmentEncoding,
   Buyer,
+  CartReturnTransport,
   Connection,
   Credential,
+  DocType,
+  DtdVersionMap,
+  Profile,
+  ProfileExtrinsic,
   ResolvedConnection,
+  SetupOperation,
   Supplier,
 } from "../cxml/types.js";
+import { GENERIC_PROFILE, seedBuiltinProfiles } from "../cxml/profile-presets.js";
 import { configPath, ensureDirs } from "./paths.js";
 
 // Connection configs live in a single config.json via lowdb. The model is
@@ -18,6 +26,7 @@ interface Schema {
   buyers: Buyer[];
   suppliers: Supplier[];
   connections: Connection[];
+  profiles: Profile[];
 }
 
 let db: Low<Schema> | null = null;
@@ -25,12 +34,16 @@ let db: Low<Schema> | null = null;
 export async function initConfig(): Promise<void> {
   ensureDirs();
   const adapter = new JSONFile<Schema>(configPath());
-  db = new Low<Schema>(adapter, { buyers: [], suppliers: [], connections: [] });
+  db = new Low<Schema>(adapter, { buyers: [], suppliers: [], connections: [], profiles: [] });
   await db.read();
-  db.data ||= { buyers: [], suppliers: [], connections: [] };
+  db.data ||= { buyers: [], suppliers: [], connections: [], profiles: [] };
   db.data.buyers ||= [];
   db.data.suppliers ||= [];
   db.data.connections ||= [];
+  db.data.profiles ||= [];
+  // Ensure the built-in platform presets exist (Generic is the resolution
+  // fallback). Idempotent — only inserts profiles whose id is missing.
+  seedBuiltinProfiles(db.data, now());
   migrateLegacy(db.data);
   await db.write();
 }
@@ -187,6 +200,86 @@ export function findConnectionBySupplierAndBuyerIdentity(
   return undefined;
 }
 
+// --- Profiles ----------------------------------------------------------------
+
+export type ProfileInput = Omit<Profile, "id" | "createdAt" | "updatedAt"> &
+  Partial<Pick<Profile, "id">>;
+
+export const listProfiles = (): Profile[] => requireDb().data.profiles;
+export const getProfile = (id: string): Profile | undefined =>
+  requireDb().data.profiles.find((p) => p.id === id);
+
+export async function createProfile(input: ProfileInput): Promise<Profile> {
+  const profile: Profile = { ...input, id: input.id ?? nanoid(8), createdAt: now(), updatedAt: now() };
+  const d = requireDb();
+  d.data.profiles.push(profile);
+  await d.write();
+  return profile;
+}
+
+export async function updateProfile(id: string, patch: Partial<ProfileInput>): Promise<Profile | undefined> {
+  const d = requireDb();
+  const existing = d.data.profiles.find((p) => p.id === id);
+  if (!existing) return undefined;
+  Object.assign(existing, patch, { id, updatedAt: now() });
+  await d.write();
+  return existing;
+}
+
+export async function deleteProfile(id: string): Promise<boolean> {
+  const d = requireDb();
+  if (d.data.buyers.some((b) => b.profileId === id)) {
+    throw new Error("profile is referenced by a buyer");
+  }
+  const before = d.data.profiles.length;
+  d.data.profiles = d.data.profiles.filter((p) => p.id !== id);
+  const removed = d.data.profiles.length < before;
+  if (removed) await d.write();
+  return removed;
+}
+
+// --- Effective-profile resolution --------------------------------------------
+//
+// A Profile holds platform DEFAULTS; a Connection's concrete attachmentEncoding
+// overrides it per pair (it is always explicit, so it wins). Everything else
+// (versions, UserAgent, operation, transport, extrinsics) comes from the buyer's
+// profile, falling back to the built-in Generic profile so a buyer with no
+// profile behaves exactly as the tool did historically.
+
+export interface EffectiveProfile {
+  dtdVersions: DtdVersionMap;
+  userAgent: string;
+  setupOperation: SetupOperation;
+  attachmentEncoding: AttachmentEncoding;
+  cartReturnTransport: CartReturnTransport;
+  extrinsics: ProfileExtrinsic[];
+}
+
+/** The buyer's profile row, or the in-memory Generic preset if unset/missing. */
+export function profileForBuyer(buyer: Buyer): Profile {
+  const p = buyer.profileId ? getProfile(buyer.profileId) : undefined;
+  return p ?? getProfile("generic") ?? GENERIC_PROFILE;
+}
+
+/** Layer a connection's overrides over the buyer's resolved profile. */
+export function effectiveProfile(connection: Connection, buyer: Buyer): EffectiveProfile {
+  const p = profileForBuyer(buyer);
+  return {
+    dtdVersions: p.dtdVersions,
+    userAgent: p.userAgent,
+    setupOperation: p.setupOperation,
+    // Connection attachmentEncoding is concrete by construction → explicit override.
+    attachmentEncoding: connection.attachmentEncoding ?? p.attachmentEncoding,
+    cartReturnTransport: p.cartReturnTransport,
+    extrinsics: p.extrinsics,
+  };
+}
+
+/** Per-document-type DTD version, falling back to the profile's default. */
+export function dtdVersionFor(eff: EffectiveProfile, docType: DocType): string {
+  return (eff.dtdVersions as unknown as Record<string, string | undefined>)[docType] ?? eff.dtdVersions.default;
+}
+
 // --- Legacy migration --------------------------------------------------------
 
 /**
@@ -250,7 +343,6 @@ function migrateLegacy(data: Schema): void {
       sharedSecret: c.sharedSecret ?? "",
       senderIdentity: c.sender,
       deploymentMode: c.deploymentMode ?? "test",
-      authStyle: c.authStyle ?? "SharedSecret",
       createdAt: c.createdAt ?? now(),
       updatedAt: now(),
     });

@@ -4,6 +4,7 @@ import { logger } from "hono/logger";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { connectionsRoute } from "./routes/connections.js";
 import { buyersRoute, suppliersRoute } from "./routes/parties.js";
+import { profilePresetsRoute, profilesRoute } from "./routes/profiles.js";
 import { flowRoute } from "./routes/flow.js";
 import { punchoutReturnRoute } from "./routes/punchout-return.js";
 import { streamRoute } from "./routes/stream.js";
@@ -24,6 +25,8 @@ export function createApp(opts: AppOptions = {}): Hono {
   // them (spec section 5).
   app.route("/api/buyers", buyersRoute);
   app.route("/api/suppliers", suppliersRoute);
+  app.route("/api/profiles", profilesRoute);
+  app.route("/api/profile-presets", profilePresetsRoute);
   app.route("/api/connections", connectionsRoute);
   app.route("/api/connections", flowRoute); // /:id/setup, /:id/order
   app.route("/api", dataRoute);

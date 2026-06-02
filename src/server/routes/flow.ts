@@ -1,15 +1,22 @@
 import { Hono } from "hono";
 import { nanoid } from "nanoid";
-import { resolveConnection } from "../store/config.js";
+import {
+  dtdVersionFor,
+  effectiveProfile,
+  resolveConnection,
+  type EffectiveProfile,
+} from "../store/config.js";
 import { appendLog } from "../store/log.js";
 import { saveAttachment } from "../store/attachments.js";
 import { rememberSessionConnection } from "../cart-store.js";
 import { sendCxml } from "../http.js";
 import { browserFormPostUrl, getPublicUrl } from "../runtime.js";
 import {
+  applyExtrinsicTokens,
   buildOrderRequest,
   buildSetupRequest,
   makePayloadId,
+  type ExtrinsicVal,
   type OrderAttachmentMeta,
 } from "../cxml/build.js";
 import { buildMultipartRelated, type MultipartAttachment } from "../cxml/multipart.js";
@@ -41,6 +48,8 @@ interface BuyerContext {
   deploymentMode: string;
   connectionId: string;
   attachmentEncoding: AttachmentEncoding;
+  /** Effective platform profile (buyer profile layered with connection overrides). */
+  eff: EffectiveProfile;
   expected: ExpectedCredentials;
 }
 
@@ -49,6 +58,7 @@ function buyerContext(r: ResolvedConnection): BuyerContext {
   const from = buyer.identity;
   const to = supplier.identity;
   const sender = connection.senderIdentity ?? buyer.identity;
+  const eff = effectiveProfile(connection, buyer);
   return {
     from,
     to,
@@ -58,9 +68,24 @@ function buyerContext(r: ResolvedConnection): BuyerContext {
     orderUrl: supplier.orderUrl,
     deploymentMode: connection.deploymentMode,
     connectionId: connection.id,
-    attachmentEncoding: connection.attachmentEncoding ?? "binary",
-    expected: { from, to, sender, sharedSecret: connection.sharedSecret, authStyle: connection.authStyle },
+    attachmentEncoding: eff.attachmentEncoding,
+    eff,
+    expected: { from, to, sender, sharedSecret: connection.sharedSecret },
   };
+}
+
+/** Setup-scoped profile extrinsics with ${buyerCookie} substituted. */
+function setupExtrinsics(ctx: BuyerContext, buyerCookie: string): ExtrinsicVal[] {
+  return ctx.eff.extrinsics
+    .filter((e) => e.scope === "setup")
+    .map((e) => ({ name: e.name, value: applyExtrinsicTokens(e.value, { buyerCookie }) }));
+}
+
+/** Order-scoped profile extrinsics with ${orderId} substituted. */
+function orderExtrinsics(ctx: BuyerContext, orderId: string): ExtrinsicVal[] {
+  return ctx.eff.extrinsics
+    .filter((e) => e.scope === "order")
+    .map((e) => ({ name: e.name, value: applyExtrinsicTokens(e.value, { orderId }) }));
 }
 
 type Resolved = { ctx: BuyerContext } | { error: string };
@@ -89,6 +114,10 @@ flowRoute.get("/:id/setup/preview", (c) => {
     payloadId: makePayloadId(host(), new Date().toISOString()),
     timestamp: new Date().toISOString(),
     deploymentMode: ctx.deploymentMode,
+    operation: ctx.eff.setupOperation,
+    dtdVersion: dtdVersionFor(ctx.eff, "SetupRequest"),
+    userAgent: ctx.eff.userAgent,
+    extrinsics: setupExtrinsics(ctx, buyerCookie),
   });
   return c.json({ buyerCookie, xml, browserFormPostUrl: browserFormPostUrl() });
 });
@@ -114,6 +143,10 @@ flowRoute.post("/:id/setup", async (c) => {
       payloadId: makePayloadId(host(), new Date().toISOString()),
       timestamp: new Date().toISOString(),
       deploymentMode: ctx.deploymentMode,
+      operation: ctx.eff.setupOperation,
+      dtdVersion: dtdVersionFor(ctx.eff, "SetupRequest"),
+      userAgent: ctx.eff.userAgent,
+      extrinsics: setupExtrinsics(ctx, buyerCookie),
     });
 
   rememberSessionConnection(buyerCookie, ctx.connectionId);
@@ -210,6 +243,9 @@ function buildOrderXml(ctx: BuyerContext, body: OrderBody): { xml: string; order
     shipTo: body.shipTo,
     billTo: body.billTo,
     attachments: attMeta,
+    dtdVersion: dtdVersionFor(ctx.eff, "OrderRequest"),
+    userAgent: ctx.eff.userAgent,
+    extrinsics: orderExtrinsics(ctx, orderId),
   });
   return { xml, orderId };
 }

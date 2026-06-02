@@ -9,15 +9,17 @@ import {
   type ConnectionWithParties,
   type FlowSession,
   type LogRecord,
+  type Profile,
   type Supplier,
 } from "./types";
 import { ConnectionEditor } from "./components/ConnectionEditor";
 import { BuyerEditor, SupplierEditor } from "./components/PartyEditors";
+import { ProfileEditor } from "./components/ProfileEditor";
 import { BuyerFlow } from "./components/BuyerFlow";
 import { LiveLog } from "./components/LiveLog";
 import { MessageDetail } from "./components/MessageDetail";
 
-type View = "connections" | "buyers" | "suppliers";
+type View = "connections" | "buyers" | "suppliers" | "profiles";
 type Panel = "flow" | "edit" | "new";
 const NEW = "__new__";
 
@@ -26,11 +28,13 @@ export function App() {
   const [connections, setConnections] = useState<ConnectionWithParties[]>([]);
   const [buyers, setBuyers] = useState<Buyer[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
 
   const [selectedConnId, setSelectedConnId] = useState<string | null>(null);
   const [panel, setPanel] = useState<Panel>("flow");
   const [selectedBuyerId, setSelectedBuyerId] = useState<string | null>(null);
   const [selectedSupplierId, setSelectedSupplierId] = useState<string | null>(null);
+  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
 
   const [carts, setCarts] = useState<Record<string, Cart>>({});
   const [sessions, setSessions] = useState<Record<string, FlowSession>>({});
@@ -52,17 +56,19 @@ export function App() {
   }, []);
   const reloadBuyers = useCallback(async () => setBuyers(await api.buyers.list()), []);
   const reloadSuppliers = useCallback(async () => setSuppliers(await api.suppliers.list()), []);
+  const reloadProfiles = useCallback(async () => setProfiles(await api.profiles.list()), []);
 
   useEffect(() => {
     reloadConnections();
     reloadBuyers();
     reloadSuppliers();
+    reloadProfiles();
     api.recent(200).then(setRecords).catch(() => {});
     api.runtime().then((r) => {
       setPublicUrl(r.publicUrl);
       setCallbackUrl(r.callbackUrl);
     });
-  }, [reloadConnections, reloadBuyers, reloadSuppliers]);
+  }, [reloadConnections, reloadBuyers, reloadSuppliers, reloadProfiles]);
 
   useStream({
     onLog: (record) => setRecords((rs) => [...rs, record]),
@@ -133,8 +139,26 @@ export function App() {
     setSelectedSupplierId(null);
   };
 
+  // --- profile handlers ---
+  const saveProfile = async (data: Partial<Profile>) => {
+    if (selectedProfileId === NEW || !selectedProfileId) {
+      const created = await api.profiles.create(data);
+      await reloadProfiles();
+      setSelectedProfileId(created.id);
+    } else {
+      await api.profiles.update(selectedProfileId, data);
+      await reloadProfiles();
+    }
+  };
+  const deleteProfile = async (id: string) => {
+    await api.profiles.remove(id);
+    await reloadProfiles();
+    setSelectedProfileId(null);
+  };
+
   const selectedBuyer = buyers.find((b) => b.id === selectedBuyerId) ?? null;
   const selectedSupplier = suppliers.find((s) => s.id === selectedSupplierId) ?? null;
+  const selectedProfile = profiles.find((p) => p.id === selectedProfileId) ?? null;
 
   return (
     <div className="app">
@@ -146,7 +170,7 @@ export function App() {
       <div className="layout">
         <aside className="sidebar">
           <div className="viewtabs">
-            {(["connections", "buyers", "suppliers"] as View[]).map((v) => (
+            {(["connections", "buyers", "suppliers", "profiles"] as View[]).map((v) => (
               <button key={v} className={view === v ? "viewtab active" : "viewtab"} onClick={() => setView(v)}>
                 {v}
               </button>
@@ -181,6 +205,11 @@ export function App() {
             <EntityList title="Suppliers" items={suppliers} selectedId={selectedSupplierId}
               onSelect={setSelectedSupplierId} onNew={() => setSelectedSupplierId(NEW)}
               subtitle={(s) => `${s.identity.domain}/${s.identity.identity}`} />
+          )}
+          {view === "profiles" && (
+            <EntityList title="Profiles" items={profiles} selectedId={selectedProfileId}
+              onSelect={setSelectedProfileId} onNew={() => setSelectedProfileId(NEW)}
+              subtitle={(p) => p.platform ?? "custom"} />
           )}
         </aside>
 
@@ -224,7 +253,7 @@ export function App() {
             <>
               <h2>{selectedBuyerId === NEW ? "New buyer" : selectedBuyer?.name ?? "Buyers"}</h2>
               {selectedBuyerId ? (
-                <BuyerEditor buyer={selectedBuyerId === NEW ? null : selectedBuyer} onSave={saveBuyer} onDelete={deleteBuyer} />
+                <BuyerEditor buyer={selectedBuyerId === NEW ? null : selectedBuyer} profiles={profiles} onSave={saveBuyer} onDelete={deleteBuyer} />
               ) : <p className="hint">Select a buyer or create one.</p>}
             </>
           )}
@@ -235,6 +264,15 @@ export function App() {
               {selectedSupplierId ? (
                 <SupplierEditor supplier={selectedSupplierId === NEW ? null : selectedSupplier} onSave={saveSupplier} onDelete={deleteSupplier} />
               ) : <p className="hint">Select a supplier or create one.</p>}
+            </>
+          )}
+
+          {view === "profiles" && (
+            <>
+              <h2>{selectedProfileId === NEW ? "New profile" : selectedProfile?.name ?? "Profiles"}</h2>
+              {selectedProfileId ? (
+                <ProfileEditor profile={selectedProfileId === NEW ? null : selectedProfile} onSave={saveProfile} onDelete={deleteProfile} />
+              ) : <p className="hint">Select a profile or create one. Built-in presets (Ariba, Coupa, …) are listed here.</p>}
             </>
           )}
         </main>

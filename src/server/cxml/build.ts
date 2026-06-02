@@ -58,14 +58,45 @@ ${senderBlock(p.sender, p.sharedSecret, p.userAgent)}
   </Header>`;
 }
 
-const DECLARATION = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE cXML SYSTEM "http://xml.cxml.org/schemas/cXML/1.2.045/cXML.dtd">`;
+const DEFAULT_DTD_VERSION = "1.2.045";
 
-function envelope(payloadId: string, timestamp: string, lang: string, inner: string): string {
-  return `${DECLARATION}
+function doctype(version: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE cXML SYSTEM "http://xml.cxml.org/schemas/cXML/${escapeXml(version)}/cXML.dtd">`;
+}
+
+function envelope(
+  payloadId: string,
+  timestamp: string,
+  lang: string,
+  inner: string,
+  dtdVersion: string = DEFAULT_DTD_VERSION,
+): string {
+  return `${doctype(dtdVersion)}
 <cXML payloadID="${escapeXml(payloadId)}" timestamp="${escapeXml(timestamp)}" xml:lang="${escapeXml(lang)}">
 ${inner}
 </cXML>`;
+}
+
+/** A resolved Extrinsic (tokens already substituted) for injection into a document. */
+export interface ExtrinsicVal {
+  name: string;
+  value: string;
+}
+
+/** Substitute ${token} placeholders in an Extrinsic value (e.g. ${buyerCookie}). */
+export function applyExtrinsicTokens(value: string, tokens: Record<string, string>): string {
+  return value.replace(/\$\{(\w+)\}/g, (_, k) => tokens[k] ?? "");
+}
+
+function extrinsicBlock(items: ExtrinsicVal[] | undefined, indent: string): string {
+  if (!items || items.length === 0) return "";
+  return (
+    "\n" +
+    items
+      .map((e) => `${indent}<Extrinsic name="${escapeXml(e.name)}">${escapeXml(e.value)}</Extrinsic>`)
+      .join("\n")
+  );
 }
 
 // --- SetupRequest (Mode A: buyer -> supplier) --------------------------------
@@ -83,6 +114,9 @@ export interface SetupRequestOptions {
   lang?: string;
   deploymentMode?: string;
   operation?: string; // create | edit | inspect
+  dtdVersion?: string;
+  userAgent?: string;
+  extrinsics?: ExtrinsicVal[];
 }
 
 export function buildSetupRequest(o: SetupRequestOptions): string {
@@ -95,16 +129,17 @@ export function buildSetupRequest(o: SetupRequestOptions): string {
     to: o.to,
     sender: o.sender,
     sharedSecret: o.sharedSecret,
+    userAgent: o.userAgent,
   })}
   <Request${deployment}>
     <PunchOutSetupRequest operation="${escapeXml(o.operation ?? "create")}">
       <BuyerCookie>${escapeXml(o.buyerCookie)}</BuyerCookie>
       <BrowserFormPost>
         <URL>${escapeXml(o.browserFormPostUrl)}</URL>
-      </BrowserFormPost>
+      </BrowserFormPost>${extrinsicBlock(o.extrinsics, "      ")}
     </PunchOutSetupRequest>
   </Request>`;
-  return envelope(o.payloadId, o.timestamp, lang, inner);
+  return envelope(o.payloadId, o.timestamp, lang, inner, o.dtdVersion);
 }
 
 // --- OrderRequest (Mode A: buyer -> supplier) --------------------------------
@@ -135,6 +170,9 @@ export interface OrderRequestOptions {
   shipTo?: AddressParts;
   billTo?: AddressParts;
   attachments?: OrderAttachmentMeta[];
+  dtdVersion?: string;
+  userAgent?: string;
+  extrinsics?: ExtrinsicVal[];
 }
 
 export interface AddressParts {
@@ -230,6 +268,7 @@ export function buildOrderRequest(o: OrderRequestOptions): string {
     to: o.to,
     sender: o.sender,
     sharedSecret: o.sharedSecret,
+    userAgent: o.userAgent,
   })}
   <Request${deployment}>
     <OrderRequest>
@@ -240,12 +279,15 @@ export function buildOrderRequest(o: OrderRequestOptions): string {
           <Money currency="${escapeXml(o.currency)}">${escapeXml(o.total)}</Money>
         </Total>
 ${addressBlock("ShipTo", o.shipTo ?? {})}
-${addressBlock("BillTo", o.billTo ?? {})}${commentsWithAttachments(orderLevelCids, "        ")}
+${addressBlock("BillTo", o.billTo ?? {})}${commentsWithAttachments(orderLevelCids, "        ")}${extrinsicBlock(
+        o.extrinsics,
+        "        ",
+      )}
       </OrderRequestHeader>
 ${items}
     </OrderRequest>
   </Request>`;
-  return envelope(o.payloadId, o.timestamp, lang, inner);
+  return envelope(o.payloadId, o.timestamp, lang, inner, o.dtdVersion);
 }
 
 // --- Responses & punchback (Mode B / mock supplier) --------------------------
@@ -264,6 +306,7 @@ export function buildSetupResponse(o: {
   from?: Credential;
   to?: Credential;
   sender?: Credential;
+  dtdVersion?: string;
 }): string {
   const head =
     o.from && o.to && o.sender
@@ -279,7 +322,7 @@ export function buildSetupResponse(o: {
       </StartPage>
     </PunchOutSetupResponse>
   </Response>`;
-  return envelope(o.payloadId, o.timestamp, o.lang ?? "en-US", inner);
+  return envelope(o.payloadId, o.timestamp, o.lang ?? "en-US", inner, o.dtdVersion);
 }
 
 export function buildResponseStatus(o: {
@@ -291,6 +334,7 @@ export function buildResponseStatus(o: {
   from?: Credential;
   to?: Credential;
   sender?: Credential;
+  dtdVersion?: string;
 }): string {
   const head =
     o.from && o.to && o.sender
@@ -301,7 +345,7 @@ export function buildResponseStatus(o: {
       o.statusText ?? "OK",
     )}">${escapeXml(o.statusText === "OK" || !o.statusText ? "" : o.statusText)}</Status>
   </Response>`;
-  return envelope(o.payloadId, o.timestamp, o.lang ?? "en-US", inner);
+  return envelope(o.payloadId, o.timestamp, o.lang ?? "en-US", inner, o.dtdVersion);
 }
 
 export interface PunchbackOptions {
@@ -314,6 +358,8 @@ export interface PunchbackOptions {
   lang?: string;
   currency: string;
   items: CartItem[];
+  dtdVersion?: string;
+  operationAllowed?: string;
 }
 
 export function buildPunchOutOrderMessage(o: PunchbackOptions): string {
@@ -355,7 +401,7 @@ export function buildPunchOutOrderMessage(o: PunchbackOptions): string {
   <Message>
     <PunchOutOrderMessage>
       <BuyerCookie>${escapeXml(o.buyerCookie)}</BuyerCookie>
-      <PunchOutOrderMessageHeader operationAllowed="create">
+      <PunchOutOrderMessageHeader operationAllowed="${escapeXml(o.operationAllowed ?? "create")}">
         <Total>
           <Money currency="${escapeXml(o.currency)}">${escapeXml(total.toFixed(2))}</Money>
         </Total>
@@ -363,5 +409,5 @@ export function buildPunchOutOrderMessage(o: PunchbackOptions): string {
 ${items}
     </PunchOutOrderMessage>
   </Message>`;
-  return envelope(o.payloadId, o.timestamp, o.lang ?? "en-US", inner);
+  return envelope(o.payloadId, o.timestamp, o.lang ?? "en-US", inner, o.dtdVersion);
 }

@@ -17,6 +17,9 @@ export async function seedDemoIfEmpty(): Promise<void> {
     id: "demo-buyer",
     name: "Demo Buyer",
     identity: { domain: "DUNS", identity: "123456789" },
+    // Exercise a non-default platform profile end-to-end (Coupa: per-doc-type
+    // DTD versions, base64 attachments). Built-in profiles are seeded by initConfig.
+    profileId: "coupa",
   });
 
   const supplier = await createSupplier({
@@ -36,6 +39,5 @@ export async function seedDemoIfEmpty(): Promise<void> {
     mode: "virtual-buyer",
     sharedSecret: "demo-secret",
     deploymentMode: "test",
-    authStyle: "SharedSecret",
   });
 }
