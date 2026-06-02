@@ -26,6 +26,13 @@ export interface ParsedDoc {
 }
 
 export function parseXml(raw: string): ParsedDoc {
+  // Defense-in-depth against XXE / entity-expansion ("billion laughs"): cXML
+  // documents declare a `<!DOCTYPE cXML SYSTEM "...">` with NO internal entity
+  // definitions, so reject any document that defines custom entities before it
+  // reaches the parser. (fast-xml-parser does not resolve external DTDs.)
+  if (/<!ENTITY/i.test(raw)) {
+    return { raw, tree: null, wellFormed: false, wellFormedError: "DTD entity definitions are not allowed" };
+  }
   const check = XMLValidator.validate(raw, { allowBooleanAttributes: true });
   if (check !== true) {
     return {

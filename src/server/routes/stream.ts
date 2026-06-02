@@ -7,7 +7,14 @@ import { bus } from "../bus.js";
 
 export const streamRoute = new Hono();
 
+// Cap concurrent SSE clients so an unauthenticated flood of /stream connections
+// can't exhaust sockets/memory on the single-process server.
+const MAX_STREAMS = 64;
+let activeStreams = 0;
+
 streamRoute.get("/stream", (c) => {
+  if (activeStreams >= MAX_STREAMS) return c.text("too many live-log connections", 503);
+  activeStreams++;
   return streamSSE(c, async (stream) => {
     let open = true;
     let id = 0;
@@ -23,6 +30,7 @@ streamRoute.get("/stream", (c) => {
 
     stream.onAbort(() => {
       open = false;
+      activeStreams = Math.max(0, activeStreams - 1);
       unsubscribe();
     });
 

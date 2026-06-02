@@ -16,7 +16,7 @@ export function saveAttachment(
   ensureDirs();
   const hash = createHash("sha256").update(data).digest("hex");
   const path = resolve(attachmentsDir(), hash);
-  if (!existsSync(path)) writeFileSync(path, data);
+  if (!existsSync(path)) writeFileSync(path, data, { mode: 0o600 });
   return {
     contentId: normalizeContentId(meta.contentId),
     filename: meta.filename,

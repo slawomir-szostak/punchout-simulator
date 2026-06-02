@@ -1,3 +1,4 @@
+import { chmodSync } from "node:fs";
 import { Low } from "lowdb";
 import { JSONFile } from "lowdb/node";
 import { nanoid } from "nanoid";
@@ -46,6 +47,12 @@ export async function initConfig(): Promise<void> {
   seedBuiltinProfiles(db.data, now());
   migrateLegacy(db.data);
   await db.write();
+  // config.json holds the plaintext shared secret — keep it owner-only.
+  try {
+    chmodSync(configPath(), 0o600);
+  } catch {
+    /* best-effort (e.g. Windows) */
+  }
 }
 
 function requireDb(): Low<Schema> {

@@ -17,7 +17,9 @@ export default defineConfig({
   target: "node20",
   platform: "node",
   splitting: false,
-  sourcemap: true,
+  // No source map in the published tarball — end users never use it and it just
+  // adds weight (matches the SPA build, which also ships without one).
+  sourcemap: false,
   clean: true,
   banner: {
     js: "#!/usr/bin/env node",

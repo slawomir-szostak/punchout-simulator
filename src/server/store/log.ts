@@ -28,7 +28,7 @@ export function appendLog(input: LogInput): LogRecord {
     id: input.id ?? nanoid(12),
     ts: input.ts ?? new Date().toISOString(),
   };
-  appendFileSync(sessionFile(record.sessionId), JSON.stringify(record) + "\n", "utf8");
+  appendFileSync(sessionFile(record.sessionId), JSON.stringify(record) + "\n", { encoding: "utf8", mode: 0o600 });
   bus.emitLog(record);
   return record;
 }

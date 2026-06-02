@@ -8,6 +8,23 @@ import {
   parseXml,
 } from "../src/server/cxml/parse.js";
 
+describe("XXE / entity-expansion defense", () => {
+  it("rejects a document that defines DTD entities", () => {
+    const billion = `<?xml version="1.0"?>
+      <!DOCTYPE cXML [ <!ENTITY lol "ha"> ]>
+      <cXML payloadID="p@h" timestamp="t"><Request/></cXML>`;
+    const doc = parseXml(billion);
+    expect(doc.wellFormed).toBe(false);
+    expect(doc.wellFormedError).toMatch(/entity/i);
+  });
+  it("still accepts a normal cXML SYSTEM doctype", () => {
+    const ok = `<?xml version="1.0"?>
+      <!DOCTYPE cXML SYSTEM "http://xml.cxml.org/schemas/cXML/1.2.045/cXML.dtd">
+      <cXML payloadID="p@h" timestamp="t"><Request/></cXML>`;
+    expect(parseXml(ok).wellFormed).toBe(true);
+  });
+});
+
 const punchback = `<?xml version="1.0"?>
 <cXML payloadID="p@h" timestamp="2026-01-01T00:00:00Z">
   <Header>
