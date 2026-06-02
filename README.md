@@ -30,12 +30,15 @@ That's it — no install, no build. It boots a local server, opens your browser,
 and seeds a **built-in demo**: a virtual buyer wired to a built-in mock supplier,
 so you can run the entire roundtrip immediately:
 
-1. Open the **Demo Buyer → built-in supplier** connection.
+1. Open the **Demo Buyer → Demo Supplier** connection.
 2. **Send SetupRequest** → the mock supplier replies with a StartPage.
 3. **Open the catalog**, set quantities, **return the cart** — the punchback
    lands back in the app live.
-4. **Send the OrderRequest** (optionally with attachments, optionally with the
-   dangling-`cid` test) and inspect the supplier's response.
+4. **Build the OrderRequest**, edit the cXML if you want (tweak `<Comments>`,
+   addresses, attachment refs), optionally attach files at the **order or item
+   level**, optionally flip on the **dangling-`cid` test**, then **send it** and
+   inspect the supplier's response.
+5. If validation fails, **edit and re-send** — the flow session and cart persist.
 
 Every document — inbound and outbound — is validated and logged.
 
@@ -58,7 +61,7 @@ docker run -p 8080:8080 -v "$PWD/data:/data" punchout-simulator
     --public-url <url> Externally reachable base URL (default http://localhost:<port>)
                        Set this when fronting the tool with ngrok/cloudflared.
     --no-open          Do not open a browser on start
-    --no-seed          Do not seed the built-in demo connections on first run
+    --no-seed          Do not seed the built-in demo buyer/supplier/connection on first run
     --dev              Dev mode (do not serve the SPA, do not open a browser)
 -h, --help             Show help
 ```
@@ -73,7 +76,8 @@ document in both directions, and results are surfaced per message in the UI
 emit correct cXML?"* linter as a transport driver.
 
 General checks: well-formedness, `payloadID`/`timestamp` presence, and
-`From`/`To`/`Sender` credential + `SharedSecret` consistency with the connection.
+`From`/`To`/`Sender` credentials + `SharedSecret` consistency with the
+connection's buyer/supplier identities.
 
 Document-specific:
 
@@ -96,6 +100,18 @@ an OrderRequest whose `<Attachment><URL>cid:XXX</URL></Attachment>` references a
 receiver detects the missing attachment. `<Comments>` (and therefore
 `<Attachment>`) is scanned at **both** levels: `OrderRequestHeader` and each
 `ItemOut`.
+
+### Editing the OrderRequest, attachments & retry
+
+- The OrderRequest is built from the returned cart into an editable Monaco view.
+  **Edit it before sending** — `<Comments>`, addresses, attachment references,
+  anything; the exact document you see is what gets sent.
+- **Attachments are scoped per item or per order**, so the `cid` reference lands
+  in the right `ItemOut/Comments` or `OrderRequestHeader/Comments`.
+- The flow is a **persistent per-connection session**: switching between the
+  Flow and Settings tabs (or connections) keeps your in-progress order, and you
+  can **edit and re-send** after a supplier rejection. "New session" starts a
+  fresh `BuyerCookie`.
 
 ---
 
@@ -147,11 +163,11 @@ At send time: `From` = buyer identity, `To` = supplier identity, `Sender` = the 
 
 - `*/api/buyers`, `*/api/suppliers` — CRUD for the reusable parties
 - `*/api/connections` — CRUD for connection edges (reference a buyer + supplier)
-- `POST /api/connections/:id/setup` — send the SetupRequest, capture + validate the response
-- `POST /api/connections/:id/order` — send the OrderRequest (multipart if attachments), capture + validate
+- `GET /api/connections/:id/setup/preview` · `POST …/setup` — preview / send the SetupRequest
+- `POST /api/connections/:id/order/preview` · `POST …/order` — preview / send the OrderRequest (multipart if attachments)
 - `POST /punchout/return` — callback receiving the punchback auto-submit
 - `GET /api/stream` — SSE live log
-- `/sim/:id/*` — Mode B mock supplier (punchout · catalog · checkout · order)
+- `/sim/:supplierId/*` — Mode B mock supplier (punchout · catalog · checkout · order)
 
 ---
 
