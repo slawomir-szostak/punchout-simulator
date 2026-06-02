@@ -5,10 +5,10 @@ import {
   rememberSessionConnection,
   setCart,
 } from "../cart-store.js";
-import { getConnection } from "../store/config.js";
+import { resolveConnection } from "../store/config.js";
 import { appendLog } from "../store/log.js";
 import { parseCart, parseXml, text, root } from "../cxml/parse.js";
-import { validateDocument } from "../cxml/validate.js";
+import { validateDocument, type ExpectedCredentials } from "../cxml/validate.js";
 
 // Mode A callback: receives the punchback (PunchOutOrderMessage) auto-submitted
 // by the user's browser. It arrives either as a `cxml-urlencoded` form field
@@ -61,10 +61,21 @@ punchoutReturnRoute.post("/return", async (c) => {
     cart.sessionId || text(root(doc)?.Message?.PunchOutOrderMessage?.BuyerCookie) || "unknown";
 
   const connectionId = connectionForSession(sessionId);
-  const conn = connectionId ? getConnection(connectionId) : undefined;
+  const resolved = connectionId ? resolveConnection(connectionId) : undefined;
+  // From the buyer's seat, the punchback's From=supplier and To=buyer (the
+  // reverse of the SetupRequest). credKnown checks membership, so listing both
+  // identities validates the swap.
+  const expected: ExpectedCredentials | undefined = resolved
+    ? {
+        from: resolved.buyer.identity,
+        to: resolved.supplier.identity,
+        sender: resolved.connection.senderIdentity ?? resolved.supplier.identity,
+        authStyle: resolved.connection.authStyle,
+      }
+    : undefined;
 
   const validation = validateDocument(xml, {
-    connection: conn,
+    expected,
     expectedBuyerCookie: sessionId,
     forceDocType: "PunchOutOrderMessage",
   });

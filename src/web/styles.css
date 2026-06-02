@@ -37,6 +37,12 @@ a { color: #93c5fd; }
   display: grid; grid-template-columns: 240px 1fr 360px; flex: 1; min-height: 0;
 }
 .sidebar { background: var(--panel-2); border-right: 1px solid var(--border); overflow-y: auto; }
+.viewtabs { display: flex; padding: .5rem; gap: .25rem; border-bottom: 1px solid var(--border); }
+.viewtab { flex: 1; background: transparent; border: 1px solid var(--border); color: var(--muted); padding: .35rem; border-radius: 6px; cursor: pointer; font-size: .72rem; text-transform: capitalize; }
+.viewtab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.cred-pair { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+.catalog-row { display: grid; grid-template-columns: 1.2fr 1.6fr .7fr .5fr .5fr .9fr auto; gap: .35rem; align-items: center; margin-bottom: .4rem; }
+.catalog-row input { padding: .35rem .4rem; font-size: .78rem; }
 .sidebar-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: .8rem 1rem; font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted);

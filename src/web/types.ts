@@ -3,6 +3,7 @@
 export type {
   AttachmentRef,
   AuthStyle,
+  Buyer,
   Cart,
   CartItem,
   CatalogItem,
@@ -13,10 +14,19 @@ export type {
   Direction,
   DocType,
   LogRecord,
+  Supplier,
   ValidationIssue,
   ValidationResult,
   ValidationSeverity,
 } from "../server/cxml/types";
+
+import type { Buyer, Connection, Supplier } from "../server/cxml/types";
+
+/** A connection as returned by the list/detail API — enriched with its parties. */
+export interface ConnectionWithParties extends Connection {
+  buyer?: Buyer;
+  supplier?: Supplier;
+}
 
 export interface SessionSummary {
   sessionId: string;

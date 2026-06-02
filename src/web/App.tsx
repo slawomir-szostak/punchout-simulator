@@ -1,184 +1,241 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "./api";
 import { useStream } from "./hooks/useStream";
-import { emptySession, type Cart, type Connection, type FlowSession, type LogRecord } from "./types";
+import {
+  emptySession,
+  type Buyer,
+  type Cart,
+  type Connection,
+  type ConnectionWithParties,
+  type FlowSession,
+  type LogRecord,
+  type Supplier,
+} from "./types";
 import { ConnectionEditor } from "./components/ConnectionEditor";
+import { BuyerEditor, SupplierEditor } from "./components/PartyEditors";
 import { BuyerFlow } from "./components/BuyerFlow";
 import { LiveLog } from "./components/LiveLog";
 import { MessageDetail } from "./components/MessageDetail";
 
+type View = "connections" | "buyers" | "suppliers";
 type Panel = "flow" | "edit" | "new";
+const NEW = "__new__";
 
 export function App() {
-  const [connections, setConnections] = useState<Connection[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [view, setView] = useState<View>("connections");
+  const [connections, setConnections] = useState<ConnectionWithParties[]>([]);
+  const [buyers, setBuyers] = useState<Buyer[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+
+  const [selectedConnId, setSelectedConnId] = useState<string | null>(null);
   const [panel, setPanel] = useState<Panel>("flow");
+  const [selectedBuyerId, setSelectedBuyerId] = useState<string | null>(null);
+  const [selectedSupplierId, setSelectedSupplierId] = useState<string | null>(null);
+
   const [carts, setCarts] = useState<Record<string, Cart>>({});
-  // Flow sessions persist per connection so switching tabs/connections never
-  // resets the in-progress order (see BuyerFlow).
   const [sessions, setSessions] = useState<Record<string, FlowSession>>({});
   const [records, setRecords] = useState<LogRecord[]>([]);
   const [detail, setDetail] = useState<LogRecord | null>(null);
-  const [callbackUrl, setCallbackUrl] = useState<string>("");
   const [publicUrl, setPublicUrl] = useState<string>("");
+  const [callbackUrl, setCallbackUrl] = useState<string>("");
 
-  const selected = useMemo(
-    () => connections.find((c) => c.id === selectedId) ?? null,
-    [connections, selectedId],
+  const selectedConn = useMemo(
+    () => connections.find((c) => c.id === selectedConnId) ?? null,
+    [connections, selectedConnId],
   );
 
   const reloadConnections = useCallback(async () => {
     const list = await api.listConnections();
     setConnections(list);
-    setSelectedId((cur) => cur ?? list[0]?.id ?? null);
+    setSelectedConnId((cur) => cur ?? list[0]?.id ?? null);
     return list;
   }, []);
+  const reloadBuyers = useCallback(async () => setBuyers(await api.buyers.list()), []);
+  const reloadSuppliers = useCallback(async () => setSuppliers(await api.suppliers.list()), []);
 
   useEffect(() => {
     reloadConnections();
+    reloadBuyers();
+    reloadSuppliers();
     api.recent(200).then(setRecords).catch(() => {});
     api.runtime().then((r) => {
-      setCallbackUrl(r.callbackUrl);
       setPublicUrl(r.publicUrl);
+      setCallbackUrl(r.callbackUrl);
     });
-  }, [reloadConnections]);
+  }, [reloadConnections, reloadBuyers, reloadSuppliers]);
 
   useStream({
     onLog: (record) => setRecords((rs) => [...rs, record]),
     onCart: (_conn, cart) => setCarts((c) => ({ ...c, [cart.sessionId]: cart })),
   });
 
-  // Recover the cart from the server when a session has a BuyerCookie but no
-  // cached cart (e.g. after a page refresh), so the order can still be retried.
   useEffect(() => {
-    const cookie = selectedId ? sessions[selectedId]?.buyerCookie : undefined;
+    const cookie = selectedConnId ? sessions[selectedConnId]?.buyerCookie : undefined;
     if (!cookie || carts[cookie]) return;
-    api
-      .getCart(cookie)
-      .then((cart) => {
-        if (cart) setCarts((c) => ({ ...c, [cookie]: cart }));
-      })
-      .catch(() => {});
-  }, [selectedId, sessions, carts]);
+    api.getCart(cookie).then((cart) => cart && setCarts((c) => ({ ...c, [cookie]: cart }))).catch(() => {});
+  }, [selectedConnId, sessions, carts]);
 
   const patchSession = useCallback((id: string, patch: Partial<FlowSession>) => {
     setSessions((s) => ({ ...s, [id]: { ...(s[id] ?? emptySession()), ...patch } }));
   }, []);
+  const newSession = useCallback((id: string) => setSessions((s) => ({ ...s, [id]: emptySession() })), []);
 
-  const newSession = useCallback((id: string) => {
-    setSessions((s) => ({ ...s, [id]: emptySession() }));
-  }, []);
-
+  // --- connection handlers ---
   const saveConnection = async (data: Partial<Connection>) => {
-    if (panel === "new" || !selected) {
+    if (panel === "new" || !selectedConn) {
       const created = await api.createConnection(data);
       await reloadConnections();
-      setSelectedId(created.id);
+      setSelectedConnId(created.id);
     } else {
-      await api.updateConnection(selected.id, data);
+      await api.updateConnection(selectedConn.id, data);
       await reloadConnections();
     }
     setPanel("flow");
   };
-
   const deleteConnection = async (id: string) => {
     await api.deleteConnection(id);
     const list = await reloadConnections();
-    setSelectedId(list[0]?.id ?? null);
+    setSelectedConnId(list[0]?.id ?? null);
     setPanel("flow");
   };
+
+  // --- buyer handlers ---
+  const saveBuyer = async (data: Partial<Buyer>) => {
+    if (selectedBuyerId === NEW || !selectedBuyerId) {
+      const created = await api.buyers.create(data);
+      await reloadBuyers();
+      setSelectedBuyerId(created.id);
+    } else {
+      await api.buyers.update(selectedBuyerId, data);
+      await reloadBuyers();
+    }
+  };
+  const deleteBuyer = async (id: string) => {
+    await api.buyers.remove(id);
+    await reloadBuyers();
+    setSelectedBuyerId(null);
+  };
+
+  // --- supplier handlers ---
+  const saveSupplier = async (data: Partial<Supplier>) => {
+    if (selectedSupplierId === NEW || !selectedSupplierId) {
+      const created = await api.suppliers.create(data);
+      await reloadSuppliers();
+      setSelectedSupplierId(created.id);
+    } else {
+      await api.suppliers.update(selectedSupplierId, data);
+      await reloadSuppliers();
+    }
+  };
+  const deleteSupplier = async (id: string) => {
+    await api.suppliers.remove(id);
+    await reloadSuppliers();
+    setSelectedSupplierId(null);
+  };
+
+  const selectedBuyer = buyers.find((b) => b.id === selectedBuyerId) ?? null;
+  const selectedSupplier = suppliers.find((s) => s.id === selectedSupplierId) ?? null;
 
   return (
     <div className="app">
       <header className="topbar">
-        <div className="brand">
-          <span className="logo">⇄</span> punchout-simulator
-        </div>
-        <div className="topbar-meta">
-          callback: <code>{callbackUrl || "…"}</code>
-        </div>
+        <div className="brand"><span className="logo">⇄</span> punchout-simulator</div>
+        <div className="topbar-meta">callback: <code>{callbackUrl || "…"}</code></div>
       </header>
 
       <div className="layout">
         <aside className="sidebar">
-          <div className="sidebar-head">
-            <span>Connections</span>
-            <button
-              className="btn-secondary"
-              onClick={() => {
-                setPanel("new");
-                setSelectedId(null);
-              }}
-            >
-              + New
-            </button>
-          </div>
-          <ul className="conn-list">
-            {connections.map((c) => (
-              <li
-                key={c.id}
-                className={c.id === selectedId && panel !== "new" ? "active" : ""}
-                onClick={() => {
-                  setSelectedId(c.id);
-                  setPanel("flow");
-                }}
-              >
-                <span className={`mode-dot mode-${c.mode}`} />
-                <div className="conn-name">{c.name}</div>
-                <div className="conn-mode">{c.mode}</div>
-              </li>
+          <div className="viewtabs">
+            {(["connections", "buyers", "suppliers"] as View[]).map((v) => (
+              <button key={v} className={view === v ? "viewtab active" : "viewtab"} onClick={() => setView(v)}>
+                {v}
+              </button>
             ))}
-          </ul>
+          </div>
+
+          {view === "connections" && (
+            <>
+              <div className="sidebar-head">
+                <span>Connections</span>
+                <button className="btn-secondary" onClick={() => { setPanel("new"); setSelectedConnId(null); }}>+ New</button>
+              </div>
+              <ul className="conn-list">
+                {connections.map((c) => (
+                  <li key={c.id} className={c.id === selectedConnId && panel !== "new" ? "active" : ""}
+                      onClick={() => { setSelectedConnId(c.id); setPanel("flow"); }}>
+                    <span className={`mode-dot mode-${c.mode}`} />
+                    <div className="conn-name">{c.name}</div>
+                    <div className="conn-mode">{c.buyer?.name} → {c.supplier?.name}</div>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+
+          {view === "buyers" && (
+            <EntityList title="Buyers" items={buyers} selectedId={selectedBuyerId}
+              onSelect={setSelectedBuyerId} onNew={() => setSelectedBuyerId(NEW)}
+              subtitle={(b) => `${b.identity.domain}/${b.identity.identity}`} />
+          )}
+          {view === "suppliers" && (
+            <EntityList title="Suppliers" items={suppliers} selectedId={selectedSupplierId}
+              onSelect={setSelectedSupplierId} onNew={() => setSelectedSupplierId(NEW)}
+              subtitle={(s) => `${s.identity.domain}/${s.identity.identity}`} />
+          )}
         </aside>
 
         <main className="main">
-          {panel === "new" && (
+          {view === "connections" && (
             <>
-              <h2>New connection</h2>
-              <ConnectionEditor connection={null} onSave={saveConnection} />
+              {panel === "new" && (<><h2>New connection</h2>
+                <ConnectionEditor connection={null} buyers={buyers} suppliers={suppliers} onSave={saveConnection} /></>)}
+
+              {panel !== "new" && selectedConn && (
+                <>
+                  <div className="main-head">
+                    <h2>{selectedConn.name}</h2>
+                    <div className="tabs">
+                      <button className={panel === "flow" ? "tab active" : "tab"} onClick={() => setPanel("flow")}>Flow</button>
+                      <button className={panel === "edit" ? "tab active" : "tab"} onClick={() => setPanel("edit")}>Settings</button>
+                    </div>
+                  </div>
+
+                  {panel === "edit" && (
+                    <ConnectionEditor connection={selectedConn} buyers={buyers} suppliers={suppliers}
+                      onSave={saveConnection} onDelete={deleteConnection} />
+                  )}
+                  {panel === "flow" && selectedConn.mode === "virtual-buyer" && (
+                    <BuyerFlow connection={selectedConn}
+                      session={sessions[selectedConn.id] ?? emptySession()}
+                      cart={sessions[selectedConn.id]?.buyerCookie ? carts[sessions[selectedConn.id].buyerCookie] ?? null : null}
+                      onChange={(patch) => patchSession(selectedConn.id, patch)}
+                      onNewSession={() => newSession(selectedConn.id)} />
+                  )}
+                  {panel === "flow" && selectedConn.mode === "virtual-supplier" && (
+                    <SupplierPanel supplier={selectedConn.supplier} publicUrl={publicUrl} />
+                  )}
+                </>
+              )}
+              {panel !== "new" && !selectedConn && <p className="hint">No connection selected. Create one to get started.</p>}
             </>
           )}
 
-          {panel !== "new" && selected && (
+          {view === "buyers" && (
             <>
-              <div className="main-head">
-                <h2>{selected.name}</h2>
-                <div className="tabs">
-                  <button className={panel === "flow" ? "tab active" : "tab"} onClick={() => setPanel("flow")}>
-                    Flow
-                  </button>
-                  <button className={panel === "edit" ? "tab active" : "tab"} onClick={() => setPanel("edit")}>
-                    Settings
-                  </button>
-                </div>
-              </div>
-
-              {panel === "edit" && (
-                <ConnectionEditor connection={selected} onSave={saveConnection} onDelete={deleteConnection} />
-              )}
-
-              {panel === "flow" && selected.mode === "virtual-buyer" && (
-                <BuyerFlow
-                  connection={selected}
-                  session={sessions[selected.id] ?? emptySession()}
-                  cart={
-                    sessions[selected.id]?.buyerCookie
-                      ? carts[sessions[selected.id].buyerCookie] ?? null
-                      : null
-                  }
-                  onChange={(patch) => patchSession(selected.id, patch)}
-                  onNewSession={() => newSession(selected.id)}
-                />
-              )}
-
-              {panel === "flow" && selected.mode === "virtual-supplier" && (
-                <SupplierPanel connection={selected} publicUrl={publicUrl} />
-              )}
+              <h2>{selectedBuyerId === NEW ? "New buyer" : selectedBuyer?.name ?? "Buyers"}</h2>
+              {selectedBuyerId ? (
+                <BuyerEditor buyer={selectedBuyerId === NEW ? null : selectedBuyer} onSave={saveBuyer} onDelete={deleteBuyer} />
+              ) : <p className="hint">Select a buyer or create one.</p>}
             </>
           )}
 
-          {panel !== "new" && !selected && (
-            <p className="hint">No connection selected. Create one to get started.</p>
+          {view === "suppliers" && (
+            <>
+              <h2>{selectedSupplierId === NEW ? "New supplier" : selectedSupplier?.name ?? "Suppliers"}</h2>
+              {selectedSupplierId ? (
+                <SupplierEditor supplier={selectedSupplierId === NEW ? null : selectedSupplier} onSave={saveSupplier} onDelete={deleteSupplier} />
+              ) : <p className="hint">Select a supplier or create one.</p>}
+            </>
           )}
         </main>
 
@@ -193,38 +250,46 @@ export function App() {
   );
 }
 
-function SupplierPanel({ connection, publicUrl }: { connection: Connection; publicUrl: string }) {
-  const base = `${publicUrl}/sim/${connection.id}`;
+function EntityList<T extends { id: string; name: string }>({
+  title, items, selectedId, onSelect, onNew, subtitle,
+}: {
+  title: string; items: T[]; selectedId: string | null;
+  onSelect: (id: string) => void; onNew: () => void; subtitle: (it: T) => string;
+}) {
+  return (
+    <>
+      <div className="sidebar-head">
+        <span>{title}</span>
+        <button className="btn-secondary" onClick={onNew}>+ New</button>
+      </div>
+      <ul className="conn-list">
+        {items.map((it) => (
+          <li key={it.id} className={it.id === selectedId ? "active" : ""} onClick={() => onSelect(it.id)}>
+            <div className="conn-name">{it.name}</div>
+            <div className="conn-mode">{subtitle(it)}</div>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+function SupplierPanel({ supplier, publicUrl }: { supplier?: Supplier; publicUrl: string }) {
+  if (!supplier) return <p className="hint">Supplier not found.</p>;
+  const base = `${publicUrl}/sim/${supplier.id}`;
   return (
     <div className="supplier-panel">
       <p className="hint">
-        This connection acts as a <strong>virtual supplier</strong> (mock catalog). Point a real buyer
-        system — or a virtual-buyer connection — at these endpoints:
+        This connection runs in <strong>virtual-supplier</strong> mode: the tool serves
+        <strong> {supplier.name}</strong>'s mock catalog. A real buyer system points at these endpoints
+        (they're intrinsic to the supplier):
       </p>
-      <table className="kv">
-        <tbody>
-          <tr>
-            <td>PunchOut setup</td>
-            <td><code>{base}/punchout</code></td>
-          </tr>
-          <tr>
-            <td>Order</td>
-            <td><code>{base}/order</code></td>
-          </tr>
-          <tr>
-            <td>Catalog (preview)</td>
-            <td>
-              <a href={`${base}/catalog`} target="_blank" rel="noreferrer">
-                {base}/catalog ↗
-              </a>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <p className="hint">
-        The built-in demo buyer is already wired to the built-in demo supplier, so you can run the full
-        roundtrip immediately from the <em>Demo Buyer</em> connection.
-      </p>
+      <table className="kv"><tbody>
+        <tr><td>PunchOut setup</td><td><code>{base}/punchout</code></td></tr>
+        <tr><td>Order</td><td><code>{base}/order</code></td></tr>
+        <tr><td>Catalog (preview)</td><td><a href={`${base}/catalog`} target="_blank" rel="noreferrer">{base}/catalog ↗</a></td></tr>
+      </tbody></table>
+      <p className="hint">The built-in demo buyer is wired to the demo supplier, so the full roundtrip runs from the Demo connection.</p>
     </div>
   );
 }

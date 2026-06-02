@@ -45,14 +45,20 @@ function decodeHtml(s: string): string {
 }
 
 describe("Mode A loopback", () => {
-  it("seeds two demo connections", async () => {
+  it("seeds a demo buyer, supplier, and connection", async () => {
     const conns = await fetch(`${base}/api/connections`).then((r) => r.json());
-    expect(conns).toHaveLength(2);
+    expect(conns).toHaveLength(1);
+    expect(conns[0].buyer?.name).toBe("Demo Buyer");
+    expect(conns[0].supplier?.name).toContain("Demo Supplier");
+    const buyers = await fetch(`${base}/api/buyers`).then((r) => r.json());
+    const suppliers = await fetch(`${base}/api/suppliers`).then((r) => r.json());
+    expect(buyers).toHaveLength(1);
+    expect(suppliers).toHaveLength(1);
   });
 
   it("runs setup -> browse -> punchback -> order", async () => {
     // SetupRequest
-    const setup = await fetch(`${base}/api/connections/demo-buyer/setup`, {
+    const setup = await fetch(`${base}/api/connections/demo/setup`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: "{}",
@@ -66,7 +72,7 @@ describe("Mode A loopback", () => {
     const formpost = new URL(setup.startPage).searchParams.get("formpost")!;
 
     // Checkout -> punchback, then submit to the callback as the browser would
-    const form = new URLSearchParams({ cookie, formpost, q_0: "2", q_1: "1" });
+    const form = new URLSearchParams({ cookie, formpost, bd: "DUNS", bi: "123456789", q_0: "2", q_1: "1" });
     const checkoutHtml = await fetch(`${base}/sim/demo-supplier/checkout`, {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
@@ -86,7 +92,7 @@ describe("Mode A loopback", () => {
     expect(cart.total.amount).toBeCloseTo(12.5 * 2 + 34, 2);
 
     // OrderRequest (happy path)
-    const order = await fetch(`${base}/api/connections/demo-buyer/order`, {
+    const order = await fetch(`${base}/api/connections/demo/order`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ sessionId: cookie, items: cart.items, currency: cart.total.currency }),
@@ -96,7 +102,7 @@ describe("Mode A loopback", () => {
   });
 
   it("happy-path attachment resolves its cid", async () => {
-    const res = await fetch(`${base}/api/connections/demo-buyer/order`, {
+    const res = await fetch(`${base}/api/connections/demo/order`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -117,7 +123,7 @@ describe("Mode A loopback", () => {
   ];
 
   it("order/preview places an item-level attachment cid in the right ItemOut", async () => {
-    const preview = await fetch(`${base}/api/connections/demo-buyer/order/preview`, {
+    const preview = await fetch(`${base}/api/connections/demo/order/preview`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -134,7 +140,7 @@ describe("Mode A loopback", () => {
   });
 
   it("item-level attachment resolves; item-level dangling cid is detected", async () => {
-    const ok = await fetch(`${base}/api/connections/demo-buyer/order`, {
+    const ok = await fetch(`${base}/api/connections/demo/order`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -146,7 +152,7 @@ describe("Mode A loopback", () => {
     }).then((r) => r.json());
     expect(ok.request.validation.issues.map((i: any) => i.code)).not.toContain("dangling-cid");
 
-    const bad = await fetch(`${base}/api/connections/demo-buyer/order`, {
+    const bad = await fetch(`${base}/api/connections/demo/order`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -162,13 +168,13 @@ describe("Mode A loopback", () => {
   });
 
   it("sends an edited OrderRequest cXML verbatim (retry path)", async () => {
-    const preview = await fetch(`${base}/api/connections/demo-buyer/order/preview`, {
+    const preview = await fetch(`${base}/api/connections/demo/order/preview`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ items: twoItems, currency: "USD" }),
     }).then((r) => r.json());
     const edited = preview.xml.replace("</OrderRequest>", "<!-- edited by user --></OrderRequest>");
-    const res = await fetch(`${base}/api/connections/demo-buyer/order`, {
+    const res = await fetch(`${base}/api/connections/demo/order`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ sessionId: "edited-1", xml: edited, items: twoItems, currency: "USD" }),
@@ -205,7 +211,7 @@ describe("Mode A loopback", () => {
   });
 
   it("dangling-cid is detected by the buyer build AND rejected by the supplier", async () => {
-    const res = await fetch(`${base}/api/connections/demo-buyer/order`, {
+    const res = await fetch(`${base}/api/connections/demo/order`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({

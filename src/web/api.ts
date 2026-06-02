@@ -1,10 +1,13 @@
 import type {
+  Buyer,
   Cart,
   Connection,
+  ConnectionWithParties,
   LogRecord,
   OrderResult,
   SessionSummary,
   SetupResult,
+  Supplier,
 } from "./types";
 
 async function jsonOrThrow<T>(res: Response): Promise<T> {
@@ -15,9 +18,28 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+function crud<T>(base: string) {
+  return {
+    list: () => fetch(base).then((r) => jsonOrThrow<T[]>(r)),
+    create: (data: unknown) =>
+      fetch(base, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(data) }).then(
+        (r) => jsonOrThrow<T>(r),
+      ),
+    update: (id: string, data: unknown) =>
+      fetch(`${base}/${id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(data) }).then(
+        (r) => jsonOrThrow<T>(r),
+      ),
+    remove: (id: string) =>
+      fetch(`${base}/${id}`, { method: "DELETE" }).then((r) => jsonOrThrow<{ ok: boolean }>(r)),
+  };
+}
+
 export const api = {
+  buyers: crud<Buyer>("/api/buyers"),
+  suppliers: crud<Supplier>("/api/suppliers"),
+
   listConnections: () =>
-    fetch("/api/connections").then((r) => jsonOrThrow<Connection[]>(r)),
+    fetch("/api/connections").then((r) => jsonOrThrow<ConnectionWithParties[]>(r)),
 
   createConnection: (data: Partial<Connection>) =>
     fetch("/api/connections", {

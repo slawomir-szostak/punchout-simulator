@@ -124,7 +124,7 @@ backend, so there is no CORS between them).
 | XML parsing | `fast-xml-parser` |
 | cXML building | template literals (full control over shape/ordering/`xml:lang`) |
 | multipart/related | hand-assembled (`Buffer` + boundary) |
-| Storage | `lowdb` (`config.json`) for connections · append-only JSONL per session for logs · separate files for attachments |
+| Storage | `lowdb` (`config.json`) for buyers/suppliers/connections · append-only JSONL per session for logs · separate files for attachments |
 
 ```
 src/
@@ -133,9 +133,20 @@ src/
    └─ cxml/  build · parse · validate · multipart · types
 ```
 
+### Data model
+
+The config is normalized into three entities:
+
+- **Buyer** — a reusable party holding its own cXML identity (the `From` credential).
+- **Supplier** — a reusable party holding its cXML identity (`To`) plus its **endpoints** (PunchOut URL, Order URL) and an optional mock catalog. Endpoints are intrinsic to the supplier — defined once, not per relationship.
+- **Connection** — the edge pairing one Buyer with one Supplier. It holds only what is specific to that pair: which side the tool simulates (`mode`), the `sharedSecret`, an optional per-pair Sender identity override (defaults to the buyer's identity), `authStyle`, and `deploymentMode`.
+
+At send time: `From` = buyer identity, `To` = supplier identity, `Sender` = the connection's override (or the buyer), and the request targets the supplier's endpoints. The mock-supplier endpoints are keyed by supplier id (`/sim/<supplierId>/…`).
+
 ### Endpoints
 
-- `*/api/connections` — CRUD for connection configs
+- `*/api/buyers`, `*/api/suppliers` — CRUD for the reusable parties
+- `*/api/connections` — CRUD for connection edges (reference a buyer + supplier)
 - `POST /api/connections/:id/setup` — send the SetupRequest, capture + validate the response
 - `POST /api/connections/:id/order` — send the OrderRequest (multipart if attachments), capture + validate
 - `POST /punchout/return` — callback receiving the punchback auto-submit

@@ -1,36 +1,41 @@
-import { createConnection, listConnections } from "./store/config.js";
+import {
+  createBuyer,
+  createConnection,
+  createSupplier,
+  listConnections,
+} from "./store/config.js";
 import { getPublicUrl } from "./runtime.js";
 
-// On first run (empty config), seed a self-contained demo pair: a built-in
-// virtual-supplier and a virtual-buyer pointed at it. This makes the full Mode A
-// roundtrip runnable immediately with no external partner.
+// On first run (no connections), seed a self-contained demo: a Buyer and a
+// Supplier, plus a Connection pairing them. The supplier's endpoints point at
+// its own built-in mock (/sim/<supplierId>/...), so the full Mode A roundtrip
+// runs immediately with no external partner.
 export async function seedDemoIfEmpty(): Promise<void> {
   if (listConnections().length > 0) return;
 
-  const supplier = await createConnection({
+  const buyer = await createBuyer({
+    id: "demo-buyer",
+    name: "Demo Buyer",
+    identity: { domain: "DUNS", identity: "123456789" },
+  });
+
+  const supplier = await createSupplier({
     id: "demo-supplier",
     name: "Demo Supplier (built-in mock)",
-    mode: "virtual-supplier",
-    from: { domain: "DUNS", identity: "987654321" }, // supplier identity (the tool)
-    to: { domain: "DUNS", identity: "123456789" }, // buyer identity (counterparty)
-    sender: { domain: "DUNS", identity: "987654321" },
-    sharedSecret: "demo-secret",
-    deploymentMode: "test",
-    authStyle: "SharedSecret",
+    identity: { domain: "DUNS", identity: "987654321" },
+    punchoutUrl: `${getPublicUrl()}/sim/demo-supplier/punchout`,
+    orderUrl: `${getPublicUrl()}/sim/demo-supplier/order`,
     catalog: [],
   });
 
   await createConnection({
-    id: "demo-buyer",
-    name: "Demo Buyer → built-in supplier",
+    id: "demo",
+    name: "Demo Buyer → Demo Supplier",
+    buyerId: buyer.id,
+    supplierId: supplier.id,
     mode: "virtual-buyer",
-    from: { domain: "DUNS", identity: "123456789" }, // buyer identity (the tool)
-    to: { domain: "DUNS", identity: "987654321" }, // supplier identity (counterparty)
-    sender: { domain: "DUNS", identity: "123456789" },
     sharedSecret: "demo-secret",
     deploymentMode: "test",
     authStyle: "SharedSecret",
-    punchoutUrl: `${getPublicUrl()}/sim/${supplier.id}/punchout`,
-    orderUrl: `${getPublicUrl()}/sim/${supplier.id}/order`,
   });
 }

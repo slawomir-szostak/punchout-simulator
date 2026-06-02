@@ -1,19 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { validateDocument } from "../src/server/cxml/validate.js";
-import type { Connection } from "../src/server/cxml/types.js";
+import { validateDocument, type ExpectedCredentials } from "../src/server/cxml/validate.js";
 
-const conn: Connection = {
-  id: "c1",
-  name: "Test",
-  mode: "virtual-buyer",
+const expected: ExpectedCredentials = {
   from: { domain: "DUNS", identity: "111" },
   to: { domain: "DUNS", identity: "222" },
   sender: { domain: "DUNS", identity: "111" },
   sharedSecret: "s3cret",
-  deploymentMode: "test",
   authStyle: "SharedSecret",
-  createdAt: "",
-  updatedAt: "",
 };
 
 const codes = (xml: string, ctx = {}) =>
@@ -77,15 +70,15 @@ describe("OrderRequest attachment validation", () => {
     </OrderRequest></Request></cXML>`;
 
   it("resolves a matching cid (no dangling error)", () => {
-    const c = codes(order("doc-1"), { connection: conn, availableContentIds: new Set(["doc-1"]) });
+    const c = codes(order("doc-1"), { expected, availableContentIds: new Set(["doc-1"]) });
     expect(c).not.toContain("dangling-cid");
   });
   it("flags a dangling cid", () => {
-    const c = codes(order("doc-1"), { connection: conn, availableContentIds: new Set(["doc-1-MISSING"]) });
+    const c = codes(order("doc-1"), { expected, availableContentIds: new Set(["doc-1-MISSING"]) });
     expect(c).toContain("dangling-cid");
   });
   it("warns about an unreferenced part", () => {
-    const c = codes(order("doc-1"), { connection: conn, availableContentIds: new Set(["doc-1", "extra"]) });
+    const c = codes(order("doc-1"), { expected, availableContentIds: new Set(["doc-1", "extra"]) });
     expect(c).toContain("unreferenced-attachment");
   });
 });
@@ -97,7 +90,7 @@ describe("credential & shared-secret checks", () => {
       <To><Credential domain="DUNS"><Identity>222</Identity></Credential></To>
       <Sender><Credential domain="DUNS"><Identity>111</Identity><SharedSecret>s3cret</SharedSecret></Credential></Sender>
       </Header><Request><PunchOutSetupRequest operation="create"><BuyerCookie>c</BuyerCookie><BrowserFormPost><URL>http://x</URL></BrowserFormPost></PunchOutSetupRequest></Request></cXML>`;
-    expect(codes(xml, { connection: conn })).toContain("credential-mismatch");
+    expect(codes(xml, { expected })).toContain("credential-mismatch");
   });
   it("errors on a wrong SharedSecret", () => {
     const xml = `<cXML payloadID="p@h" timestamp="t"><Header>
@@ -105,7 +98,7 @@ describe("credential & shared-secret checks", () => {
       <To><Credential domain="DUNS"><Identity>222</Identity></Credential></To>
       <Sender><Credential domain="DUNS"><Identity>111</Identity><SharedSecret>WRONG</SharedSecret></Credential></Sender>
       </Header><Request><OrderRequest><OrderRequestHeader orderID="1" orderDate="d"><Total><Money currency="USD">1</Money></Total></OrderRequestHeader><ItemOut quantity="1"><ItemID><SupplierPartID>A</SupplierPartID></ItemID><ItemDetail><UnitPrice><Money currency="USD">1</Money></UnitPrice></ItemDetail></ItemOut></OrderRequest></Request></cXML>`;
-    expect(codes(xml, { connection: conn })).toContain("sharedsecret-mismatch");
+    expect(codes(xml, { expected })).toContain("sharedsecret-mismatch");
   });
 });
 

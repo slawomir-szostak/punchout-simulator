@@ -2,76 +2,84 @@ import { Hono } from "hono";
 import {
   createConnection,
   deleteConnection,
+  getBuyer,
   getConnection,
+  getSupplier,
   listConnections,
+  resolveConnection,
   updateConnection,
   type ConnectionInput,
 } from "../store/config.js";
-import type { Connection, Credential } from "../cxml/types.js";
+import type { Credential } from "../cxml/types.js";
 
-// CRUD for connection configs (spec section 10). Role-neutral: each connection
-// carries a `mode` so virtual-buyer (phase 1) and virtual-supplier (phase 2)
-// share the same storage.
+// CRUD for connection edges. A connection references a Buyer and a Supplier and
+// holds only pair-specific data (mode + credentials). See spec sections 7, 10.
 
 export const connectionsRoute = new Hono();
 
-const emptyCredential = (): Credential => ({ domain: "", identity: "" });
-
 function normalize(body: any): ConnectionInput {
-  const cred = (c: any): Credential =>
-    c && typeof c === "object"
-      ? { domain: String(c.domain ?? ""), identity: String(c.identity ?? "") }
-      : emptyCredential();
+  const sender: Credential | undefined =
+    body?.senderIdentity && (body.senderIdentity.domain || body.senderIdentity.identity)
+      ? { domain: String(body.senderIdentity.domain ?? ""), identity: String(body.senderIdentity.identity ?? "") }
+      : undefined;
   return {
-    name: String(body?.name ?? "Untitled connection"),
+    name: String(body?.name ?? ""),
+    buyerId: String(body?.buyerId ?? ""),
+    supplierId: String(body?.supplierId ?? ""),
     mode: body?.mode === "virtual-supplier" ? "virtual-supplier" : "virtual-buyer",
-    from: cred(body?.from),
-    to: cred(body?.to),
-    sender: cred(body?.sender),
     sharedSecret: String(body?.sharedSecret ?? ""),
+    senderIdentity: sender,
     deploymentMode: body?.deploymentMode === "production" ? "production" : "test",
     authStyle: body?.authStyle === "MAC" ? "MAC" : "SharedSecret",
-    punchoutUrl: body?.punchoutUrl ? String(body.punchoutUrl) : undefined,
-    orderUrl: body?.orderUrl ? String(body.orderUrl) : undefined,
-    catalog: Array.isArray(body?.catalog) ? body.catalog : undefined,
   };
 }
 
-function validateConnection(input: ConnectionInput): string[] {
+function validate(input: ConnectionInput): string[] {
   const errors: string[] = [];
-  if (!input.name.trim()) errors.push("name is required");
-  if (input.mode === "virtual-buyer") {
-    if (!input.punchoutUrl) errors.push("punchoutUrl is required for virtual-buyer");
-    if (!input.orderUrl) errors.push("orderUrl is required for virtual-buyer");
-  }
+  if (!input.buyerId || !getBuyer(input.buyerId)) errors.push("a valid buyer is required");
+  if (!input.supplierId || !getSupplier(input.supplierId)) errors.push("a valid supplier is required");
   return errors;
 }
 
-connectionsRoute.get("/", (c) => c.json(listConnections()));
+function withLabel(input: ConnectionInput): ConnectionInput {
+  if (input.name.trim()) return input;
+  const buyer = getBuyer(input.buyerId);
+  const supplier = getSupplier(input.supplierId);
+  return { ...input, name: `${buyer?.name ?? "Buyer"} → ${supplier?.name ?? "Supplier"}` };
+}
+
+// Returns connections enriched with resolved buyer/supplier for convenient display.
+connectionsRoute.get("/", (c) =>
+  c.json(
+    listConnections().map((conn) => ({
+      ...conn,
+      buyer: getBuyer(conn.buyerId),
+      supplier: getSupplier(conn.supplierId),
+    })),
+  ),
+);
 
 connectionsRoute.post("/", async (c) => {
   const input = normalize(await c.req.json().catch(() => ({})));
-  const errors = validateConnection(input);
+  const errors = validate(input);
   if (errors.length) return c.json({ errors }, 400);
-  const created = await createConnection(input);
-  return c.json(created, 201);
+  return c.json(await createConnection(withLabel(input)), 201);
 });
 
 connectionsRoute.get("/:id", (c) => {
+  const resolved = resolveConnection(c.req.param("id"));
+  if (resolved) return c.json({ ...resolved.connection, buyer: resolved.buyer, supplier: resolved.supplier });
   const conn = getConnection(c.req.param("id"));
   return conn ? c.json(conn) : c.json({ error: "not found" }, 404);
 });
 
 connectionsRoute.put("/:id", async (c) => {
-  const id = c.req.param("id");
-  const existing = getConnection(id);
+  const existing = getConnection(c.req.param("id"));
   if (!existing) return c.json({ error: "not found" }, 404);
-  const merged: Connection = { ...existing, ...(await c.req.json().catch(() => ({}))) };
-  const input = normalize(merged);
-  const errors = validateConnection(input);
+  const input = normalize({ ...existing, ...(await c.req.json().catch(() => ({}))) });
+  const errors = validate(input);
   if (errors.length) return c.json({ errors }, 400);
-  const updated = await updateConnection(id, input);
-  return c.json(updated);
+  return c.json(await updateConnection(c.req.param("id"), withLabel(input)));
 });
 
 connectionsRoute.delete("/:id", async (c) => {

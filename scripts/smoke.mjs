@@ -12,10 +12,10 @@ const ok = (label, cond) => {
 async function main() {
   // 1. connections seeded
   const conns = await fetch(`${BASE}/api/connections`).then(j);
-  ok("two demo connections seeded", conns.length === 2);
+  ok("demo connection seeded", conns.length === 1);
 
   // 2. SetupRequest -> SetupResponse
-  const setup = await fetch(`${BASE}/api/connections/demo-buyer/setup`, {
+  const setup = await fetch(`${BASE}/api/connections/demo/setup`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: "{}",
@@ -37,7 +37,7 @@ async function main() {
   const form = new URLSearchParams();
   form.set("cookie", cookie);
   form.set("formpost", formpost);
-  form.set("q_0", "2");
+  form.set("bd","DUNS"); form.set("bi","123456789"); form.set("q_0", "2");
   form.set("q_1", "1");
   const checkoutHtml = await fetch(`${BASE}/sim/demo-supplier/checkout`, {
     method: "POST",
@@ -66,7 +66,7 @@ async function main() {
   ok(`cart total = ${expectedTotal}`, Math.abs((cart.total?.amount ?? 0) - expectedTotal) < 0.01);
 
   // 6. OrderRequest (no attachments) -> OrderResponse 200
-  const order = await fetch(`${BASE}/api/connections/demo-buyer/order`, {
+  const order = await fetch(`${BASE}/api/connections/demo/order`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ sessionId: cookie, items: cart.items, currency: cart.total.currency }),
@@ -76,7 +76,7 @@ async function main() {
   ok("order response valid", order.response.validation.ok);
 
   // 7. OrderRequest WITH attachment (happy path) -> resolves cid
-  const orderAtt = await fetch(`${BASE}/api/connections/demo-buyer/order`, {
+  const orderAtt = await fetch(`${BASE}/api/connections/demo/order`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -92,7 +92,7 @@ async function main() {
   ok("order+attachment response 200", orderAtt.statusCode === "200");
 
   // 8. Dangling-cid test: receiver MUST detect the missing attachment
-  const dangling = await fetch(`${BASE}/api/connections/demo-buyer/order`, {
+  const dangling = await fetch(`${BASE}/api/connections/demo/order`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({

@@ -14,7 +14,7 @@ import {
   type ParsedDoc,
 } from "./parse.js";
 import type {
-  Connection,
+  AuthStyle,
   Credential,
   DocType,
   ValidationIssue,
@@ -27,8 +27,17 @@ import type {
 // well-formedness via fast-xml-parser plus thorough field-level rules, which
 // is the high-value half of the linter for sellers checking their own output.
 
+/** The credentials/auth expected for this exchange, resolved from a connection. */
+export interface ExpectedCredentials {
+  from?: Credential;
+  to?: Credential;
+  sender?: Credential;
+  sharedSecret?: string;
+  authStyle?: AuthStyle;
+}
+
 export interface ValidationContext {
-  connection?: Connection;
+  expected?: ExpectedCredentials;
   /** Expected BuyerCookie for the session (punchback correlation). */
   expectedBuyerCookie?: string;
   /** Normalized Content-IDs present in a multipart envelope, for cid resolution. */
@@ -65,9 +74,9 @@ function credEq(a: Credential | undefined, b: Credential | undefined): boolean {
   return a.domain === b.domain && a.identity === b.identity;
 }
 
-function credKnown(c: Credential | undefined, conn: Connection): boolean {
+function credKnown(c: Credential | undefined, exp: ExpectedCredentials): boolean {
   if (!c) return false;
-  return [conn.from, conn.to, conn.sender].some((k) => credEq(c, k));
+  return [exp.from, exp.to, exp.sender].some((k) => credEq(c, k));
 }
 
 // --- general checks ----------------------------------------------------------
@@ -88,8 +97,8 @@ function checkGeneral(doc: ParsedDoc, ctx: ValidationContext, issues: Issues) {
     issues.error("missing-timestamp", "cXML/@timestamp is missing", "cXML/@timestamp");
   }
 
-  if (!ctx.connection) return;
-  const conn = ctx.connection;
+  if (!ctx.expected) return;
+  const exp = ctx.expected;
   const creds = getHeaderCredentials(doc);
 
   for (const [name, c] of [
@@ -107,7 +116,7 @@ function checkGeneral(doc: ParsedDoc, ctx: ValidationContext, issues: Issues) {
     if (!c.identity) {
       issues.warn("credential-identity", `Header/${name}/Credential/Identity is empty`, `cXML/Header/${name}`);
     }
-    if (c.domain && c.identity && !credKnown(c, conn)) {
+    if (c.domain && c.identity && !credKnown(c, exp)) {
       issues.warn(
         "credential-mismatch",
         `Header/${name} (${c.domain}/${c.identity}) does not match any identity configured on the connection`,
@@ -118,9 +127,8 @@ function checkGeneral(doc: ParsedDoc, ctx: ValidationContext, issues: Issues) {
 }
 
 function checkSharedSecret(doc: ParsedDoc, ctx: ValidationContext, issues: Issues) {
-  if (!ctx.connection) return;
-  const conn = ctx.connection;
-  if (conn.authStyle !== "SharedSecret") return;
+  const exp = ctx.expected;
+  if (!exp || exp.authStyle !== "SharedSecret") return;
   const creds = getHeaderCredentials(doc);
   if (!creds.sharedSecret) {
     issues.warn(
@@ -128,7 +136,7 @@ function checkSharedSecret(doc: ParsedDoc, ctx: ValidationContext, issues: Issue
       "Sender/Credential/SharedSecret is absent (required for SharedSecret auth)",
       "cXML/Header/Sender/Credential/SharedSecret",
     );
-  } else if (conn.sharedSecret && creds.sharedSecret !== conn.sharedSecret) {
+  } else if (exp.sharedSecret && creds.sharedSecret !== exp.sharedSecret) {
     issues.error(
       "sharedsecret-mismatch",
       "Sender SharedSecret does not match the connection's configured shared secret",

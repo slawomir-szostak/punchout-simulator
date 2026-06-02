@@ -24,30 +24,67 @@ export interface CatalogItem {
   manufacturerName?: string;
 }
 
-export interface Connection {
+// --- Normalized domain model -------------------------------------------------
+//
+// A Buyer and a Supplier are standalone, reusable entities holding only what is
+// intrinsic to them. A Connection is the edge between one Buyer and one
+// Supplier and holds only what is specific to that pair (credentials, mode).
+
+/** A buyer party. Its `identity` is the cXML `From` credential it presents. */
+export interface Buyer {
   id: string;
   name: string;
+  identity: Credential;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * A supplier party. Endpoints are intrinsic to the supplier (constant across
+ * every buyer that talks to it) — defined here, never per Connection.
+ */
+export interface Supplier {
+  id: string;
+  name: string;
+  identity: Credential; // cXML `To` credential
+  punchoutUrl?: string; // the supplier's PunchOut setup endpoint
+  orderUrl?: string; // the supplier's order endpoint
+  catalog?: CatalogItem[]; // served when the tool acts as this supplier (Mode B)
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * The Buyer↔Supplier relationship under test. Holds only pair-specific data:
+ * which side the tool simulates (`mode`), and the credentials this buyer uses
+ * at this supplier.
+ */
+export interface Connection {
+  id: string;
+  name: string; // display label, defaults to "<Buyer> → <Supplier>"
+  buyerId: string;
+  supplierId: string;
   mode: ConnectionMode;
 
-  // Identities. For virtual-buyer the tool presents from/sender (the buyer);
-  // for virtual-supplier the tool presents the supplier identity.
-  from: Credential;
-  to: Credential;
-  sender: Credential;
-  sharedSecret: string;
+  sharedSecret: string; // pair "password" (Sender/Credential/SharedSecret)
+  /**
+   * Optional per-pair login override (the Sender identity used at this
+   * supplier). When unset it defaults to the buyer's own identity.
+   */
+  senderIdentity?: Credential;
 
   deploymentMode: DeploymentMode;
   authStyle: AuthStyle;
 
-  // virtual-buyer: the supplier endpoints the tool calls.
-  punchoutUrl?: string;
-  orderUrl?: string;
-
-  // virtual-supplier (phase 2): the tool's own mock catalog.
-  catalog?: CatalogItem[];
-
   createdAt: string;
   updatedAt: string;
+}
+
+/** A Connection with its Buyer and Supplier resolved — used by the flow/sim. */
+export interface ResolvedConnection {
+  connection: Connection;
+  buyer: Buyer;
+  supplier: Supplier;
 }
 
 export type Direction = "out" | "in"; // relative to the tool
