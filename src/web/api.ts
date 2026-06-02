@@ -11,6 +11,45 @@ import type {
   Supplier,
 } from "./types";
 
+// --- API auth token --------------------------------------------------------
+// When the tool is exposed (a non-loopback --public-url), the server requires a
+// token on /api/*. The operator opens the printed `…/?token=XYZ` URL; we capture
+// it once, persist it, and attach it to every request. On a plain localhost run
+// no token is required and this is all inert.
+
+const TOKEN_KEY = "pos-api-token";
+
+function captureToken(): string {
+  try {
+    const url = new URL(window.location.href);
+    const t = url.searchParams.get("token");
+    if (t) {
+      localStorage.setItem(TOKEN_KEY, t);
+      url.searchParams.delete("token");
+      window.history.replaceState({}, "", url.toString());
+      return t;
+    }
+    return localStorage.getItem(TOKEN_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+const token = typeof window !== "undefined" ? captureToken() : "";
+
+function authFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers);
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  return fetch(input, { ...init, headers });
+}
+
+/** Append the token as a query param — for URLs that can't carry a header
+ *  (EventSource, anchor hrefs). No-op when no token is in play. */
+export function withToken(url: string): string {
+  if (!token) return url;
+  return url + (url.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(token);
+}
+
 async function jsonOrThrow<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -21,17 +60,17 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
 
 function crud<T>(base: string) {
   return {
-    list: () => fetch(base).then((r) => jsonOrThrow<T[]>(r)),
+    list: () => authFetch(base).then((r) => jsonOrThrow<T[]>(r)),
     create: (data: unknown) =>
-      fetch(base, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(data) }).then(
+      authFetch(base, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(data) }).then(
         (r) => jsonOrThrow<T>(r),
       ),
     update: (id: string, data: unknown) =>
-      fetch(`${base}/${id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(data) }).then(
+      authFetch(`${base}/${id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(data) }).then(
         (r) => jsonOrThrow<T>(r),
       ),
     remove: (id: string) =>
-      fetch(`${base}/${id}`, { method: "DELETE" }).then((r) => jsonOrThrow<{ ok: boolean }>(r)),
+      authFetch(`${base}/${id}`, { method: "DELETE" }).then((r) => jsonOrThrow<{ ok: boolean }>(r)),
   };
 }
 
@@ -40,74 +79,74 @@ export const api = {
   suppliers: crud<Supplier>("/api/suppliers"),
   profiles: crud<Profile>("/api/profiles"),
 
-  listProfilePresets: () => fetch("/api/profile-presets").then((r) => jsonOrThrow<Profile[]>(r)),
+  listProfilePresets: () => authFetch("/api/profile-presets").then((r) => jsonOrThrow<Profile[]>(r)),
 
   listConnections: () =>
-    fetch("/api/connections").then((r) => jsonOrThrow<ConnectionWithParties[]>(r)),
+    authFetch("/api/connections").then((r) => jsonOrThrow<ConnectionWithParties[]>(r)),
 
   createConnection: (data: Partial<Connection>) =>
-    fetch("/api/connections", {
+    authFetch("/api/connections", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(data),
     }).then((r) => jsonOrThrow<Connection>(r)),
 
   updateConnection: (id: string, data: Partial<Connection>) =>
-    fetch(`/api/connections/${id}`, {
+    authFetch(`/api/connections/${id}`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(data),
     }).then((r) => jsonOrThrow<Connection>(r)),
 
   deleteConnection: (id: string) =>
-    fetch(`/api/connections/${id}`, { method: "DELETE" }).then((r) =>
+    authFetch(`/api/connections/${id}`, { method: "DELETE" }).then((r) =>
       jsonOrThrow<{ ok: boolean }>(r),
     ),
 
   setupPreview: (id: string) =>
-    fetch(`/api/connections/${id}/setup/preview`).then((r) =>
+    authFetch(`/api/connections/${id}/setup/preview`).then((r) =>
       jsonOrThrow<{ buyerCookie: string; xml: string; browserFormPostUrl: string }>(r),
     ),
 
   sendSetup: (id: string, body: { buyerCookie?: string; xml?: string }) =>
-    fetch(`/api/connections/${id}/setup`, {
+    authFetch(`/api/connections/${id}/setup`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     }).then((r) => jsonOrThrow<SetupResult>(r)),
 
   orderPreview: (id: string, body: unknown) =>
-    fetch(`/api/connections/${id}/order/preview`, {
+    authFetch(`/api/connections/${id}/order/preview`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     }).then((r) => jsonOrThrow<{ xml: string; orderId: string }>(r)),
 
   sendOrder: (id: string, body: unknown) =>
-    fetch(`/api/connections/${id}/order`, {
+    authFetch(`/api/connections/${id}/order`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     }).then((r) => jsonOrThrow<OrderResult>(r)),
 
   getCart: (sessionId: string) =>
-    fetch(`/api/cart/${encodeURIComponent(sessionId)}`).then((r) =>
+    authFetch(`/api/cart/${encodeURIComponent(sessionId)}`).then((r) =>
       r.ok ? (r.json() as Promise<Cart>) : null,
     ),
 
-  listSessions: () => fetch("/api/sessions").then((r) => jsonOrThrow<SessionSummary[]>(r)),
+  listSessions: () => authFetch("/api/sessions").then((r) => jsonOrThrow<SessionSummary[]>(r)),
 
   getSession: (id: string) =>
-    fetch(`/api/sessions/${encodeURIComponent(id)}`).then((r) => jsonOrThrow<LogRecord[]>(r)),
+    authFetch(`/api/sessions/${encodeURIComponent(id)}`).then((r) => jsonOrThrow<LogRecord[]>(r)),
 
   rawMessage: (sessionId: string, recordId: string) =>
-    fetch(
+    authFetch(
       `/api/sessions/${encodeURIComponent(sessionId)}/records/${encodeURIComponent(recordId)}/raw`,
     ).then((r) => (r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`)))),
 
   recent: (limit = 200) =>
-    fetch(`/api/recent?limit=${limit}`).then((r) => jsonOrThrow<LogRecord[]>(r)),
+    authFetch(`/api/recent?limit=${limit}`).then((r) => jsonOrThrow<LogRecord[]>(r)),
 
   runtime: () =>
-    fetch("/api/runtime").then((r) => jsonOrThrow<{ publicUrl: string; callbackUrl: string }>(r)),
+    authFetch("/api/runtime").then((r) => jsonOrThrow<{ publicUrl: string; callbackUrl: string }>(r)),
 };

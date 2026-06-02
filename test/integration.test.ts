@@ -54,6 +54,9 @@ describe("Mode A loopback", () => {
     const suppliers = await fetch(`${base}/api/suppliers`).then((r) => r.json());
     expect(buyers).toHaveLength(1);
     expect(suppliers).toHaveLength(1);
+    // The shared secret is write-only over the API: masked on read, presence flagged.
+    expect(conns[0].sharedSecret).toBe("");
+    expect(conns[0].hasSharedSecret).toBe(true);
   });
 
   it("runs setup -> browse -> punchback -> order", async () => {
@@ -67,6 +70,9 @@ describe("Mode A loopback", () => {
     expect(setup.request.validation.ok).toBe(true);
     expect(setup.response.validation.ok).toBe(true);
     expect(setup.startPage).toBeTruthy();
+    // The logged request body must not leak the shared secret.
+    expect(setup.request.body).not.toContain("demo-secret");
+    expect(setup.request.body).toContain("<SharedSecret>***</SharedSecret>");
 
     const cookie = setup.buyerCookie;
     const formpost = new URL(setup.startPage).searchParams.get("formpost")!;

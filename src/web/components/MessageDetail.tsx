@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { LogRecord } from "../types";
-import { api } from "../api";
+import { api, withToken } from "../api";
 import { CxmlEditor } from "./CxmlEditor";
 import { ValidationPanel } from "./Validation";
 
@@ -62,7 +62,7 @@ export function MessageDetail({ record, onClose }: { record: LogRecord; onClose:
           <div className="att-summary">
             <strong>Attachments ({record.attachments.length}):</strong>
             {record.attachments.map((a) => (
-              <a key={a.hash} href={`/api/attachments/${a.hash}`} target="_blank" rel="noreferrer">
+              <a key={a.hash} href={withToken(`/api/attachments/${a.hash}`)} target="_blank" rel="noreferrer">
                 {a.filename ?? a.contentId} ({a.size} B)
               </a>
             ))}

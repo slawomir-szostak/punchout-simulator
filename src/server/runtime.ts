@@ -7,6 +7,8 @@
 interface Runtime {
   port: number;
   publicUrl: string;
+  /** When set, /api/* requires this token (used when the tool is exposed). */
+  token?: string;
 }
 
 const runtime: Runtime = {
@@ -20,6 +22,11 @@ export function setRuntime(r: Partial<Runtime>): void {
 
 export function getPort(): number {
   return runtime.port;
+}
+
+/** The API token, or undefined when none is required (plain localhost runs). */
+export function getToken(): string | undefined {
+  return runtime.token;
 }
 
 export function getPublicUrl(): string {

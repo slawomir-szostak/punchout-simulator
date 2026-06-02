@@ -60,11 +60,24 @@ docker run -p 8080:8080 -v "$PWD/data:/data" punchout-simulator
 -d, --data-dir <path>  Where to store config + logs (default ./data)
     --public-url <url> Externally reachable base URL (default http://localhost:<port>)
                        Set this when fronting the tool with ngrok/cloudflared.
+    --host <addr>      Bind address (default 127.0.0.1; use 0.0.0.0 to expose on the LAN)
+    --token <secret>   Require this token on /api (auto-generated when exposed; or set POS_TOKEN)
     --no-open          Do not open a browser on start
     --no-seed          Do not seed the built-in demo buyer/supplier/connection on first run
     --dev              Dev mode (do not serve the SPA, do not open a browser)
 -h, --help             Show help
 ```
+
+### Exposure & the admin API
+
+The control plane (`/api/*` — config CRUD, logs, the live stream) is **bound to
+`127.0.0.1` by default** and is unauthenticated only for that loopback case. The
+moment the tool is **exposed** — a non-loopback `--public-url` (ngrok/cloudflared)
+or `--host 0.0.0.0` — it **requires a token** on `/api/*`: one is auto-generated
+(or pass `--token`/`POS_TOKEN`) and printed as a `…/?token=…` URL to open the UI
+with. The **inbound buyer surface stays open** (`/sim/*`, `/punchout/return`) so a
+real buyer system can still reach Mode B. Shared secrets are **write-only** over
+the API (masked on read) and **redacted from all logs**.
 
 ---
 

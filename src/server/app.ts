@@ -1,7 +1,10 @@
 import { existsSync } from "node:fs";
 import { Hono } from "hono";
 import { logger } from "hono/logger";
+import { bodyLimit } from "hono/body-limit";
+import { getCookie } from "hono/cookie";
 import { serveStatic } from "@hono/node-server/serve-static";
+import { getToken } from "./runtime.js";
 import { connectionsRoute } from "./routes/connections.js";
 import { buyersRoute, suppliersRoute } from "./routes/parties.js";
 import { profilePresetsRoute, profilesRoute } from "./routes/profiles.js";
@@ -20,6 +23,34 @@ export interface AppOptions {
 export function createApp(opts: AppOptions = {}): Hono {
   const app = new Hono();
   if (!opts.quiet) app.use("*", logger());
+
+  // Cap request bodies so an oversized (unauthenticated) POST can't OOM the
+  // single-process server. Attachments make /sim and /order legitimately large,
+  // so the limit is generous rather than tight.
+  app.use(
+    "*",
+    bodyLimit({ maxSize: 24 * 1024 * 1024, onError: (c) => c.json({ error: "payload too large" }, 413) }),
+  );
+
+  // When a token is configured (the tool is exposed via a non-loopback
+  // --public-url), gate the admin/control plane (/api/*, except the health probe)
+  // behind it. The inbound buyer surface (/sim, /punchout) stays open so a real
+  // buyer system can reach it. Token may arrive as a Bearer header, an
+  // x-pos-token header, a ?token= query, or a pos-api-token cookie.
+  app.use("/api/*", async (c, next) => {
+    const token = getToken();
+    if (!token) return next();
+    if (c.req.path === "/api/health") return next();
+    const auth = c.req.header("authorization") ?? "";
+    const provided =
+      (auth.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() : "") ||
+      c.req.header("x-pos-token") ||
+      c.req.query("token") ||
+      getCookie(c, "pos-api-token") ||
+      "";
+    if (provided === token) return next();
+    return c.json({ error: "unauthorized" }, 401);
+  });
 
   // The SPA and its own API share a single origin, so there is no CORS between
   // them (spec section 5).

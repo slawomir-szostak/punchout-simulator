@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { withToken } from "../api";
 import type { Cart, LogRecord } from "../types";
 
 interface Handlers {
@@ -13,7 +14,7 @@ export function useStream(handlers: Handlers) {
   ref.current = handlers;
 
   useEffect(() => {
-    const es = new EventSource("/api/stream");
+    const es = new EventSource(withToken("/api/stream"));
     es.addEventListener("log", (e) => {
       try {
         const data = JSON.parse((e as MessageEvent).data);
