@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { LogRecord } from "../types";
 import { api, withToken } from "../api";
 import { CxmlEditor } from "./CxmlEditor";
+import { TabList } from "./TabList";
 import { ValidationPanel } from "./Validation";
 
 type View = "cxml" | "raw";
@@ -115,22 +116,17 @@ export function MessageDetail({ record, onClose }: { record: LogRecord; onClose:
         <ValidationPanel validation={record.validation} />
 
         <div className="detail-toolbar">
-          <div className="tabs">
-            <button
-              className={`tab ${view === "cxml" ? "active" : ""}`}
-              aria-pressed={view === "cxml"}
-              onClick={() => setView("cxml")}
-            >
-              cXML
-            </button>
-            <button
-              className={`tab ${view === "raw" ? "active" : ""}`}
-              aria-pressed={view === "raw"}
-              onClick={() => setView("raw")}
-            >
-              Raw{isMultipart ? " (multipart)" : ""}
-            </button>
-          </div>
+          <TabList
+            ariaLabel="Message view"
+            listClassName="tabs"
+            tabClassName="tab"
+            value={view}
+            onChange={setView}
+            tabs={[
+              { value: "cxml", label: "cXML" },
+              { value: "raw", label: `Raw${isMultipart ? " (multipart)" : ""}` },
+            ]}
+          />
           <button className="btn-secondary" onClick={copy} disabled={view === "raw" && raw === null}>
             {copied ? "Copied ✓" : "Copy"}
           </button>

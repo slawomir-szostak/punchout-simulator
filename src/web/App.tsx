@@ -16,6 +16,7 @@ import {
 import { ConnectionEditor } from "./components/ConnectionEditor";
 import { BuyerEditor, SupplierEditor } from "./components/PartyEditors";
 import { ProfileEditor } from "./components/ProfileEditor";
+import { TabList } from "./components/TabList";
 import { BuyerFlow } from "./components/BuyerFlow";
 import { LiveLog } from "./components/LiveLog";
 import { MessageDetail } from "./components/MessageDetail";
@@ -196,18 +197,14 @@ export function App() {
 
       <div className="layout">
         <aside className="sidebar">
-          <div className="viewtabs">
-            {(["connections", "buyers", "suppliers", "profiles"] as View[]).map((v) => (
-              <button
-                key={v}
-                className={view === v ? "viewtab active" : "viewtab"}
-                aria-current={view === v ? "page" : undefined}
-                onClick={() => setView(v)}
-              >
-                {v}
-              </button>
-            ))}
-          </div>
+          <TabList
+            ariaLabel="Sections"
+            listClassName="viewtabs"
+            tabClassName="viewtab"
+            value={view}
+            onChange={setView}
+            tabs={(["connections", "buyers", "suppliers", "profiles"] as View[]).map((v) => ({ value: v, label: v }))}
+          />
 
           {view === "connections" && (
             <>
@@ -261,10 +258,17 @@ export function App() {
                 <>
                   <div className="main-head">
                     <h2>{selectedConn.name}</h2>
-                    <div className="tabs">
-                      <button className={panel === "flow" ? "tab active" : "tab"} aria-current={panel === "flow" ? "page" : undefined} onClick={() => setPanel("flow")}>Flow</button>
-                      <button className={panel === "edit" ? "tab active" : "tab"} aria-current={panel === "edit" ? "page" : undefined} onClick={() => setPanel("edit")}>Settings</button>
-                    </div>
+                    <TabList
+                      ariaLabel="Connection view"
+                      listClassName="tabs"
+                      tabClassName="tab"
+                      value={panel === "edit" ? "edit" : "flow"}
+                      onChange={(p) => setPanel(p)}
+                      tabs={[
+                        { value: "flow", label: "Flow" },
+                        { value: "edit", label: "Settings" },
+                      ]}
+                    />
                   </div>
 
                   {panel === "edit" && (
@@ -283,7 +287,18 @@ export function App() {
                   )}
                 </>
               )}
-              {panel !== "new" && !selectedConn && <p className="hint">No connection selected. Create one to get started.</p>}
+              {panel !== "new" && !selectedConn && connections.length === 0 && (
+                <Onboarding
+                  hasBuyers={buyers.length > 0}
+                  hasSuppliers={suppliers.length > 0}
+                  onNewConnection={() => { setPanel("new"); setSelectedConnId(null); }}
+                  onAddBuyer={() => { setView("buyers"); setSelectedBuyerId(NEW); }}
+                  onAddSupplier={() => { setView("suppliers"); setSelectedSupplierId(NEW); }}
+                />
+              )}
+              {panel !== "new" && !selectedConn && connections.length > 0 && (
+                <p className="hint">No connection selected — pick one from the list.</p>
+              )}
             </>
           )}
 
@@ -381,6 +396,47 @@ function EntityList<T extends { id: string; name: string }>({
         ))}
       </ul>
     </>
+  );
+}
+
+function Onboarding({
+  hasBuyers,
+  hasSuppliers,
+  onNewConnection,
+  onAddBuyer,
+  onAddSupplier,
+}: {
+  hasBuyers: boolean;
+  hasSuppliers: boolean;
+  onNewConnection: () => void;
+  onAddBuyer: () => void;
+  onAddSupplier: () => void;
+}) {
+  const ready = hasBuyers && hasSuppliers;
+  return (
+    <div className="onboarding">
+      <h2>Welcome to punchout-simulator</h2>
+      <p>
+        It plays the missing side of a cXML PunchOut conversation so you can exercise an
+        integration end-to-end. It runs in two modes:
+      </p>
+      <ul>
+        <li><strong>Virtual Buyer (Mode A)</strong> — the tool acts as the procurement system and drives a real supplier's catalog.</li>
+        <li><strong>Virtual Supplier (Mode B)</strong> — the tool serves a mock catalog and accepts a real buyer's requests.</li>
+      </ul>
+      <p>Set it up in three steps:</p>
+      <ol className="onboarding-steps">
+        <li className={hasBuyers ? "done" : ""}><strong>Buyer</strong> — holds its cXML <code>From</code> identity.</li>
+        <li className={hasSuppliers ? "done" : ""}><strong>Supplier</strong> — holds its <code>To</code> identity, endpoints, and an optional mock catalog.</li>
+        <li><strong>Connection</strong> — pairs a Buyer with a Supplier and picks the mode. Then run the flow.</li>
+      </ol>
+      <div className="form-actions">
+        <button className="btn-primary" onClick={onNewConnection} disabled={!ready}>+ New connection</button>
+        {!hasBuyers && <button className="btn-secondary" onClick={onAddBuyer}>Add a Buyer</button>}
+        {!hasSuppliers && <button className="btn-secondary" onClick={onAddSupplier}>Add a Supplier</button>}
+      </div>
+      {!ready && <p className="hint">Create at least one Buyer and one Supplier first, then pair them in a connection.</p>}
+    </div>
   );
 }
 
