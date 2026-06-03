@@ -177,6 +177,43 @@ export function App() {
     reloadSessions();
   };
 
+  // Resume a historical Mode-A session: reconstruct its flow state from the log
+  // records (setup XML + StartPage, order if any) and attach it as a live flow
+  // bound to the same BuyerCookie, so the user can continue driving it.
+  const resumeSession = async (sid: string, connectionId: string, operation: string) => {
+    const recs = await api.getSession(sid).catch(() => [] as LogRecord[]);
+    const find = (d: string, dir: string) => recs.find((r) => r.docType === d && r.direction === dir);
+    const m = (re: RegExp, s?: string) => (s ? re.exec(s)?.[1] : undefined);
+    const setupReq = find("SetupRequest", "out");
+    const setupResp = find("SetupResponse", "in");
+    const orderReq = find("OrderRequest", "out");
+    const orderResp = find("OrderResponse", "in");
+    const session: FlowSession = {
+      ...emptySession(),
+      buyerCookie: sid,
+      setupXml: setupReq?.body ?? "",
+      setupResult: setupReq && setupResp ? {
+        buyerCookie: sid,
+        httpStatus: setupResp.status ?? 200,
+        startPage: m(/<StartPage>[\s\S]*?<URL>([\s\S]*?)<\/URL>/, setupResp.body),
+        statusCode: m(/<Status[^>]*\bcode="([^"]+)"/, setupResp.body),
+        request: setupReq,
+        response: setupResp,
+      } : null,
+      orderXml: orderReq?.body ?? "",
+      orderResult: orderReq && orderResp ? {
+        httpStatus: orderResp.status ?? 200,
+        statusCode: m(/<Status[^>]*\bcode="([^"]+)"/, orderResp.body),
+        statusText: m(/<Status[^>]*\btext="([^"]+)"/, orderResp.body),
+        request: orderReq,
+        response: orderResp,
+      } : null,
+    };
+    const key = `flow-${++flowSeq.current}`;
+    setFlows((f) => ({ ...f, [key]: { connectionId, operation, session } }));
+    setSelectedSessionId(key);
+  };
+
   const startSession = (choice: NewSessionChoice) => {
     const key = `flow-${++flowSeq.current}`;
     setFlows((f) => ({ ...f, [key]: { connectionId: choice.connectionId, operation: choice.operation, sourceItems: choice.items, session: emptySession() } }));
@@ -424,12 +461,29 @@ export function App() {
                     </h2>
                     <ConfirmButton onConfirm={() => deleteSession(selectedSessionId!)} label="Delete session" confirmLabel="Confirm delete?" />
                   </div>
-                  <p className="hint">
-                    {serverSel.inbound
-                      ? "Initiated by an external buyer against this tool's Mode-B endpoint. Read-only log."
-                      : "From an earlier run — read-only message log. Start a new session to drive a fresh flow."}
-                    {" "}Session: <code>{serverSel.sessionId}</code>
-                  </p>
+                  {(() => {
+                    const resumable = !serverSel.inbound
+                      ? connections.find((c) => c.id === serverSel.connectionId && c.mode === "virtual-buyer")
+                      : undefined;
+                    return (
+                      <>
+                        <p className="hint">
+                          {serverSel.inbound
+                            ? "Initiated by an external buyer against this tool's Mode-B endpoint. Read-only log."
+                            : "From an earlier run."}
+                          {" "}Session: <code>{serverSel.sessionId}</code>
+                        </p>
+                        {resumable && (
+                          <div className="step-actions" style={{ marginTop: 0, marginBottom: ".6rem" }}>
+                            <button className="btn-primary" onClick={() => resumeSession(serverSel.sessionId, resumable.id, serverSel.operation ?? "create")}>
+                              Continue this session →
+                            </button>
+                            <span className="hint">Reattach as a live flow to send more requests on this BuyerCookie.</span>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                   <SessionLog records={sessionRecords} connections={connections} onSelect={setDetail} />
                 </>
               )}
