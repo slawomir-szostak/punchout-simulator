@@ -246,6 +246,7 @@ legend { color: var(--muted); font-size: .8rem; padding: 0 .4rem; }
 .cart-table, .kv { width: 100%; border-collapse: collapse; margin-top: .5rem; }
 .cart-table th, .cart-table td { text-align: left; padding: .45rem .6rem; border-bottom: 1px solid var(--border); font-size: .85rem; }
 .cart-table th { color: var(--muted); font-size: .72rem; text-transform: uppercase; }
+.cart-table .num { text-align: right; white-space: nowrap; }
 .cart-total { font-weight: 700; color: var(--warn); }
 .kv td { padding: .35rem .6rem; border-bottom: 1px solid var(--border); }
 .kv td:first-child { color: var(--muted); width: 140px; }
