@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import type { Buyer, Credential, ProductList, Profile, Supplier } from "../types";
+import type { Address, Buyer, Contact, Credential, ProductList, Profile, Supplier } from "../types";
+import { AddressFields, ContactFields } from "./AddressFields";
 
 // Editors for the standalone Buyer and Supplier entities. Each holds only the
 // attributes intrinsic to that party (see the normalized model).
@@ -158,6 +159,20 @@ export function BuyerEditor({
           ))}
         </select>
       </div>
+
+      <fieldset>
+        <legend>Ship-to address <span className="hint">(default for this buyer's orders; pre-fills the OrderRequest)</span></legend>
+        <AddressFields value={draft.shipTo ?? {}} onChange={(shipTo: Address) => setDraft({ ...draft, shipTo })} />
+      </fieldset>
+      <fieldset>
+        <legend>Bill-to address <span className="hint">(usually constant per buyer org)</span></legend>
+        <AddressFields value={draft.billTo ?? {}} onChange={(billTo: Address) => setDraft({ ...draft, billTo })} />
+      </fieldset>
+      <fieldset>
+        <legend>Contact <span className="hint">(end-user / requisitioner — name, email, phone)</span></legend>
+        <ContactFields value={(draft.contact ?? { role: "endUser" }) as Contact} onChange={(contact: Contact) => setDraft({ ...draft, contact })} />
+      </fieldset>
+
       <Actions saving={saving} err={err} isNew={!buyer} noun="buyer" onSave={save} onDelete={buyer && onDelete ? () => onDelete(buyer.id) : undefined} />
     </div>
   );

@@ -102,6 +102,12 @@ a { color: var(--link); }
 .check-inline input { width: auto; padding: 0; }
 .check-row { display: flex; align-items: baseline; gap: .45rem; cursor: pointer; }
 .check-row input { width: auto; padding: 0; flex: 0 0 auto; align-self: center; }
+.address-grid { display: flex; flex-wrap: wrap; gap: .5rem .6rem; align-items: flex-end; }
+.addr-field { display: flex; flex-direction: column; flex: 0 1 9rem; }
+.addr-field.grow { flex: 1 1 14rem; }
+.addr-field input, .addr-field select { padding: .4rem .5rem; font-size: .8rem; width: 100%; box-sizing: border-box; }
+.addr-field input.addr-invalid { border-color: #ef4444; }
+.addr-warn { color: #f59e0b; font-weight: 600; }
 .product-card { border: 1px solid var(--border); border-radius: 8px; padding: .65rem; margin-bottom: .6rem; background: var(--panel-2); }
 .product-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: .5rem; padding-bottom: .4rem; border-bottom: 1px solid var(--border); }
 .product-card-grid { display: flex; flex-wrap: wrap; gap: .5rem .6rem; align-items: flex-end; margin-bottom: .6rem; }

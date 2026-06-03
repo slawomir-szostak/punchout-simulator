@@ -18,6 +18,9 @@ const blankProfile = (): Partial<Profile> => ({
   attachmentEncoding: "binary",
   cartReturnTransport: "cxml-urlencoded",
   extrinsics: [],
+  addressMode: "full",
+  shipToInSetup: false,
+  contactInSetup: false,
 });
 
 const DOC_TYPES: Array<keyof DtdVersionMap> = [
@@ -154,6 +157,27 @@ export function ProfileEditor({ profile, onSave, onDelete }: { profile: Profile 
           </select>
         </div>
       </div>
+
+      <fieldset>
+        <legend>Addresses <span className="hint">(how ShipTo/BillTo/Contact are emitted)</span></legend>
+        <div className="form-row">
+          <label>Address mode</label>
+          <select value={draft.addressMode ?? "full"} onChange={(e) => setDraft({ ...draft, addressMode: e.target.value as any })}>
+            <option value="full">full — emit the PostalAddress</option>
+            <option value="id-only">id-only — emit just addressID (reference)</option>
+            <option value="both">both — addressID + PostalAddress</option>
+          </select>
+        </div>
+        <label className="check-row">
+          <input type="checkbox" checked={!!draft.shipToInSetup} onChange={(e) => setDraft({ ...draft, shipToInSetup: e.target.checked })} />
+          Send ShipTo in the PunchOutSetupRequest
+          <span className="hint"> — Ariba-style; lets the supplier price/check per ship-to</span>
+        </label>
+        <label className="check-row">
+          <input type="checkbox" checked={!!draft.contactInSetup} onChange={(e) => setDraft({ ...draft, contactInSetup: e.target.checked })} />
+          Send Contact in the PunchOutSetupRequest
+        </label>
+      </fieldset>
 
       <fieldset>
         <legend>Extrinsic templates <span className="hint">(injected into setup/order; value may use ${"{buyerCookie}"} / ${"{orderId}"})</span></legend>

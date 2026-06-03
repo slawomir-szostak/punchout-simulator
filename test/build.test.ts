@@ -140,6 +140,46 @@ describe("buildPunchOutOrderMessage", () => {
   });
 });
 
+describe("addresses (ShipTo / BillTo / Contact)", () => {
+  const orderBase = {
+    from: buyer, to: supplier, sender: buyer, orderId: "PO-1", orderDate: "2026-01-01T00:00:00.000Z",
+    payloadId: "p@h", timestamp: "2026-01-01T00:00:00.000Z", currency: "USD", total: 0,
+    items: [{ quantity: 1, supplierPartId: "A", unitPriceAmount: 0, currency: "USD" }],
+  };
+  const ship = { addressId: "1001", addressIdDomain: "buyerSystemID", name: "HQ", street: "1 Market St", city: "SF", state: "CA", postalCode: "94105", countryIsoCode: "US", countryName: "United States" };
+
+  it("full mode (default) emits the PostalAddress and no addressID", () => {
+    const xml = buildOrderRequest({ ...orderBase, shipTo: ship });
+    expect(xml).toContain("<Street>1 Market St</Street>");
+    expect(xml).not.toContain('addressID="1001"');
+  });
+  it("id-only mode emits the addressID + domain and no PostalAddress", () => {
+    const xml = buildOrderRequest({ ...orderBase, shipTo: ship, addressMode: "id-only" });
+    expect(xml).toContain('<Address addressID="1001" addressIDDomain="buyerSystemID">');
+    expect(xml).not.toContain("<Street>");
+  });
+  it("both mode emits addressID and PostalAddress", () => {
+    const xml = buildOrderRequest({ ...orderBase, shipTo: ship, addressMode: "both" });
+    expect(xml).toContain('addressID="1001"');
+    expect(xml).toContain("<Street>1 Market St</Street>");
+  });
+  it("emits a Contact with role, email and phone in the OrderRequest", () => {
+    const xml = buildOrderRequest({ ...orderBase, contact: { role: "endUser", name: "Jane", email: "j@x.io", phone: "+1 555" } });
+    expect(xml).toContain('<Contact role="endUser"');
+    expect(xml).toContain("<Email>j@x.io</Email>");
+    expect(xml).toContain("<Number>+1 555</Number>");
+  });
+  it("carries ShipTo and Contact inside the PunchOutSetupRequest when provided", () => {
+    const xml = buildSetupRequest({
+      from: buyer, to: supplier, sender: buyer, buyerCookie: "c1",
+      browserFormPostUrl: "http://localhost/punchout/return", payloadId: "p@h", timestamp: "2026-01-01T00:00:00.000Z",
+      shipTo: ship, contact: { role: "endUser", email: "j@x.io" }, addressMode: "both",
+    });
+    expect(xml).toMatch(/<PunchOutSetupRequest[\s\S]*<ShipTo>[\s\S]*<\/PunchOutSetupRequest>/);
+    expect(xml).toContain('<Contact role="endUser"');
+  });
+});
+
 describe("profile-driven cXML (version / UserAgent / operation / extrinsics)", () => {
   const base = {
     from: buyer, to: supplier, sender: buyer, sharedSecret: "s3cret",

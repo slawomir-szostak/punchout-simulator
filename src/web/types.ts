@@ -1,9 +1,13 @@
 // The SPA reuses the server's domain types directly (type-only imports, erased
 // at build) so the two halves never drift.
 export type {
+  Address,
+  AddressMode,
   AttachmentEncoding,
   AttachmentRef,
   Buyer,
+  Contact,
+  ContactRole,
   Cart,
   CartItem,
   CartReturnTransport,

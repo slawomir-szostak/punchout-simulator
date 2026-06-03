@@ -24,6 +24,9 @@ export const PROFILE_PRESETS: ProfilePreset[] = [
     attachmentEncoding: "binary",
     cartReturnTransport: "cxml-urlencoded",
     extrinsics: [],
+    addressMode: "full",
+    shipToInSetup: false,
+    contactInSetup: false,
   },
   {
     id: "ariba",
@@ -36,6 +39,11 @@ export const PROFILE_PRESETS: ProfilePreset[] = [
     attachmentEncoding: "base64",
     cartReturnTransport: "cxml-urlencoded",
     extrinsics: [{ name: "User", value: "${buyerCookie}", scope: "setup" }],
+    // Ariba sends ShipTo (addressID + postal) already in the SetupRequest so the
+    // supplier can return ship-to-specific pricing/availability.
+    addressMode: "both",
+    shipToInSetup: true,
+    contactInSetup: false,
   },
   {
     id: "coupa",
@@ -49,6 +57,9 @@ export const PROFILE_PRESETS: ProfilePreset[] = [
     attachmentEncoding: "base64",
     cartReturnTransport: "cxml-urlencoded",
     extrinsics: [],
+    addressMode: "both",
+    shipToInSetup: false,
+    contactInSetup: false,
   },
   {
     id: "jaggaer",
@@ -61,6 +72,9 @@ export const PROFILE_PRESETS: ProfilePreset[] = [
     attachmentEncoding: "binary",
     cartReturnTransport: "cxml-urlencoded",
     extrinsics: [],
+    addressMode: "full",
+    shipToInSetup: false,
+    contactInSetup: false,
   },
   {
     id: "oracle",
@@ -73,6 +87,9 @@ export const PROFILE_PRESETS: ProfilePreset[] = [
     attachmentEncoding: "binary",
     cartReturnTransport: "cxml-urlencoded",
     extrinsics: [],
+    addressMode: "full",
+    shipToInSetup: false,
+    contactInSetup: false,
   },
   {
     id: "sap-srm",
@@ -88,6 +105,10 @@ export const PROFILE_PRESETS: ProfilePreset[] = [
     attachmentEncoding: "base64",
     cartReturnTransport: "cxml-base64",
     extrinsics: [],
+    // SAP is location/plant-code centric — addresses by reference.
+    addressMode: "id-only",
+    shipToInSetup: false,
+    contactInSetup: false,
   },
   {
     id: "workday",
@@ -100,6 +121,9 @@ export const PROFILE_PRESETS: ProfilePreset[] = [
     attachmentEncoding: "base64",
     cartReturnTransport: "cxml-urlencoded",
     extrinsics: [],
+    addressMode: "full",
+    shipToInSetup: false,
+    contactInSetup: false,
   },
 ];
 

@@ -100,7 +100,7 @@ Document-specific:
 |---|---|
 | **PunchOutSetupResponse** | `Status` present & `200`; valid `StartPage/URL` |
 | **PunchOutOrderMessage** (punchback) | `BuyerCookie` matches the session; header `Total`/`Money`+currency; each `ItemIn` has quantity, `SupplierPartID`, `UnitPrice`+currency, `Description`, `UnitOfMeasure`, `Classification`@domain; **single currency** (mixed-currency is an error unless the supplier allows it); **Total consistency** (sum of line totals) |
-| **OrderRequest** | `orderID`/`orderDate`/`Total`; `ShipTo`/`BillTo`; each `ItemOut`; **single currency** (as above); **attachment `cid:` resolution** (see below) |
+| **OrderRequest** | `orderID`/`orderDate`/`Total`; `ShipTo`/`BillTo` present **and complete** (an `addressID` or a postal Street/City — an empty block is flagged); `Contact@role`; each `ItemOut`; **single currency** (as above); **attachment `cid:` resolution** (see below) |
 | **OrderResponse** | `Status` code present / not an error |
 
 > Note: full cXML DTD validation would require a native validating XML parser,
@@ -180,7 +180,7 @@ src/
 
 The config is normalized into five entities:
 
-- **Buyer** — a reusable party holding its own cXML identity (the `From` credential) and an optional **platform profile** reference (see below).
+- **Buyer** — a reusable party holding its own cXML identity (the `From` credential), an optional **platform profile** reference (see below), and optional default **ShipTo / BillTo addresses** and an end-user **Contact** (see below).
 - **Supplier** — a reusable party holding its cXML identity (`To`) plus its **endpoints** (PunchOut URL, Order URL) and the **product lists** it serves as its Mode-B catalog. Endpoints are intrinsic to the supplier — defined once, not per relationship. An optional `allowMixedCurrency` flag relaxes the multi-currency check for this supplier (see below).
 - **Connection** — the edge pairing one Buyer with one Supplier. It holds only what is specific to that pair: which side the tool simulates (`mode`), the `sharedSecret`, an optional per-pair Sender identity override (defaults to the buyer's identity), `deploymentMode`, and `attachmentEncoding`.
 - **Product List** — a reusable, named set of catalog products. Assigned to one or more Suppliers; each supplier serves the **union** of its lists as its mock catalog. See below.
@@ -213,6 +213,16 @@ meaningless cross-currency sum) and validation raises a `mixed-currency` **error
 genuinely handles multi-currency orders can set **`allowMixedCurrency`**, which downgrades that to a
 non-blocking **warning** (the per-line `Money` currencies are always preserved either way).
 
+### Addresses & contact
+
+A **Buyer** holds default **ShipTo** / **BillTo** addresses and an end-user **Contact** (name, email,
+phone). They pre-fill the OrderRequest (which stays fully editable as cXML before sending) and, when the
+buyer's profile enables it, are also carried in the **PunchOutSetupRequest** (Ariba-style). Each address
+supports a postal block and/or an `addressID` (+ `addressIDDomain`) reference; the **profile's
+`addressMode`** decides which is emitted (`full` / `id-only` / `both`) — matching how platforms differ
+(Jaggaer/Workday send full postal, SAP is plant-code/`addressID`-centric, Ariba sends both and includes
+ShipTo in setup). An emitted `ShipTo`/`BillTo` with neither an `addressID` nor a Street/City is flagged.
+
 ### Simulating different procurement platforms (Buyer profiles)
 
 Real procurement systems emit cXML differently. A **Profile** captures a platform's
@@ -227,6 +237,8 @@ Ariba, Coupa, Jaggaer, Oracle, SAP, or Workday:
 | `attachmentEncoding` | Default `Content-Transfer-Encoding` for OrderRequest attachments (`binary`/`base64`). |
 | `cartReturnTransport` | How the punchback is returned in Mode B: `cxml-urlencoded`, `cxml-base64`, or `raw`. |
 | `extrinsics` | `<Extrinsic>` templates injected into the setup/order documents (values may use `${buyerCookie}` / `${orderId}`). |
+| `addressMode` | How `ShipTo`/`BillTo`/`Contact` are emitted: `full` (PostalAddress), `id-only` (just `addressID`), or `both`. |
+| `shipToInSetup` / `contactInSetup` | Carry the buyer's `ShipTo` / `Contact` already in the **PunchOutSetupRequest** (Ariba-style), so the supplier can price/personalize per ship-to. |
 
 Built-in presets (Ariba, Coupa, Jaggaer, Oracle, SAP, Workday, Generic) ship out of the box
 and can be **loaded into the editor** as a starting point, then customized. A Profile holds

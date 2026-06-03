@@ -13,7 +13,7 @@ import {
   type BuyerInput,
   type SupplierInput,
 } from "../store/config.js";
-import type { Credential } from "../cxml/types.js";
+import type { Address, Contact, Credential } from "../cxml/types.js";
 
 // CRUD for the reusable Buyer and Supplier entities (spec sections 7, 14).
 
@@ -21,6 +21,36 @@ const cred = (c: any): Credential => ({
   domain: String(c?.domain ?? ""),
   identity: String(c?.identity ?? ""),
 });
+
+const str = (v: any): string | undefined => (v != null && String(v) !== "" ? String(v) : undefined);
+
+// Normalize an address, returning undefined when every field is empty so a buyer
+// without an address doesn't carry an empty object.
+function address(a: any): Address | undefined {
+  if (a == null || typeof a !== "object") return undefined;
+  const out: Address = {
+    addressId: str(a.addressId),
+    addressIdDomain: str(a.addressIdDomain),
+    name: str(a.name),
+    deliverTo: str(a.deliverTo),
+    street: str(a.street),
+    city: str(a.city),
+    state: str(a.state),
+    postalCode: str(a.postalCode),
+    countryIsoCode: str(a.countryIsoCode),
+    countryName: str(a.countryName),
+    email: str(a.email),
+    phone: str(a.phone),
+  };
+  return Object.values(out).some((v) => v != null) ? out : undefined;
+}
+
+function contact(c: any): Contact | undefined {
+  const a = address(c);
+  const role = str(c?.role);
+  if (!a && !role) return undefined;
+  return { ...(a ?? {}), role: role ?? "endUser" };
+}
 
 // --- buyers ------------------------------------------------------------------
 
@@ -31,6 +61,9 @@ function normalizeBuyer(body: any): BuyerInput {
     name: String(body?.name ?? "Untitled buyer"),
     identity: cred(body?.identity),
     profileId: body?.profileId ? String(body.profileId) : undefined,
+    shipTo: address(body?.shipTo),
+    billTo: address(body?.billTo),
+    contact: contact(body?.contact),
   };
 }
 

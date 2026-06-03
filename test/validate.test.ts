@@ -99,6 +99,24 @@ describe("punchback validation", () => {
   });
 });
 
+describe("OrderRequest address completeness", () => {
+  const order = (shipTo: string) => `<cXML payloadID="p@h" timestamp="t"><Request><OrderRequest>
+    <OrderRequestHeader orderID="PO-1" orderDate="d"><Total><Money currency="USD">10</Money></Total>
+      ${shipTo}<BillTo><Address addressID="9001"><Name>AP</Name></Address></BillTo></OrderRequestHeader>
+    <ItemOut quantity="1"><ItemID><SupplierPartID>A</SupplierPartID></ItemID><ItemDetail><UnitPrice><Money currency="USD">10</Money></UnitPrice></ItemDetail></ItemOut>
+    </OrderRequest></Request></cXML>`;
+  it("warns when ShipTo has neither an addressID nor a Street/City", () => {
+    expect(codes(order("<ShipTo><Address><Name>x</Name></Address></ShipTo>"))).toContain("shipto-incomplete");
+  });
+  it("accepts a ShipTo with a postal Street (no warning)", () => {
+    const c = codes(order("<ShipTo><Address><Name>x</Name><PostalAddress><Street>1 Market St</Street><City>SF</City></PostalAddress></Address></ShipTo>"));
+    expect(c).not.toContain("shipto-incomplete");
+  });
+  it("accepts a ShipTo with only an addressID reference (no warning)", () => {
+    expect(codes(order('<ShipTo><Address addressID="1001"><Name>x</Name></Address></ShipTo>'))).not.toContain("shipto-incomplete");
+  });
+});
+
 describe("OrderRequest attachment validation", () => {
   const order = (cid: string) => `<cXML payloadID="p@h" timestamp="t"><Header>
     <From><Credential domain="DUNS"><Identity>111</Identity></Credential></From>

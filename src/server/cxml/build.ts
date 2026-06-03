@@ -1,5 +1,5 @@
 import { nanoid } from "nanoid";
-import type { CartItem, Credential } from "./types.js";
+import type { Address, AddressMode, CartItem, Contact, Credential } from "./types.js";
 
 // cXML document builders. We use template literals (not an XML library) so we
 // keep full control over element order, attributes and xml:lang — see spec
@@ -144,6 +144,10 @@ export interface SetupRequestOptions {
   dtdVersion?: string;
   userAgent?: string;
   extrinsics?: ExtrinsicVal[];
+  /** Optional ShipTo / Contact carried in the setup (Ariba-style); profile-gated upstream. */
+  shipTo?: Address;
+  contact?: Contact;
+  addressMode?: AddressMode;
 }
 
 export function buildSetupRequest(o: SetupRequestOptions): string {
@@ -151,6 +155,9 @@ export function buildSetupRequest(o: SetupRequestOptions): string {
   const deployment = o.deploymentMode
     ? ` deploymentMode="${escapeXml(o.deploymentMode)}"`
     : "";
+  const mode = o.addressMode ?? "full";
+  const shipTo = o.shipTo ? `\n${addressBlock("ShipTo", o.shipTo, mode)}` : "";
+  const contact = o.contact ? `\n${contactBlock(o.contact, mode, "      ")}` : "";
   const inner = `${header({
     from: o.from,
     to: o.to,
@@ -163,7 +170,7 @@ export function buildSetupRequest(o: SetupRequestOptions): string {
       <BuyerCookie>${escapeXml(o.buyerCookie)}</BuyerCookie>
       <BrowserFormPost>
         <URL>${escapeXml(o.browserFormPostUrl)}</URL>
-      </BrowserFormPost>${extrinsicBlock(o.extrinsics, "      ")}
+      </BrowserFormPost>${extrinsicBlock(o.extrinsics, "      ")}${shipTo}${contact}
     </PunchOutSetupRequest>
   </Request>`;
   return envelope(o.payloadId, o.timestamp, lang, inner, o.dtdVersion);
@@ -194,39 +201,62 @@ export interface OrderRequestOptions {
   currency: string;
   total: number;
   items: OrderRequestItem[];
-  shipTo?: AddressParts;
-  billTo?: AddressParts;
+  shipTo?: Address;
+  billTo?: Address;
+  contact?: Contact;
+  /** Address emission style; defaults to "full" (the historical output). */
+  addressMode?: AddressMode;
   attachments?: OrderAttachmentMeta[];
   dtdVersion?: string;
   userAgent?: string;
   extrinsics?: ExtrinsicVal[];
 }
 
-export interface AddressParts {
-  addressId?: string;
-  name?: string;
-  deliverTo?: string;
-  street?: string;
-  city?: string;
-  state?: string;
-  postalCode?: string;
-  countryIsoCode?: string;
-  countryName?: string;
+// --- Address / Contact emission ----------------------------------------------
+//
+// `mode` controls how an <Address> is rendered: a bare `addressID` reference
+// (id-only), a full <PostalAddress> (full), or both. The default is "full",
+// which reproduces the tool's historical ShipTo/BillTo output byte-for-byte.
+
+const wantsId = (m: AddressMode) => m === "id-only" || m === "both";
+const wantsPostal = (m: AddressMode) => m === "full" || m === "both";
+const hasPostal = (a: Address) => !!(a.deliverTo || a.street || a.city || a.state || a.postalCode);
+
+function idAttrs(a: Address, mode: AddressMode): string {
+  if (!wantsId(mode) || !a.addressId) return "";
+  return ` addressID="${escapeXml(a.addressId)}"${a.addressIdDomain ? ` addressIDDomain="${escapeXml(a.addressIdDomain)}"` : ""}`;
 }
 
-function addressBlock(tag: "ShipTo" | "BillTo", a: AddressParts): string {
+function postalBlock(a: Address, indent: string): string {
+  return `${indent}<PostalAddress>
+${a.deliverTo ? `${indent}  <DeliverTo>${escapeXml(a.deliverTo)}</DeliverTo>\n` : ""}${indent}  <Street>${escapeXml(a.street ?? "")}</Street>
+${indent}  <City>${escapeXml(a.city ?? "")}</City>
+${indent}  <State>${escapeXml(a.state ?? "")}</State>
+${indent}  <PostalCode>${escapeXml(a.postalCode ?? "")}</PostalCode>
+${indent}  <Country isoCountryCode="${escapeXml(a.countryIsoCode ?? "US")}">${escapeXml(a.countryName ?? "United States")}</Country>
+${indent}</PostalAddress>`;
+}
+
+function contactInfo(a: Address, indent: string): string {
+  const email = a.email ? `\n${indent}<Email>${escapeXml(a.email)}</Email>` : "";
+  const phone = a.phone ? `\n${indent}<Phone><TelephoneNumber><Number>${escapeXml(a.phone)}</Number></TelephoneNumber></Phone>` : "";
+  return email + phone;
+}
+
+function addressBlock(tag: "ShipTo" | "BillTo", a: Address, mode: AddressMode): string {
+  const postal = wantsPostal(mode) ? `\n${postalBlock(a, "          ")}` : "";
   return `      <${tag}>
-        <Address${a.addressId ? ` addressID="${escapeXml(a.addressId)}"` : ""}>
-          <Name xml:lang="en">${escapeXml(a.name ?? "")}</Name>
-          <PostalAddress>
-${a.deliverTo ? `            <DeliverTo>${escapeXml(a.deliverTo)}</DeliverTo>\n` : ""}            <Street>${escapeXml(a.street ?? "")}</Street>
-            <City>${escapeXml(a.city ?? "")}</City>
-            <State>${escapeXml(a.state ?? "")}</State>
-            <PostalCode>${escapeXml(a.postalCode ?? "")}</PostalCode>
-            <Country isoCountryCode="${escapeXml(a.countryIsoCode ?? "US")}">${escapeXml(a.countryName ?? "United States")}</Country>
-          </PostalAddress>
+        <Address${idAttrs(a, mode)}>
+          <Name xml:lang="en">${escapeXml(a.name ?? "")}</Name>${postal}${contactInfo(a, "          ")}
         </Address>
       </${tag}>`;
+}
+
+function contactBlock(c: Contact, mode: AddressMode, indent: string): string {
+  const postal = mode !== "id-only" && hasPostal(c) ? `\n${postalBlock(c, indent + "  ")}` : "";
+  return `${indent}<Contact role="${escapeXml(c.role || "endUser")}"${idAttrs(c, mode)}>
+${indent}  <Name xml:lang="en">${escapeXml(c.name ?? "")}</Name>${postal}${contactInfo(c, indent + "  ")}
+${indent}</Contact>`;
 }
 
 function commentsWithAttachments(cids: string[], indent: string): string {
@@ -288,6 +318,8 @@ ${classificationBlock(it, "          ")}${
     })
     .join("\n");
 
+  const mode = o.addressMode ?? "full";
+  const contact = o.contact ? `\n${contactBlock(o.contact, mode, "        ")}` : "";
   const inner = `${header({
     from: o.from,
     to: o.to,
@@ -303,8 +335,8 @@ ${classificationBlock(it, "          ")}${
         <Total>
           <Money currency="${escapeXml(o.currency)}">${escapeXml(o.total)}</Money>
         </Total>
-${addressBlock("ShipTo", o.shipTo ?? {})}
-${addressBlock("BillTo", o.billTo ?? {})}${commentsWithAttachments(orderLevelCids, "        ")}${extrinsicBlock(
+${addressBlock("ShipTo", o.shipTo ?? {}, mode)}
+${addressBlock("BillTo", o.billTo ?? {}, mode)}${contact}${commentsWithAttachments(orderLevelCids, "        ")}${extrinsicBlock(
         o.extrinsics,
         "        ",
       )}

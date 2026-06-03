@@ -3,6 +3,7 @@ import { Low } from "lowdb";
 import { JSONFile } from "lowdb/node";
 import { nanoid } from "nanoid";
 import type {
+  AddressMode,
   AttachmentEncoding,
   Buyer,
   CartReturnTransport,
@@ -18,7 +19,7 @@ import type {
   SetupOperation,
   Supplier,
 } from "../cxml/types.js";
-import { GENERIC_PROFILE, seedBuiltinProfiles } from "../cxml/profile-presets.js";
+import { GENERIC_PROFILE, PROFILE_PRESETS, seedBuiltinProfiles } from "../cxml/profile-presets.js";
 import { seedBuiltinProductLists } from "../cxml/product-list-presets.js";
 import { configPath, ensureDirs } from "./paths.js";
 
@@ -50,6 +51,8 @@ export async function initConfig(): Promise<void> {
   // Ensure the built-in platform presets exist (Generic is the resolution
   // fallback). Idempotent — only inserts profiles whose id is missing.
   seedBuiltinProfiles(db.data, now());
+  // Backfill address-emission fields on profiles persisted before they existed.
+  migrateProfiles(db.data);
   // Ensure the built-in sample product list exists. Idempotent.
   seedBuiltinProductLists(db.data, now());
   migrateLegacy(db.data);
@@ -269,6 +272,9 @@ export interface EffectiveProfile {
   attachmentEncoding: AttachmentEncoding;
   cartReturnTransport: CartReturnTransport;
   extrinsics: ProfileExtrinsic[];
+  addressMode: AddressMode;
+  shipToInSetup: boolean;
+  contactInSetup: boolean;
 }
 
 /** The buyer's profile row, or the in-memory Generic preset if unset/missing. */
@@ -288,6 +294,9 @@ export function effectiveProfile(connection: Connection, buyer: Buyer): Effectiv
     attachmentEncoding: connection.attachmentEncoding ?? p.attachmentEncoding,
     cartReturnTransport: p.cartReturnTransport,
     extrinsics: p.extrinsics,
+    addressMode: p.addressMode,
+    shipToInSetup: p.shipToInSetup,
+    contactInSetup: p.contactInSetup,
   };
 }
 
@@ -443,6 +452,22 @@ function migrateInlineCatalogs(data: Schema): void {
     data.productLists.push(list);
     supplier.productListIds = [list.id];
     delete (supplier as { catalog?: CatalogItem[] }).catalog;
+  }
+}
+
+/**
+ * Backfill address-emission fields (addressMode / shipToInSetup / contactInSetup)
+ * on profiles persisted before those fields existed. Built-in rows take their
+ * preset values (so e.g. Coupa becomes "both"); others default to full/false.
+ * Idempotent — only fills fields that are absent.
+ */
+function migrateProfiles(data: Schema): void {
+  for (const p of data.profiles as any[]) {
+    if (p.addressMode != null && p.shipToInSetup != null && p.contactInSetup != null) continue;
+    const preset = PROFILE_PRESETS.find((x) => x.id === p.id);
+    p.addressMode ??= preset?.addressMode ?? "full";
+    p.shipToInSetup ??= preset?.shipToInSetup ?? false;
+    p.contactInSetup ??= preset?.contactInSetup ?? false;
   }
 }
 

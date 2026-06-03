@@ -9,6 +9,7 @@ import {
 } from "../store/config.js";
 import { PROFILE_PRESETS } from "../cxml/profile-presets.js";
 import type {
+  AddressMode,
   AttachmentEncoding,
   CartReturnTransport,
   DtdVersionMap,
@@ -59,6 +60,9 @@ function normalizeProfile(body: any): ProfileInput {
   )
     ? body.cartReturnTransport
     : "cxml-urlencoded";
+  const addressMode: AddressMode = ["id-only", "full", "both"].includes(body?.addressMode)
+    ? body.addressMode
+    : "full";
   return {
     name: String(body?.name ?? "Untitled profile"),
     platform: body?.platform ? String(body.platform) : undefined,
@@ -68,6 +72,9 @@ function normalizeProfile(body: any): ProfileInput {
     attachmentEncoding,
     cartReturnTransport,
     extrinsics: normalizeExtrinsics(body?.extrinsics),
+    addressMode,
+    shipToInSetup: Boolean(body?.shipToInSetup),
+    contactInSetup: Boolean(body?.contactInSetup),
     // `builtin` is never set from the wire — only code-seeded presets carry it.
   };
 }

@@ -318,6 +318,23 @@ function checkSingleCurrency(
   return true;
 }
 
+// An <Address> should carry either an addressID reference or a usable postal
+// address (Street/City). An empty block (no id, blank postal) is flagged so the
+// always-emitted-but-unconfigured ShipTo/BillTo doesn't pass silently.
+function checkAddressComplete(addr: any, label: "ShipTo" | "BillTo", issues: Issues): void {
+  if (addr == null) return;
+  const hasId = !!attr(addr, "addressID");
+  const postal = addr.PostalAddress;
+  const hasPostal = !!(text(postal?.Street) || text(postal?.City));
+  if (!hasId && !hasPostal) {
+    issues.warn(
+      `${label.toLowerCase()}-incomplete`,
+      `${label}/Address has neither an addressID nor a Street/City — the address is empty`,
+      `cXML/.../OrderRequestHeader/${label}/Address`,
+    );
+  }
+}
+
 function checkOrderRequest(doc: ParsedDoc, ctx: ValidationContext, issues: Issues) {
   const orderReq = root(doc)?.Request?.OrderRequest;
   if (!orderReq) {
@@ -336,9 +353,18 @@ function checkOrderRequest(doc: ParsedDoc, ctx: ValidationContext, issues: Issue
   }
   if (!header?.ShipTo) {
     issues.warn("missing-shipto", "OrderRequestHeader/ShipTo is missing", "cXML/.../OrderRequestHeader/ShipTo");
+  } else {
+    checkAddressComplete(header.ShipTo.Address, "ShipTo", issues);
   }
   if (!header?.BillTo) {
     issues.warn("missing-billto", "OrderRequestHeader/BillTo is missing", "cXML/.../OrderRequestHeader/BillTo");
+  } else {
+    checkAddressComplete(header.BillTo.Address, "BillTo", issues);
+  }
+  for (const contact of asArray(header?.Contact)) {
+    if (!attr(contact, "role")) {
+      issues.warn("contact-missing-role", "OrderRequestHeader/Contact is missing @role", "cXML/.../OrderRequestHeader/Contact");
+    }
   }
 
   const items = asArray(orderReq.ItemOut);

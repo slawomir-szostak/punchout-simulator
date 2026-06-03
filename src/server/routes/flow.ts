@@ -23,7 +23,7 @@ import {
 import { buildMultipartRelated, type MultipartAttachment } from "../cxml/multipart.js";
 import { getStartPage, getStatus, parseXml } from "../cxml/parse.js";
 import { validateDocument, type ExpectedCredentials } from "../cxml/validate.js";
-import type { AttachmentEncoding, AttachmentRef, CartItem, Credential, ResolvedConnection } from "../cxml/types.js";
+import type { Address, AddressMode, AttachmentEncoding, AttachmentRef, CartItem, Contact, Credential, ResolvedConnection } from "../cxml/types.js";
 
 // Mode A (virtual-buyer): drive the SetupRequest and OrderRequest server-to-server,
 // validate + log every document in both directions (spec sections 8, 10).
@@ -54,6 +54,10 @@ interface BuyerContext {
   expected: ExpectedCredentials;
   /** Whether the target supplier tolerates multi-currency documents. */
   allowMixedCurrency: boolean;
+  /** The buyer's default addresses/contact (pre-fill orders; sent in setup if profile-gated). */
+  shipTo?: Address;
+  billTo?: Address;
+  contact?: Contact;
 }
 
 function buyerContext(r: ResolvedConnection): BuyerContext {
@@ -75,6 +79,19 @@ function buyerContext(r: ResolvedConnection): BuyerContext {
     eff,
     expected: { from, to, sender, sharedSecret: connection.sharedSecret },
     allowMixedCurrency: supplier.allowMixedCurrency ?? false,
+    shipTo: buyer.shipTo,
+    billTo: buyer.billTo,
+    contact: buyer.contact,
+  };
+}
+
+// Addresses carried in the SetupRequest, gated by the buyer's profile (Ariba-style
+// ShipTo-in-setup; Contact-in-setup). Returns undefined fields when not gated on.
+function setupAddresses(ctx: BuyerContext): { shipTo?: Address; contact?: Contact; addressMode: AddressMode } {
+  return {
+    shipTo: ctx.eff.shipToInSetup ? ctx.shipTo : undefined,
+    contact: ctx.eff.contactInSetup ? ctx.contact : undefined,
+    addressMode: ctx.eff.addressMode,
   };
 }
 
@@ -122,6 +139,7 @@ flowRoute.get("/:id/setup/preview", (c) => {
     dtdVersion: dtdVersionFor(ctx.eff, "SetupRequest"),
     userAgent: ctx.eff.userAgent,
     extrinsics: setupExtrinsics(ctx, buyerCookie),
+    ...setupAddresses(ctx),
   });
   return c.json({ buyerCookie, xml, browserFormPostUrl: browserFormPostUrl() });
 });
@@ -151,6 +169,7 @@ flowRoute.post("/:id/setup", async (c) => {
       dtdVersion: dtdVersionFor(ctx.eff, "SetupRequest"),
       userAgent: ctx.eff.userAgent,
       extrinsics: setupExtrinsics(ctx, buyerCookie),
+      ...setupAddresses(ctx),
     });
 
   rememberSessionConnection(buyerCookie, ctx.connectionId);
@@ -215,8 +234,9 @@ interface OrderBody {
     dataBase64: string;
     scope?: "order" | number; // number => 1-based item index
   }>;
-  shipTo?: any;
-  billTo?: any;
+  shipTo?: Address;
+  billTo?: Address;
+  contact?: Contact;
 }
 
 // Build the OrderRequest cXML from a request body. Shared by the preview and
@@ -246,8 +266,12 @@ function buildOrderXml(ctx: BuyerContext, body: OrderBody): { xml: string; order
     currency,
     total,
     items,
-    shipTo: body.shipTo,
-    billTo: body.billTo,
+    // Order addresses default to the buyer's configured defaults when the body
+    // doesn't override them (the UI pre-fills from the buyer, editable per order).
+    shipTo: body.shipTo ?? ctx.shipTo,
+    billTo: body.billTo ?? ctx.billTo,
+    contact: body.contact ?? ctx.contact,
+    addressMode: ctx.eff.addressMode,
     attachments: attMeta,
     dtdVersion: dtdVersionFor(ctx.eff, "OrderRequest"),
     userAgent: ctx.eff.userAgent,

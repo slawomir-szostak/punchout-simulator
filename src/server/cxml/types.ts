@@ -51,6 +51,12 @@ export interface Profile {
   attachmentEncoding: AttachmentEncoding;
   cartReturnTransport: CartReturnTransport;
   extrinsics: ProfileExtrinsic[];
+  /** How ShipTo/BillTo/Contact addresses are emitted (ref / full postal / both). */
+  addressMode: AddressMode;
+  /** Emit the buyer's ShipTo inside the PunchOutSetupRequest (Ariba-style). */
+  shipToInSetup: boolean;
+  /** Emit the buyer's Contact inside the PunchOutSetupRequest. */
+  contactInSetup: boolean;
   /** True for code-seeded presets. */
   builtin?: boolean;
   createdAt: string;
@@ -61,6 +67,42 @@ export interface Profile {
 export interface Credential {
   domain: string;
   identity: string;
+}
+
+/** How an `<Address>` is emitted: a bare reference, a full postal block, or both. */
+export type AddressMode = "id-only" | "full" | "both";
+
+/** A cXML postal `<Address>` (used by ShipTo/BillTo and, with a role, Contact). */
+export interface Address {
+  /** `<Address addressID=…>` — a key into the buyer's address book. */
+  addressId?: string;
+  /** `addressIDDomain` attribute (e.g. "NetworkID", "buyerSystemID"). */
+  addressIdDomain?: string;
+  name?: string;
+  deliverTo?: string;
+  street?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  countryIsoCode?: string;
+  countryName?: string;
+  email?: string;
+  phone?: string;
+}
+
+/** Common cXML `Contact@role` values. Free text is allowed; these are the typical ones. */
+export type ContactRole =
+  | "endUser"
+  | "purchasingAgent"
+  | "buyerMasterAccount"
+  | "administrator"
+  | "sales"
+  | "technicalSupport"
+  | "default";
+
+/** A cXML `<Contact role=…>` — who placed/owns the order (name/email/phone). */
+export interface Contact extends Address {
+  role: string;
 }
 
 /** A cXML `<Classification domain="…">value</Classification>`. */
@@ -121,6 +163,12 @@ export interface Buyer {
    * built-in "Generic" profile defaults apply (today's behavior).
    */
   profileId?: string;
+  /** Default ship-to / bill-to addresses and end-user contact for this buyer's
+   * orders. Pre-fill the OrderRequest form and may be sent in the SetupRequest
+   * (profile-gated). All optional. */
+  shipTo?: Address;
+  billTo?: Address;
+  contact?: Contact;
   createdAt: string;
   updatedAt: string;
 }

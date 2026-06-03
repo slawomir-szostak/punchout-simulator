@@ -20,6 +20,19 @@ export async function seedDemoIfEmpty(): Promise<void> {
     // Exercise a non-default platform profile end-to-end (Coupa: per-doc-type
     // DTD versions, base64 attachments). Built-in profiles are seeded by initConfig.
     profileId: "coupa",
+    // Default addresses + end-user contact, so the OrderRequest is populated and
+    // the address feature is exercised out of the box.
+    shipTo: {
+      addressId: "1001", addressIdDomain: "buyerSystemID", name: "Demo Buyer HQ — Receiving",
+      deliverTo: "Dock 3", street: "1 Market St", city: "San Francisco", state: "CA",
+      postalCode: "94105", countryIsoCode: "US", countryName: "United States",
+    },
+    billTo: {
+      addressId: "9001", addressIdDomain: "buyerSystemID", name: "Demo Buyer Accounts Payable",
+      street: "1 Market St", city: "San Francisco", state: "CA",
+      postalCode: "94105", countryIsoCode: "US", countryName: "United States",
+    },
+    contact: { role: "endUser", name: "Jane Buyer", email: "jane.buyer@demo.example", phone: "+1 555 0100" },
   });
 
   const supplier = await createSupplier({
