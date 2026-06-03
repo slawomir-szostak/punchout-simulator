@@ -173,6 +173,21 @@ describe("Mode A loopback", () => {
     expect(bad.statusCode).toBe("400");
   });
 
+  it("deletes a session (log file + list entry)", async () => {
+    await fetch(`${base}/api/connections/demo/setup`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ buyerCookie: "del-me-1" }),
+    });
+    const before = await fetch(`${base}/api/sessions`).then((r) => r.json());
+    expect(before.some((s: any) => s.sessionId === "del-me-1")).toBe(true);
+
+    const del = await fetch(`${base}/api/sessions/del-me-1`, { method: "DELETE" });
+    expect(del.status).toBe(200);
+
+    const after = await fetch(`${base}/api/sessions`).then((r) => r.json());
+    expect(after.some((s: any) => s.sessionId === "del-me-1")).toBe(false);
+    expect((await fetch(`${base}/api/sessions/missing-xyz`, { method: "DELETE" })).status).toBe(404);
+  });
+
   it("validates a request on demand without sending it", async () => {
     const preview = await fetch(`${base}/api/connections/demo/setup/preview`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }).then((r) => r.json());
     const good = await fetch(`${base}/api/connections/demo/validate`, {

@@ -22,3 +22,9 @@ export function rememberSessionConnection(sessionId: string, connectionId: strin
 export function connectionForSession(sessionId: string): string | undefined {
   return connectionBySession.get(sessionId);
 }
+
+/** Drop the in-memory cart + connection mapping for a session (on delete). */
+export function forgetSession(sessionId: string): void {
+  carts.delete(sessionId);
+  connectionBySession.delete(sessionId);
+}

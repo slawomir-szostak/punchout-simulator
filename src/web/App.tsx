@@ -17,7 +17,7 @@ import {
   type Supplier,
 } from "./types";
 import { ConnectionEditor } from "./components/ConnectionEditor";
-import { BuyerEditor, SupplierEditor } from "./components/PartyEditors";
+import { BuyerEditor, ConfirmButton, SupplierEditor } from "./components/PartyEditors";
 import { ProfileEditor } from "./components/ProfileEditor";
 import { ProductListEditor } from "./components/ProductListEditor";
 import { BuyerFlow } from "./components/BuyerFlow";
@@ -163,6 +163,19 @@ export function App() {
   const patchFlowSession = useCallback((key: string, patch: Partial<FlowSession>) => {
     setFlows((f) => (f[key] ? { ...f, [key]: { ...f[key], session: { ...f[key].session, ...patch } } } : f));
   }, []);
+
+  const deleteSession = async (id: string) => {
+    const flow = flows[id];
+    const sid = flow ? flow.session.buyerCookie : id; // server file is keyed by BuyerCookie
+    if (sid) await api.deleteSession(sid).catch(() => {}); // ignore if there's no server file yet
+    if (flow) setFlows((f) => { const n = { ...f }; delete n[id]; return n; });
+    if (sid) {
+      setRecords((rs) => rs.filter((r) => r.sessionId !== sid));
+      setLoadedSessions((s) => { const n = new Set(s); n.delete(sid); return n; });
+    }
+    if (selectedSessionId === id) setSelectedSessionId(null);
+    reloadSessions();
+  };
 
   const startSession = (choice: NewSessionChoice) => {
     const key = `flow-${++flowSeq.current}`;
@@ -388,8 +401,8 @@ export function App() {
               {activeFlow && flowConn && (
                 <>
                   <div className="main-head">
-                    <h2>{flowConn.name}</h2>
-                    <span className="hint">{flowConn.buyer?.name} → {flowConn.supplier?.name}</span>
+                    <h2>{flowConn.name} <span className="hint">— {flowConn.buyer?.name} → {flowConn.supplier?.name}</span></h2>
+                    <ConfirmButton onConfirm={() => deleteSession(selectedSessionId!)} label="Delete session" confirmLabel="Confirm delete?" />
                   </div>
                   <BuyerFlow
                     connection={flowConn}
@@ -405,8 +418,11 @@ export function App() {
               {serverSel && (
                 <>
                   <div className="main-head">
-                    <h2>{serverSel.connectionName ?? (serverSel.inbound ? `${serverSel.supplierName ?? "Supplier"} · inbound` : "Session")}</h2>
-                    {serverSel.operation && serverSel.operation !== "create" && <span className="badge badge-warn">{serverSel.operation}</span>}
+                    <h2>
+                      {serverSel.connectionName ?? (serverSel.inbound ? `${serverSel.supplierName ?? "Supplier"} · inbound` : "Session")}
+                      {serverSel.operation && serverSel.operation !== "create" && <span className="badge badge-warn" style={{ marginLeft: ".5rem" }}>{serverSel.operation}</span>}
+                    </h2>
+                    <ConfirmButton onConfirm={() => deleteSession(selectedSessionId!)} label="Delete session" confirmLabel="Confirm delete?" />
                   </div>
                   <p className="hint">
                     {serverSel.inbound

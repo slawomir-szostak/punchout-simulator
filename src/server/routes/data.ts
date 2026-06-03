@@ -1,7 +1,7 @@
 import { Hono } from "hono";
-import { getCart } from "../cart-store.js";
+import { forgetSession, getCart } from "../cart-store.js";
 import { readAttachment } from "../store/attachments.js";
-import { listSessions, readAllRecent, readSession } from "../store/log.js";
+import { deleteSession, listSessions, readAllRecent, readSession } from "../store/log.js";
 import { getBuyer, getConnection, getSupplier } from "../store/config.js";
 import { getPublicUrl, getVersion } from "../runtime.js";
 import {
@@ -79,6 +79,15 @@ dataRoute.get("/sessions", (c) => {
 });
 
 dataRoute.get("/sessions/:id", (c) => c.json(readSession(c.req.param("id"))));
+
+// Delete a session: remove its log file and drop the in-memory cart mapping.
+// (Attachments are content-addressed and may be shared, so they're left in place.)
+dataRoute.delete("/sessions/:id", (c) => {
+  const id = c.req.param("id");
+  const removed = deleteSession(id);
+  forgetSession(id);
+  return removed ? c.json({ ok: true }) : c.json({ error: "not found" }, 404);
+});
 
 // Full raw wire message for one record (headers + reconstructed multipart body).
 dataRoute.get("/sessions/:sessionId/records/:recordId/raw", (c) => {

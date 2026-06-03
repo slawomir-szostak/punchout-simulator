@@ -154,6 +154,11 @@ export const api = {
   getSession: (id: string) =>
     authFetch(`/api/sessions/${encodeURIComponent(id)}`).then((r) => jsonOrThrow<LogRecord[]>(r)),
 
+  deleteSession: (id: string) =>
+    authFetch(`/api/sessions/${encodeURIComponent(id)}`, { method: "DELETE" }).then((r) =>
+      jsonOrThrow<{ ok: boolean }>(r),
+    ),
+
   rawMessage: (sessionId: string, recordId: string) =>
     authFetch(
       `/api/sessions/${encodeURIComponent(sessionId)}/records/${encodeURIComponent(recordId)}/raw`,
