@@ -185,17 +185,35 @@ simRoute.get("/:id/catalog", (c) => {
   return c.html(`<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeXml(supplier.name)} — mock catalog</title>
+<script>
+  // Match the main app's theme. The app appends ?theme= to the catalog link
+  // (works even when the SPA is on a different origin, e.g. the Vite dev server);
+  // otherwise fall back to a same-origin 'pos-theme' in localStorage, then the OS
+  // preference. Set before paint to avoid a flash.
+  (function () {
+    try {
+      var q = new URLSearchParams(location.search).get("theme");
+      var t = (q === "light" || q === "dark") ? q : localStorage.getItem("pos-theme");
+      if (t !== "light" && t !== "dark") {
+        t = (window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches) ? "light" : "dark";
+      }
+      document.documentElement.dataset.theme = t;
+    } catch (e) {}
+  })();
+</script>
 <style>
-  body{font-family:system-ui,sans-serif;background:#0f172a;color:#e2e8f0;margin:0;padding:2rem}
+  :root{--bg:#0f172a;--text:#e2e8f0;--muted:#94a3b8;--panel:#1e293b;--th:#0b1220;--border:#334155;--field:#0b1220;--price:#fbbf24;--accent:#6366f1;--accent-hover:#4f46e5}
+  :root[data-theme="light"]{--bg:#f5f7fb;--text:#1e293b;--muted:#4b5a73;--panel:#ffffff;--th:#eef1f7;--border:#d4dae8;--field:#ffffff;--price:#b45309;--accent:#6366f1;--accent-hover:#4f46e5}
+  body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);margin:0;padding:2rem}
   .wrap{max-width:720px;margin:0 auto}
-  h1{font-size:1.4rem}.sub{color:#94a3b8;margin-bottom:1.5rem}
-  table{width:100%;border-collapse:collapse;background:#1e293b;border-radius:12px;overflow:hidden}
-  th,td{padding:.75rem 1rem;text-align:left;border-bottom:1px solid #334155}
-  th{background:#0b1220;font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8}
-  .price{white-space:nowrap;color:#fbbf24}
-  input[type=number]{width:5rem;background:#0b1220;border:1px solid #334155;color:#e2e8f0;border-radius:6px;padding:.35rem .5rem}
-  button{margin-top:1.5rem;background:#6366f1;color:#fff;border:0;border-radius:8px;padding:.7rem 1.4rem;font-size:1rem;cursor:pointer}
-  button:hover{background:#4f46e5}
+  h1{font-size:1.4rem}.sub{color:var(--muted);margin-bottom:1.5rem}
+  table{width:100%;border-collapse:collapse;background:var(--panel);border-radius:12px;overflow:hidden}
+  th,td{padding:.75rem 1rem;text-align:left;border-bottom:1px solid var(--border)}
+  th{background:var(--th);font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+  .price{white-space:nowrap;color:var(--price)}
+  input[type=number]{width:5rem;background:var(--field);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:.35rem .5rem}
+  button{margin-top:1.5rem;background:var(--accent);color:#fff;border:0;border-radius:8px;padding:.7rem 1.4rem;font-size:1rem;cursor:pointer}
+  button:hover{background:var(--accent-hover)}
 </style></head><body><div class="wrap">
   <h1>${escapeXml(supplier.name)} <small>(virtual supplier)</small></h1>
   <div class="sub">Mock catalog served by punchout-simulator. Set quantities and return the cart.</div>

@@ -4,6 +4,12 @@ import type { AttachmentDraft, Cart, Connection, FlowSession, ValidationResult }
 import { CxmlEditor } from "./CxmlEditor";
 import { CartView } from "./CartView";
 import { ValidationPanel } from "./Validation";
+import { useTheme } from "../hooks/useTheme";
+
+// Append the app's current theme to the mock-catalog StartPage URL so that page
+// (served from a possibly different origin) can match the app's light/dark mode.
+const withTheme = (url: string, theme: string) =>
+  url + (url.includes("?") ? "&" : "?") + "theme=" + theme;
 
 interface Props {
   connection: Connection;
@@ -17,6 +23,7 @@ interface Props {
 // The Mode A driver UI. State lives in App (per connection) so it survives
 // Flow/Settings tab switches and supports editing + retrying the OrderRequest.
 export function BuyerFlow({ connection, session, cart, onChange, onNewSession }: Props) {
+  const theme = useTheme();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [attachmentsDirty, setAttachmentsDirty] = useState(false);
@@ -176,7 +183,7 @@ export function BuyerFlow({ connection, session, cart, onChange, onNewSession }:
             {session.setupResult.startPage && (
               <div className="result-line">
                 StartPage:{" "}
-                <a href={session.setupResult.startPage} target="_blank" rel="noreferrer">
+                <a href={withTheme(session.setupResult.startPage, theme)} target="_blank" rel="noreferrer">
                   open catalog in new tab ↗
                 </a>
               </div>

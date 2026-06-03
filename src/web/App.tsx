@@ -479,6 +479,7 @@ function Onboarding({
 }
 
 function SupplierPanel({ supplier, publicUrl }: { supplier?: Supplier; publicUrl: string }) {
+  const theme = useTheme();
   if (!supplier) return <p className="hint">Supplier not found.</p>;
   const base = `${publicUrl}/sim/${supplier.id}`;
   return (
@@ -491,7 +492,7 @@ function SupplierPanel({ supplier, publicUrl }: { supplier?: Supplier; publicUrl
       <table className="kv"><tbody>
         <tr><td>PunchOut setup</td><td><code>{base}/punchout</code></td></tr>
         <tr><td>Order</td><td><code>{base}/order</code></td></tr>
-        <tr><td>Catalog (preview)</td><td><a href={`${base}/catalog`} target="_blank" rel="noreferrer">{base}/catalog ↗</a></td></tr>
+        <tr><td>Catalog (preview)</td><td><a href={`${base}/catalog?theme=${theme}`} target="_blank" rel="noreferrer">{base}/catalog ↗</a></td></tr>
       </tbody></table>
       <p className="hint">The built-in demo buyer is wired to the demo supplier, so the full roundtrip runs from the Demo connection.</p>
     </div>
