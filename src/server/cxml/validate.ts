@@ -85,7 +85,7 @@ function credKnown(c: Credential | undefined, exp: ExpectedCredentials): boolean
 
 // --- general checks ----------------------------------------------------------
 
-function checkGeneral(doc: ParsedDoc, ctx: ValidationContext, issues: Issues) {
+function checkGeneral(doc: ParsedDoc, ctx: ValidationContext, issues: Issues, docType: DocType) {
   const payloadId = getPayloadId(doc);
   if (!payloadId) {
     issues.error("missing-payloadID", "cXML/@payloadID is missing", "cXML/@payloadID");
@@ -102,6 +102,12 @@ function checkGeneral(doc: ParsedDoc, ctx: ValidationContext, issues: Issues) {
   }
 
   if (!ctx.expected) return;
+  // Only requests and the punchback carry a <Header> with From/To/Sender by spec.
+  // Response documents (SetupResponse, OrderResponse) legitimately have no Header,
+  // so don't flag missing credentials on them.
+  const carriesHeader =
+    docType === "SetupRequest" || docType === "OrderRequest" || docType === "PunchOutOrderMessage";
+  if (!carriesHeader) return;
   const exp = ctx.expected;
   const creds = getHeaderCredentials(doc);
 
@@ -451,7 +457,7 @@ export function validateDocument(raw: string, ctx: ValidationContext = {}): Vali
   }
 
   const docType = ctx.forceDocType ?? getDocType(doc);
-  checkGeneral(doc, ctx, issues);
+  checkGeneral(doc, ctx, issues, docType);
 
   switch (docType) {
     case "SetupRequest":

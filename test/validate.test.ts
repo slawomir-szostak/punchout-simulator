@@ -24,6 +24,15 @@ describe("SetupResponse validation", () => {
     expect(c).toContain("status-not-200");
     expect(c).toContain("missing-startpage");
   });
+  it("does NOT flag missing credentials on a (headerless) response, even with expected creds", () => {
+    // Responses carry no <Header> by spec — the credential check is request-only.
+    const setupResp = `<cXML payloadID="p@h" timestamp="t"><Response><Status code="200" text="OK"/><PunchOutSetupResponse><StartPage><URL>https://s/start</URL></StartPage></PunchOutSetupResponse></Response></cXML>`;
+    const orderResp = `<cXML payloadID="p@h" timestamp="t"><Response><Status code="200" text="OK"/></Response></cXML>`;
+    for (const xml of [setupResp, orderResp]) {
+      const c = codes(xml, { expected });
+      expect(c).not.toContain("missing-credential");
+    }
+  });
 });
 
 describe("shared-secret validation", () => {
