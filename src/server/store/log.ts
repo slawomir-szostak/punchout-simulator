@@ -1,4 +1,5 @@
 import { appendFileSync, existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { resolve, sep } from "node:path";
 import { nanoid } from "nanoid";
 import { bus } from "../bus.js";
 import type { LogRecord } from "../cxml/types.js";
@@ -51,7 +52,10 @@ export function readSession(sessionId: string): LogRecord[] {
 
 /** Delete a session's append-only log file. Returns true if a file was removed. */
 export function deleteSession(sessionId: string): boolean {
-  const file = sessionFile(sessionId);
+  const file = resolve(sessionFile(sessionId));
+  // sessionFile() already sanitizes the id; assert containment before a
+  // destructive rm so it can never escape the sessions directory (defense in depth).
+  if (!file.startsWith(resolve(sessionsDir()) + sep)) return false;
   if (!existsSync(file)) return false;
   rmSync(file);
   return true;
