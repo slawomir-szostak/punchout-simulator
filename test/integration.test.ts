@@ -173,6 +173,16 @@ describe("Mode A loopback", () => {
     expect(bad.statusCode).toBe("400");
   });
 
+  it("rejects a cookie-less checkout without minting a phantom session", async () => {
+    const before = (await fetch(`${base}/api/sessions`).then((r) => r.json())).length;
+    const res = await fetch(`${base}/sim/demo-supplier/checkout`, {
+      method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "",
+    });
+    expect(res.status).toBe(400);
+    const after = (await fetch(`${base}/api/sessions`).then((r) => r.json())).length;
+    expect(after).toBe(before);
+  });
+
   it("deletes a session (log file + list entry)", async () => {
     await fetch(`${base}/api/connections/demo/setup`, {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ buyerCookie: "del-me-1" }),

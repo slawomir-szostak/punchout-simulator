@@ -236,7 +236,13 @@ simRoute.post("/:id/checkout", async (c) => {
   if (!supplier) return c.text("supplier not found", 404);
 
   const form = await c.req.parseBody();
-  const cookie = String(form.cookie ?? `pos-${nanoid(16)}`);
+  // A legitimate checkout always carries the BuyerCookie from the StartPage. A
+  // cookie-less POST (a stray/direct hit) must NOT mint a phantom session — that
+  // produced floods of empty punchback sessions. Require it.
+  const cookie = typeof form.cookie === "string" ? form.cookie.trim() : "";
+  if (!cookie) {
+    return c.text("missing BuyerCookie — open the catalog from a SetupResponse StartPage", 400);
+  }
   const formpost = safeHttpUrl(String(form.formpost ?? ""));
   const buyerCred: Credential = { domain: String(form.bd ?? ""), identity: String(form.bi ?? "") };
   const catalog = catalogOf(supplier);
