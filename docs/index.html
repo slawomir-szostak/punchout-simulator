@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>punchout-simulator — Documentation</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #ffffff;
+        --fg: #1a1d21;
+        --muted: #5b6168;
+        --card: #f6f7f9;
+        --border: #e3e6ea;
+        --accent: #2563eb;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0f1115;
+          --fg: #e6e8eb;
+          --muted: #9aa0a6;
+          --card: #171a1f;
+          --border: #262a30;
+          --accent: #6ea8fe;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        background: var(--bg);
+        color: var(--fg);
+        line-height: 1.55;
+      }
+      main { max-width: 760px; margin: 0 auto; padding: 4rem 1.5rem; }
+      h1 { font-size: 1.9rem; margin: 0 0 0.25rem; }
+      .lead { color: var(--muted); margin: 0 0 2.5rem; font-size: 1.05rem; }
+      .grid { display: grid; gap: 1rem; }
+      a.card {
+        display: block;
+        text-decoration: none;
+        color: inherit;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 1.1rem 1.25rem;
+        transition: border-color 0.15s, transform 0.15s;
+      }
+      a.card:hover { border-color: var(--accent); transform: translateY(-1px); }
+      a.card h2 { margin: 0 0 0.3rem; font-size: 1.15rem; color: var(--accent); }
+      a.card p { margin: 0; color: var(--muted); font-size: 0.95rem; }
+      footer { margin-top: 3rem; color: var(--muted); font-size: 0.85rem; }
+      footer a { color: var(--accent); }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>punchout-simulator</h1>
+      <p class="lead">Documentation — a developer tool for testing cXML PunchOut integrations.</p>
+      <div class="grid">
+        <a class="card" href="punchout-business-primer_en.html">
+          <h2>PunchOut business primer</h2>
+          <p>What PunchOut is, the actors, the round-trip, and where the simulator fits.</p>
+        </a>
+        <a class="card" href="architecture_en.html">
+          <h2>Architecture reference</h2>
+          <p>Components, data model, and Mode A / Mode B sequence diagrams.</p>
+        </a>
+        <a class="card" href="operations-guide_en.html">
+          <h2>Operations &amp; usage guide</h2>
+          <p>Sessions, operations, profiles, product lists, addresses, and validation.</p>
+        </a>
+        <a class="card" href="cxml-procurement-platform-variation_en.html">
+          <h2>How procurement platforms differ in PunchOut requests</h2>
+          <p>cXML versions and per-platform variation in the requests suppliers receive.</p>
+        </a>
+      </div>
+      <footer>
+        <a href="https://github.com/slawomir-szostak/punchout-simulator">Project on GitHub</a>
+      </footer>
+    </main>
+  </body>
+</html>

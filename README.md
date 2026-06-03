@@ -18,10 +18,12 @@ It is role-neutral and runs in two modes (mirror images of each other):
 
 Protocol scope: **cXML only**.
 
-> **New to PunchOut, or want the full picture?** See the in-depth reports in
-> [`docs/`](docs/): the [PunchOut business primer](docs/punchout-business-primer_en.html),
-> the [Architecture reference](docs/architecture_en.html), and the
-> [Operations & usage guide](docs/operations-guide_en.html).
+> **New to PunchOut, or want the full picture?** Read the in-depth reports at
+> [**slawomir-szostak.github.io/punchout-simulator**](https://slawomir-szostak.github.io/punchout-simulator/):
+> the [PunchOut business primer](https://slawomir-szostak.github.io/punchout-simulator/punchout-business-primer_en.html),
+> the [Architecture reference](https://slawomir-szostak.github.io/punchout-simulator/architecture_en.html),
+> and the [Operations & usage guide](https://slawomir-szostak.github.io/punchout-simulator/operations-guide_en.html).
+> (Markdown sources live in [`docs/`](docs/).)
 
 ---
 
@@ -206,12 +208,13 @@ src/
 
 For a deeper treatment — component breakdown, the full data model, and Mode A /
 Mode B sequence diagrams — see the
-[**Architecture reference**](docs/architecture_en.html) in [`docs/`](docs/).
-The same folder holds a [**PunchOut business primer**](docs/punchout-business-primer_en.html)
+[**Architecture reference**](https://slawomir-szostak.github.io/punchout-simulator/architecture_en.html).
+Alongside it: a [**PunchOut business primer**](https://slawomir-szostak.github.io/punchout-simulator/punchout-business-primer_en.html)
 (the business process and where this tool fits) and an
-[**Operations & usage guide**](docs/operations-guide_en.html) (sessions,
-operations, profiles, product lists, validation). The reports are self-contained
-HTML; their canonical Markdown sources sit alongside them.
+[**Operations & usage guide**](https://slawomir-szostak.github.io/punchout-simulator/operations-guide_en.html)
+(sessions, operations, profiles, product lists, validation). These render at
+[slawomir-szostak.github.io/punchout-simulator](https://slawomir-szostak.github.io/punchout-simulator/);
+their canonical Markdown sources live in [`docs/`](docs/).
 
 ### Data model
 
