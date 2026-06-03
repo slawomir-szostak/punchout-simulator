@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { nanoid } from "nanoid";
 import {
+  catalogForSupplier,
   dtdVersionFor,
   effectiveProfile,
   findConnectionBySupplierAndBuyerIdentity,
@@ -35,9 +36,9 @@ import type { AttachmentEncoding, AttachmentRef, CartItem, CatalogItem, Credenti
 export const simRoute = new Hono();
 
 const DEMO_CATALOG: CatalogItem[] = [
-  { supplierPartId: "WIDGET-001", description: "Premium Steel Widget", unitPrice: 12.5, currency: "USD", uom: "EA", unspsc: "31161500", manufacturerPartId: "MFR-W001", manufacturerName: "Acme Manufacturing" },
-  { supplierPartId: "BOLT-250", description: "M8 Hex Bolt (pack of 250)", unitPrice: 34.0, currency: "USD", uom: "PK", unspsc: "31161600", manufacturerPartId: "MFR-B250", manufacturerName: "Acme Manufacturing" },
-  { supplierPartId: "TAPE-RED", description: "Industrial Marking Tape, Red", unitPrice: 5.75, currency: "USD", uom: "RL", unspsc: "31201500" },
+  { supplierPartId: "WIDGET-001", description: "Premium Steel Widget", unitPrice: 12.5, currency: "USD", uom: "EA", classifications: [{ domain: "UNSPSC", value: "31161500" }], manufacturerPartId: "MFR-W001", manufacturerName: "Acme Manufacturing" },
+  { supplierPartId: "BOLT-250", description: "M8 Hex Bolt (pack of 250)", unitPrice: 34.0, currency: "USD", uom: "PK", classifications: [{ domain: "UNSPSC", value: "31161600" }], manufacturerPartId: "MFR-B250", manufacturerName: "Acme Manufacturing" },
+  { supplierPartId: "TAPE-RED", description: "Industrial Marking Tape, Red", unitPrice: 5.75, currency: "USD", uom: "RL", classifications: [{ domain: "UNSPSC", value: "31201500" }] },
 ];
 
 function host(): string {
@@ -48,7 +49,12 @@ function host(): string {
   }
 }
 
-const catalogOf = (s: Supplier): CatalogItem[] => (s.catalog && s.catalog.length > 0 ? s.catalog : DEMO_CATALOG);
+// The supplier's served catalog: the union of its assigned product lists, or the
+// built-in demo catalog when it references none (or they resolve empty).
+const catalogOf = (s: Supplier): CatalogItem[] => {
+  const items = catalogForSupplier(s);
+  return items.length > 0 ? items : DEMO_CATALOG;
+};
 
 // The BrowserFormPost URL is buyer-supplied and later rendered as an
 // auto-submitted <form action>; reject non-http(s) schemes to avoid XSS.
@@ -161,13 +167,19 @@ simRoute.get("/:id/catalog", (c) => {
   const items = catalogOf(supplier);
 
   const rows = items
-    .map(
-      (it, i) => `<tr>
-      <td><strong>${escapeXml(it.description)}</strong><br><small>${escapeXml(it.supplierPartId)} · ${escapeXml(it.uom)} · UNSPSC ${escapeXml(it.unspsc)}</small></td>
+    .map((it, i) => {
+      const partId =
+        escapeXml(it.supplierPartId) +
+        (it.supplierPartAuxiliaryId ? ` / ${escapeXml(it.supplierPartAuxiliaryId)}` : "");
+      const cls = (it.classifications ?? [])
+        .map((c) => `${escapeXml(c.domain)} ${escapeXml(c.value)}`)
+        .join(" · ");
+      return `<tr>
+      <td><strong>${escapeXml(it.description)}</strong><br><small>${partId} · ${escapeXml(it.uom)}${cls ? ` · ${cls}` : ""}</small></td>
       <td class="price">${escapeXml(it.currency)} ${it.unitPrice.toFixed(2)}</td>
-      <td><input type="number" name="q_${i}" value="0" min="0" step="1" inputmode="numeric"></td>
-    </tr>`,
-    )
+      <td><input type="number" name="q_${i}" value="0" min="0" step="${it.allowFractional ? "any" : "1"}" inputmode="${it.allowFractional ? "decimal" : "numeric"}"></td>
+    </tr>`;
+    })
     .join("\n");
 
   return c.html(`<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -213,17 +225,23 @@ simRoute.post("/:id/checkout", async (c) => {
 
   const items: CartItem[] = [];
   catalog.forEach((it, i) => {
-    const qty = Number(form[`q_${i}`] ?? 0);
+    let qty = Number(form[`q_${i}`] ?? 0);
+    // Mirror the input's step server-side: whole numbers unless the item opts in.
+    if (!it.allowFractional) qty = Math.floor(qty);
     if (qty > 0) {
       items.push({
         quantity: qty,
         supplierPartId: it.supplierPartId,
+        supplierPartAuxiliaryId: it.supplierPartAuxiliaryId,
         description: it.description,
         uom: it.uom,
         unitPriceAmount: it.unitPrice,
         currency: it.currency,
-        classificationDomain: "UNSPSC",
-        classification: it.unspsc,
+        classifications: it.classifications,
+        // Keep the legacy single fields populated from the first classification
+        // for back-compat display (CartView) and any single-domain consumer.
+        classificationDomain: it.classifications[0]?.domain,
+        classification: it.classifications[0]?.value,
         manufacturerPartId: it.manufacturerPartId,
         manufacturerName: it.manufacturerName,
       });

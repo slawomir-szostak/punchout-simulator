@@ -250,10 +250,10 @@ export function parseCart(doc: ParsedDoc): Cart {
   const items: CartItem[] = asArray(pom?.ItemIn).map((it) => {
     const detail = it?.ItemDetail;
     const up = money(detail?.UnitPrice);
-    const classification = detail?.Classification;
-    const classFirst = Array.isArray(classification)
-      ? classification[0]
-      : classification;
+    const classifications = asArray(detail?.Classification)
+      .filter((c) => c != null)
+      .map((c) => ({ domain: attr(c, "domain") ?? "", value: text(c) ?? "" }));
+    const classFirst = classifications[0];
     return {
       quantity: Number(attr(it, "quantity") ?? "1") || 1,
       supplierPartId: text(it?.ItemID?.SupplierPartID),
@@ -262,8 +262,9 @@ export function parseCart(doc: ParsedDoc): Cart {
       uom: text(detail?.UnitOfMeasure),
       unitPriceAmount: up.amount,
       currency: up.currency,
-      classificationDomain: attr(classFirst, "domain"),
-      classification: text(classFirst),
+      classifications: classifications.length > 0 ? classifications : undefined,
+      classificationDomain: classFirst?.domain,
+      classification: classFirst?.value,
       manufacturerPartId: text(detail?.ManufacturerPartID),
       manufacturerName: text(detail?.ManufacturerName),
     };

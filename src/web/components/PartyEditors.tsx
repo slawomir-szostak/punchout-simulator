@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { Buyer, CatalogItem, Credential, Profile, Supplier } from "../types";
+import type { Buyer, Credential, ProductList, Profile, Supplier } from "../types";
 
 // Editors for the standalone Buyer and Supplier entities. Each holds only the
 // attributes intrinsic to that party (see the normalized model).
@@ -143,7 +143,7 @@ export function BuyerEditor({
       />
       <div className="form-row">
         <label>
-          Platform profile{" "}
+          Buyer profile{" "}
           <span className="hint">(how this buyer's cXML is emitted — version, UserAgent, transport…)</span>
         </label>
         <select
@@ -163,9 +163,14 @@ export function BuyerEditor({
   );
 }
 
-export function SupplierEditor({ supplier, onSave, onDelete }: { supplier: Supplier | null } & SaveProps) {
+export function SupplierEditor({
+  supplier,
+  productLists,
+  onSave,
+  onDelete,
+}: { supplier: Supplier | null; productLists: ProductList[] } & SaveProps) {
   const [draft, setDraft] = useDraft<Partial<Supplier>>(
-    supplier ?? { name: "", identity: blankCred(), punchoutUrl: "", orderUrl: "", catalog: [] },
+    supplier ?? { name: "", identity: blankCred(), punchoutUrl: "", orderUrl: "", productListIds: [] },
     supplier?.id ?? "new",
   );
   const [saving, setSaving] = useState(false);
@@ -183,15 +188,12 @@ export function SupplierEditor({ supplier, onSave, onDelete }: { supplier: Suppl
     }
   };
 
-  const catalog = draft.catalog ?? [];
-  const setItem = (i: number, patch: Partial<CatalogItem>) =>
-    setDraft({ ...draft, catalog: catalog.map((it, j) => (j === i ? { ...it, ...patch } : it)) });
-  const addItem = () =>
+  const assigned = draft.productListIds ?? [];
+  const toggleList = (id: string, on: boolean) =>
     setDraft({
       ...draft,
-      catalog: [...catalog, { supplierPartId: "", description: "", unitPrice: 0, currency: "USD", uom: "EA", unspsc: "" }],
+      productListIds: on ? [...assigned, id] : assigned.filter((x) => x !== id),
     });
-  const removeItem = (i: number) => setDraft({ ...draft, catalog: catalog.filter((_, j) => j !== i) });
 
   return (
     <div className="editor-form">
@@ -217,20 +219,28 @@ export function SupplierEditor({ supplier, onSave, onDelete }: { supplier: Suppl
       </div>
 
       <fieldset>
-        <legend>Mock catalog <span className="hint">(used when the tool acts as this supplier)</span></legend>
-        {catalog.length === 0 && <p className="hint">No items — the built-in demo catalog is served when empty.</p>}
-        {catalog.map((it, i) => (
-          <div className="catalog-row" key={i}>
-            <input placeholder="SupplierPartID" value={it.supplierPartId} onChange={(e) => setItem(i, { supplierPartId: e.target.value })} />
-            <input placeholder="Description" value={it.description} onChange={(e) => setItem(i, { description: e.target.value })} />
-            <input placeholder="Price" type="number" step="0.01" value={it.unitPrice} onChange={(e) => setItem(i, { unitPrice: Number(e.target.value) })} />
-            <input placeholder="Cur" value={it.currency} onChange={(e) => setItem(i, { currency: e.target.value })} />
-            <input placeholder="UoM" value={it.uom} onChange={(e) => setItem(i, { uom: e.target.value })} />
-            <input placeholder="UNSPSC" value={it.unspsc} onChange={(e) => setItem(i, { unspsc: e.target.value })} />
-            <button className="btn-link" onClick={() => removeItem(i)}>remove</button>
-          </div>
-        ))}
-        <button className="btn-secondary" onClick={addItem}>+ Add item</button>
+        <legend>Mock catalog <span className="hint">(product lists served when the tool acts as this supplier)</span></legend>
+        {productLists.length === 0 ? (
+          <p className="hint">No product lists yet — create one in the Products section first.</p>
+        ) : (
+          <>
+            {assigned.length === 0 && <p className="hint">No lists assigned — the built-in demo catalog is served.</p>}
+            <ul className="checkbox-list">
+              {productLists.map((p) => (
+                <li key={p.id}>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={assigned.includes(p.id)}
+                      onChange={(e) => toggleList(p.id, e.target.checked)}
+                    />
+                    {p.name} <span className="hint">({p.items.length} items)</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
       </fieldset>
 
       <Actions saving={saving} err={err} isNew={!supplier} noun="supplier" onSave={save} onDelete={supplier && onDelete ? () => onDelete(supplier.id) : undefined} />

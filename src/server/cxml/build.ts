@@ -20,6 +20,19 @@ export function makePayloadId(host: string, nowIso: string): string {
   return `${nowIso}.${nanoid(10)}@${host}`;
 }
 
+// Emit one `<Classification>` per entry. Prefers the `classifications` array;
+// falls back to the legacy single classificationDomain/classification pair so
+// items built from older carts (or simple fixtures) still produce one element.
+function classificationBlock(it: CartItem, indent: string): string {
+  const list =
+    it.classifications && it.classifications.length > 0
+      ? it.classifications
+      : [{ domain: it.classificationDomain ?? "UNSPSC", value: it.classification ?? "" }];
+  return list
+    .map((c) => `${indent}<Classification domain="${escapeXml(c.domain || "UNSPSC")}">${escapeXml(c.value)}</Classification>`)
+    .join("\n");
+}
+
 export interface HeaderParts {
   from: Credential;
   to: Credential;
@@ -247,9 +260,7 @@ export function buildOrderRequest(o: OrderRequestOptions): string {
           </UnitPrice>
           <Description xml:lang="en">${escapeXml(it.description ?? "")}</Description>
           <UnitOfMeasure>${escapeXml(it.uom ?? "EA")}</UnitOfMeasure>
-          <Classification domain="${escapeXml(it.classificationDomain ?? "UNSPSC")}">${escapeXml(
-            it.classification ?? "",
-          )}</Classification>${
+${classificationBlock(it, "          ")}${
             it.manufacturerPartId
               ? `\n          <ManufacturerPartID>${escapeXml(it.manufacturerPartId)}</ManufacturerPartID>`
               : ""
@@ -385,9 +396,7 @@ export function buildPunchOutOrderMessage(o: PunchbackOptions): string {
         </UnitPrice>
         <Description xml:lang="en">${escapeXml(it.description ?? "")}</Description>
         <UnitOfMeasure>${escapeXml(it.uom ?? "EA")}</UnitOfMeasure>
-        <Classification domain="${escapeXml(it.classificationDomain ?? "UNSPSC")}">${escapeXml(
-          it.classification ?? "",
-        )}</Classification>${
+${classificationBlock(it, "        ")}${
           it.manufacturerPartId
             ? `\n        <ManufacturerPartID>${escapeXml(it.manufacturerPartId)}</ManufacturerPartID>`
             : ""

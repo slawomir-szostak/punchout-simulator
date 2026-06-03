@@ -6,17 +6,20 @@ import type {
   AttachmentEncoding,
   Buyer,
   CartReturnTransport,
+  CatalogItem,
   Connection,
   Credential,
   DocType,
   DtdVersionMap,
   Profile,
   ProfileExtrinsic,
+  ProductList,
   ResolvedConnection,
   SetupOperation,
   Supplier,
 } from "../cxml/types.js";
 import { GENERIC_PROFILE, seedBuiltinProfiles } from "../cxml/profile-presets.js";
+import { seedBuiltinProductLists } from "../cxml/product-list-presets.js";
 import { configPath, ensureDirs } from "./paths.js";
 
 // Connection configs live in a single config.json via lowdb. The model is
@@ -28,6 +31,7 @@ interface Schema {
   suppliers: Supplier[];
   connections: Connection[];
   profiles: Profile[];
+  productLists: ProductList[];
 }
 
 let db: Low<Schema> | null = null;
@@ -35,17 +39,22 @@ let db: Low<Schema> | null = null;
 export async function initConfig(): Promise<void> {
   ensureDirs();
   const adapter = new JSONFile<Schema>(configPath());
-  db = new Low<Schema>(adapter, { buyers: [], suppliers: [], connections: [], profiles: [] });
+  db = new Low<Schema>(adapter, { buyers: [], suppliers: [], connections: [], profiles: [], productLists: [] });
   await db.read();
-  db.data ||= { buyers: [], suppliers: [], connections: [], profiles: [] };
+  db.data ||= { buyers: [], suppliers: [], connections: [], profiles: [], productLists: [] };
   db.data.buyers ||= [];
   db.data.suppliers ||= [];
   db.data.connections ||= [];
   db.data.profiles ||= [];
+  db.data.productLists ||= [];
   // Ensure the built-in platform presets exist (Generic is the resolution
   // fallback). Idempotent — only inserts profiles whose id is missing.
   seedBuiltinProfiles(db.data, now());
+  // Ensure the built-in sample product list exists. Idempotent.
+  seedBuiltinProductLists(db.data, now());
   migrateLegacy(db.data);
+  migrateInlineCatalogs(db.data);
+  migrateClassifications(db.data);
   await db.write();
   // config.json holds the plaintext shared secret — keep it owner-only.
   try {
@@ -287,6 +296,57 @@ export function dtdVersionFor(eff: EffectiveProfile, docType: DocType): string {
   return (eff.dtdVersions as unknown as Record<string, string | undefined>)[docType] ?? eff.dtdVersions.default;
 }
 
+// --- Product lists -----------------------------------------------------------
+
+export type ProductListInput = Omit<ProductList, "id" | "createdAt" | "updatedAt"> &
+  Partial<Pick<ProductList, "id">>;
+
+export const listProductLists = (): ProductList[] => requireDb().data.productLists;
+export const getProductList = (id: string): ProductList | undefined =>
+  requireDb().data.productLists.find((p) => p.id === id);
+
+export async function createProductList(input: ProductListInput): Promise<ProductList> {
+  const list: ProductList = { ...input, id: input.id ?? nanoid(8), createdAt: now(), updatedAt: now() };
+  const d = requireDb();
+  d.data.productLists.push(list);
+  await d.write();
+  return list;
+}
+
+export async function updateProductList(
+  id: string,
+  patch: Partial<ProductListInput>,
+): Promise<ProductList | undefined> {
+  const d = requireDb();
+  const existing = d.data.productLists.find((p) => p.id === id);
+  if (!existing) return undefined;
+  Object.assign(existing, patch, { id, updatedAt: now() });
+  await d.write();
+  return existing;
+}
+
+export async function deleteProductList(id: string): Promise<boolean> {
+  const d = requireDb();
+  if (d.data.suppliers.some((s) => s.productListIds?.includes(id))) {
+    throw new Error("product list is referenced by a supplier");
+  }
+  const before = d.data.productLists.length;
+  d.data.productLists = d.data.productLists.filter((p) => p.id !== id);
+  const removed = d.data.productLists.length < before;
+  if (removed) await d.write();
+  return removed;
+}
+
+/**
+ * The catalog a supplier serves in Mode B: the union of its referenced product
+ * lists' items, in order. Missing list ids are skipped. Returns an empty array
+ * when the supplier references no lists (callers fall back to the demo catalog).
+ */
+export function catalogForSupplier(supplier: Supplier): CatalogItem[] {
+  const ids = supplier.productListIds ?? [];
+  return ids.flatMap((id) => getProductList(id)?.items ?? []);
+}
+
 // --- Legacy migration --------------------------------------------------------
 
 /**
@@ -355,4 +415,49 @@ function migrateLegacy(data: Schema): void {
     });
   }
   data.connections = migrated;
+}
+
+/**
+ * Migrate the old inline `Supplier.catalog` into a standalone Product List the
+ * supplier references. Idempotent: only suppliers with a non-empty legacy catalog
+ * and no `productListIds` yet are converted; the inline `catalog` is then cleared.
+ */
+function migrateInlineCatalogs(data: Schema): void {
+  for (const supplier of data.suppliers) {
+    const legacy = supplier.catalog;
+    if (!legacy || legacy.length === 0) {
+      delete (supplier as { catalog?: CatalogItem[] }).catalog;
+      continue;
+    }
+    if (supplier.productListIds && supplier.productListIds.length > 0) {
+      delete (supplier as { catalog?: CatalogItem[] }).catalog;
+      continue;
+    }
+    const list: ProductList = {
+      id: nanoid(8),
+      name: `${supplier.name} catalog`,
+      items: legacy,
+      createdAt: now(),
+      updatedAt: now(),
+    };
+    data.productLists.push(list);
+    supplier.productListIds = [list.id];
+    delete (supplier as { catalog?: CatalogItem[] }).catalog;
+  }
+}
+
+/**
+ * Convert the old single `item.unspsc` string into the `classifications` array.
+ * Idempotent: items that already carry `classifications` are left untouched.
+ * Runs after inline-catalog migration so generated lists are covered too.
+ */
+function migrateClassifications(data: Schema): void {
+  for (const list of data.productLists) {
+    for (const item of list.items as Array<CatalogItem & { unspsc?: string }>) {
+      if (!Array.isArray(item.classifications) || item.classifications.length === 0) {
+        item.classifications = item.unspsc ? [{ domain: "UNSPSC", value: String(item.unspsc) }] : [];
+      }
+      delete item.unspsc;
+    }
+  }
 }

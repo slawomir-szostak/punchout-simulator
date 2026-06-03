@@ -8,6 +8,7 @@ import { getToken } from "./runtime.js";
 import { connectionsRoute } from "./routes/connections.js";
 import { buyersRoute, suppliersRoute } from "./routes/parties.js";
 import { profilePresetsRoute, profilesRoute } from "./routes/profiles.js";
+import { productListPresetsRoute, productsRoute } from "./routes/products.js";
 import { flowRoute } from "./routes/flow.js";
 import { punchoutReturnRoute } from "./routes/punchout-return.js";
 import { streamRoute } from "./routes/stream.js";
@@ -58,6 +59,8 @@ export function createApp(opts: AppOptions = {}): Hono {
   app.route("/api/suppliers", suppliersRoute);
   app.route("/api/profiles", profilesRoute);
   app.route("/api/profile-presets", profilePresetsRoute);
+  app.route("/api/product-lists", productsRoute);
+  app.route("/api/product-list-presets", productListPresetsRoute);
   app.route("/api/connections", connectionsRoute);
   app.route("/api/connections", flowRoute); // /:id/setup, /:id/order
   app.route("/api", dataRoute);

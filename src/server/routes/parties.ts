@@ -13,7 +13,7 @@ import {
   type BuyerInput,
   type SupplierInput,
 } from "../store/config.js";
-import type { CatalogItem, Credential } from "../cxml/types.js";
+import type { Credential } from "../cxml/types.js";
 
 // CRUD for the reusable Buyer and Supplier entities (spec sections 7, 14).
 
@@ -63,24 +63,17 @@ buyersRoute.delete("/:id", async (c) => {
 export const suppliersRoute = new Hono();
 
 function normalizeSupplier(body: any): SupplierInput {
-  const catalog: CatalogItem[] | undefined = Array.isArray(body?.catalog)
-    ? body.catalog.map((it: any) => ({
-        supplierPartId: String(it?.supplierPartId ?? ""),
-        description: String(it?.description ?? ""),
-        unitPrice: Number(it?.unitPrice ?? 0) || 0,
-        currency: String(it?.currency ?? "USD"),
-        uom: String(it?.uom ?? "EA"),
-        unspsc: String(it?.unspsc ?? ""),
-        manufacturerPartId: it?.manufacturerPartId ? String(it.manufacturerPartId) : undefined,
-        manufacturerName: it?.manufacturerName ? String(it.manufacturerName) : undefined,
-      }))
-    : undefined;
+  // The catalog now lives in standalone Product Lists; a supplier just references
+  // them. Legacy inline `catalog` is migrated at startup, not written from here.
+  const productListIds: string[] = Array.isArray(body?.productListIds)
+    ? body.productListIds.map((id: any) => String(id))
+    : [];
   return {
     name: String(body?.name ?? "Untitled supplier"),
     identity: cred(body?.identity),
     punchoutUrl: body?.punchoutUrl ? String(body.punchoutUrl) : undefined,
     orderUrl: body?.orderUrl ? String(body.orderUrl) : undefined,
-    catalog,
+    productListIds,
   };
 }
 

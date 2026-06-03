@@ -63,16 +63,46 @@ export interface Credential {
   identity: string;
 }
 
+/** A cXML `<Classification domain="…">value</Classification>`. */
+export interface Classification {
+  domain: string; // e.g. "UNSPSC", or a supplier-specific commodity scheme
+  value: string;
+}
+
 /** A mock catalog item served by Mode B (virtual-supplier). */
 export interface CatalogItem {
   supplierPartId: string;
+  /** `<SupplierPartAuxiliaryID>` — a secondary part key (variant / contract-line ref). */
+  supplierPartAuxiliaryId?: string;
   description: string;
   unitPrice: number;
   currency: string;
   uom: string; // UnitOfMeasure, e.g. "EA"
-  unspsc: string; // Classification domain="UNSPSC"
+  /** One or more `<Classification>` entries; cXML requires at least one with a domain. */
+  classifications: Classification[];
   manufacturerPartId?: string;
   manufacturerName?: string;
+  /**
+   * When true, the Mode-B catalog accepts fractional order quantities for this
+   * item (e.g. 1.5 m of cable). Defaults to false — whole numbers only.
+   */
+  allowFractional?: boolean;
+}
+
+/**
+ * A reusable, named list of catalog products. Created/edited on its own and
+ * assigned to one or more Suppliers, which serve the union of their lists as the
+ * Mode-B catalog. Replaces the old inline per-supplier catalog.
+ */
+export interface ProductList {
+  id: string;
+  name: string;
+  description?: string;
+  items: CatalogItem[];
+  /** True for code-seeded sample lists. */
+  builtin?: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // --- Normalized domain model -------------------------------------------------
@@ -105,7 +135,16 @@ export interface Supplier {
   identity: Credential; // cXML `To` credential
   punchoutUrl?: string; // the supplier's PunchOut setup endpoint
   orderUrl?: string; // the supplier's order endpoint
-  catalog?: CatalogItem[]; // served when the tool acts as this supplier (Mode B)
+  /**
+   * Product Lists this supplier serves as its Mode-B catalog. The served catalog
+   * is the union of these lists' items (in order).
+   */
+  productListIds?: string[];
+  /**
+   * @deprecated Legacy inline catalog. Read only, for one-time migration into a
+   * generated Product List (see store/config.ts). No longer written from the UI.
+   */
+  catalog?: CatalogItem[];
   createdAt: string;
   updatedAt: string;
 }
@@ -220,6 +259,12 @@ export interface CartItem {
   uom?: string;
   unitPriceAmount?: number;
   currency?: string;
+  /**
+   * All `<Classification>` entries. When present, builders emit each one;
+   * otherwise they fall back to the single classificationDomain/classification
+   * pair below (kept for back-compat and simple single-domain display).
+   */
+  classifications?: Classification[];
   classificationDomain?: string;
   classification?: string;
   manufacturerPartId?: string;

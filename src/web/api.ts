@@ -5,6 +5,7 @@ import type {
   ConnectionWithParties,
   LogRecord,
   OrderResult,
+  ProductList,
   Profile,
   SessionSummary,
   SetupResult,
@@ -78,8 +79,11 @@ export const api = {
   buyers: crud<Buyer>("/api/buyers"),
   suppliers: crud<Supplier>("/api/suppliers"),
   profiles: crud<Profile>("/api/profiles"),
+  productLists: crud<ProductList>("/api/product-lists"),
 
   listProfilePresets: () => authFetch("/api/profile-presets").then((r) => jsonOrThrow<Profile[]>(r)),
+  listProductListPresets: () =>
+    authFetch("/api/product-list-presets").then((r) => jsonOrThrow<ProductList[]>(r)),
 
   listConnections: () =>
     authFetch("/api/connections").then((r) => jsonOrThrow<ConnectionWithParties[]>(r)),

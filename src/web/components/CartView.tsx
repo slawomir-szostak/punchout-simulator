@@ -16,7 +16,7 @@ export function CartView({ cart }: { cart: Cart | null }) {
           <th>Description</th>
           <th>UoM</th>
           <th>Unit price</th>
-          <th>UNSPSC</th>
+          <th>Classification</th>
         </tr>
       </thead>
       <tbody>
@@ -29,7 +29,11 @@ export function CartView({ cart }: { cart: Cart | null }) {
             <td>
               {it.currency} {it.unitPriceAmount?.toFixed(2)}
             </td>
-            <td>{it.classification}</td>
+            <td>
+              {it.classifications?.length
+                ? it.classifications.map((c) => `${c.domain}: ${c.value}`).join(", ")
+                : it.classification}
+            </td>
           </tr>
         ))}
       </tbody>

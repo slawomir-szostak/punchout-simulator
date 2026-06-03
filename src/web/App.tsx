@@ -10,18 +10,20 @@ import {
   type ConnectionWithParties,
   type FlowSession,
   type LogRecord,
+  type ProductList,
   type Profile,
   type Supplier,
 } from "./types";
 import { ConnectionEditor } from "./components/ConnectionEditor";
 import { BuyerEditor, SupplierEditor } from "./components/PartyEditors";
 import { ProfileEditor } from "./components/ProfileEditor";
+import { ProductListEditor } from "./components/ProductListEditor";
 import { TabList } from "./components/TabList";
 import { BuyerFlow } from "./components/BuyerFlow";
 import { LiveLog } from "./components/LiveLog";
 import { MessageDetail } from "./components/MessageDetail";
 
-type View = "connections" | "buyers" | "suppliers" | "profiles";
+type View = "connections" | "buyers" | "suppliers" | "products" | "profiles";
 type Panel = "flow" | "edit" | "new";
 const NEW = "__new__";
 
@@ -30,12 +32,14 @@ export function App() {
   const [connections, setConnections] = useState<ConnectionWithParties[]>([]);
   const [buyers, setBuyers] = useState<Buyer[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [productLists, setProductLists] = useState<ProductList[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
 
   const [selectedConnId, setSelectedConnId] = useState<string | null>(null);
   const [panel, setPanel] = useState<Panel>("flow");
   const [selectedBuyerId, setSelectedBuyerId] = useState<string | null>(null);
   const [selectedSupplierId, setSelectedSupplierId] = useState<string | null>(null);
+  const [selectedProductListId, setSelectedProductListId] = useState<string | null>(null);
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
 
   const [carts, setCarts] = useState<Record<string, Cart>>({});
@@ -60,6 +64,7 @@ export function App() {
   }, []);
   const reloadBuyers = useCallback(async () => setBuyers(await api.buyers.list()), []);
   const reloadSuppliers = useCallback(async () => setSuppliers(await api.suppliers.list()), []);
+  const reloadProductLists = useCallback(async () => setProductLists(await api.productLists.list()), []);
   const reloadProfiles = useCallback(async () => setProfiles(await api.profiles.list()), []);
 
   useEffect(() => {
@@ -67,6 +72,7 @@ export function App() {
       reloadConnections(),
       reloadBuyers(),
       reloadSuppliers(),
+      reloadProductLists(),
       reloadProfiles(),
       api.runtime().then((r) => {
         setPublicUrl(r.publicUrl);
@@ -83,7 +89,7 @@ export function App() {
         ),
       );
     api.recent(200).then(setRecords).catch(() => {});
-  }, [reloadConnections, reloadBuyers, reloadSuppliers, reloadProfiles]);
+  }, [reloadConnections, reloadBuyers, reloadSuppliers, reloadProductLists, reloadProfiles]);
 
   useStream({
     onLog: (record) => setRecords((rs) => [...rs, record]),
@@ -154,6 +160,23 @@ export function App() {
     setSelectedSupplierId(null);
   };
 
+  // --- product-list handlers ---
+  const saveProductList = async (data: Partial<ProductList>) => {
+    if (selectedProductListId === NEW || !selectedProductListId) {
+      const created = await api.productLists.create(data);
+      await reloadProductLists();
+      setSelectedProductListId(created.id);
+    } else {
+      await api.productLists.update(selectedProductListId, data);
+      await reloadProductLists();
+    }
+  };
+  const deleteProductList = async (id: string) => {
+    await api.productLists.remove(id);
+    await reloadProductLists();
+    setSelectedProductListId(null);
+  };
+
   // --- profile handlers ---
   const saveProfile = async (data: Partial<Profile>) => {
     if (selectedProfileId === NEW || !selectedProfileId) {
@@ -173,6 +196,7 @@ export function App() {
 
   const selectedBuyer = buyers.find((b) => b.id === selectedBuyerId) ?? null;
   const selectedSupplier = suppliers.find((s) => s.id === selectedSupplierId) ?? null;
+  const selectedProductList = productLists.find((p) => p.id === selectedProductListId) ?? null;
   const selectedProfile = profiles.find((p) => p.id === selectedProfileId) ?? null;
 
   return (
@@ -203,7 +227,7 @@ export function App() {
             tabClassName="viewtab"
             value={view}
             onChange={setView}
-            tabs={(["connections", "buyers", "suppliers", "profiles"] as View[]).map((v) => ({ value: v, label: v }))}
+            tabs={(["connections", "buyers", "suppliers", "products", "profiles"] as View[]).map((v) => ({ value: v, label: v === "profiles" ? "buyer profiles" : v }))}
           />
 
           {view === "connections" && (
@@ -241,8 +265,13 @@ export function App() {
               onSelect={setSelectedSupplierId} onNew={() => setSelectedSupplierId(NEW)}
               subtitle={(s) => `${s.identity.domain}/${s.identity.identity}`} />
           )}
+          {view === "products" && (
+            <EntityList title="Product lists" items={productLists} selectedId={selectedProductListId}
+              onSelect={setSelectedProductListId} onNew={() => setSelectedProductListId(NEW)}
+              subtitle={(p) => `${p.items.length} items`} />
+          )}
           {view === "profiles" && (
-            <EntityList title="Profiles" items={profiles} selectedId={selectedProfileId}
+            <EntityList title="Buyer profiles" items={profiles} selectedId={selectedProfileId}
               onSelect={setSelectedProfileId} onNew={() => setSelectedProfileId(NEW)}
               subtitle={(p) => p.platform ?? "custom"} />
           )}
@@ -315,17 +344,26 @@ export function App() {
             <>
               <h2>{selectedSupplierId === NEW ? "New supplier" : selectedSupplier?.name ?? "Suppliers"}</h2>
               {selectedSupplierId ? (
-                <SupplierEditor supplier={selectedSupplierId === NEW ? null : selectedSupplier} onSave={saveSupplier} onDelete={deleteSupplier} />
+                <SupplierEditor supplier={selectedSupplierId === NEW ? null : selectedSupplier} productLists={productLists} onSave={saveSupplier} onDelete={deleteSupplier} />
               ) : <p className="hint">Select a supplier or create one.</p>}
+            </>
+          )}
+
+          {view === "products" && (
+            <>
+              <h2>{selectedProductListId === NEW ? "New product list" : selectedProductList?.name ?? "Product lists"}</h2>
+              {selectedProductListId ? (
+                <ProductListEditor list={selectedProductListId === NEW ? null : selectedProductList} onSave={saveProductList} onDelete={deleteProductList} />
+              ) : <p className="hint">Select a product list or create one. A built-in sample list is included; assign lists to a Supplier to serve them as its catalog.</p>}
             </>
           )}
 
           {view === "profiles" && (
             <>
-              <h2>{selectedProfileId === NEW ? "New profile" : selectedProfile?.name ?? "Profiles"}</h2>
+              <h2>{selectedProfileId === NEW ? "New buyer profile" : selectedProfile?.name ?? "Buyer profiles"}</h2>
               {selectedProfileId ? (
                 <ProfileEditor profile={selectedProfileId === NEW ? null : selectedProfile} onSave={saveProfile} onDelete={deleteProfile} />
-              ) : <p className="hint">Select a profile or create one. Built-in presets (Ariba, Coupa, …) are listed here.</p>}
+              ) : <p className="hint">Select a buyer profile or create one. Built-in presets (Ariba, Coupa, …) are listed here. Assign a profile to a Buyer to control how its cXML is emitted.</p>}
             </>
           )}
         </main>
@@ -427,7 +465,7 @@ function Onboarding({
       <p>Set it up in three steps:</p>
       <ol className="onboarding-steps">
         <li className={hasBuyers ? "done" : ""}><strong>Buyer</strong> — holds its cXML <code>From</code> identity.</li>
-        <li className={hasSuppliers ? "done" : ""}><strong>Supplier</strong> — holds its <code>To</code> identity, endpoints, and an optional mock catalog.</li>
+        <li className={hasSuppliers ? "done" : ""}><strong>Supplier</strong> — holds its <code>To</code> identity, endpoints, and the product lists it serves as its mock catalog.</li>
         <li><strong>Connection</strong> — pairs a Buyer with a Supplier and picks the mode. Then run the flow.</li>
       </ol>
       <div className="form-actions">

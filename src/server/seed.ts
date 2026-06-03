@@ -28,7 +28,8 @@ export async function seedDemoIfEmpty(): Promise<void> {
     identity: { domain: "DUNS", identity: "987654321" },
     punchoutUrl: `${getPublicUrl()}/sim/demo-supplier/punchout`,
     orderUrl: `${getPublicUrl()}/sim/demo-supplier/order`,
-    catalog: [],
+    // Serve the built-in sample assortment (seeded by initConfig).
+    productListIds: ["sample"],
   });
 
   await createConnection({

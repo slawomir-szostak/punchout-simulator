@@ -167,7 +167,7 @@ backend, so there is no CORS between them).
 | XML parsing | `fast-xml-parser` |
 | cXML building | template literals (full control over shape/ordering/`xml:lang`) |
 | multipart/related | hand-assembled (`Buffer` + boundary) |
-| Storage | `lowdb` (`config.json`) for buyers/suppliers/connections/profiles · append-only JSONL per session for logs · separate files for attachments |
+| Storage | `lowdb` (`config.json`) for buyers/suppliers/connections/product-lists/profiles · append-only JSONL per session for logs · separate files for attachments |
 
 ```
 src/
@@ -178,14 +178,30 @@ src/
 
 ### Data model
 
-The config is normalized into four entities:
+The config is normalized into five entities:
 
 - **Buyer** — a reusable party holding its own cXML identity (the `From` credential) and an optional **platform profile** reference (see below).
-- **Supplier** — a reusable party holding its cXML identity (`To`) plus its **endpoints** (PunchOut URL, Order URL) and an optional mock catalog. Endpoints are intrinsic to the supplier — defined once, not per relationship.
+- **Supplier** — a reusable party holding its cXML identity (`To`) plus its **endpoints** (PunchOut URL, Order URL) and the **product lists** it serves as its Mode-B catalog. Endpoints are intrinsic to the supplier — defined once, not per relationship.
 - **Connection** — the edge pairing one Buyer with one Supplier. It holds only what is specific to that pair: which side the tool simulates (`mode`), the `sharedSecret`, an optional per-pair Sender identity override (defaults to the buyer's identity), `authStyle`, `deploymentMode`, and `attachmentEncoding`.
+- **Product List** — a reusable, named set of catalog products. Assigned to one or more Suppliers; each supplier serves the **union** of its lists as its mock catalog. See below.
 - **Profile** — a reusable **procurement-platform profile** (Ariba/Coupa/Jaggaer/…) referenced by a Buyer. See below.
 
 At send time: `From` = buyer identity, `To` = supplier identity, `Sender` = the connection's override (or the buyer), and the request targets the supplier's endpoints. The mock-supplier endpoints are keyed by supplier id (`/sim/<supplierId>/…`).
+
+### Product lists (Mode-B catalogs)
+
+A **Product List** is a named set of catalog items, edited on its own and assigned to one or
+more Suppliers from the **Products** tab. In Mode B a supplier serves the union of its assigned
+lists; a supplier with no lists falls back to a small built-in demo catalog. A built-in
+**Sample assortment** (~20 office/industrial items) ships out of the box and can be **loaded
+into the editor** as a starting point.
+
+Each product carries a `SupplierPartID`, an optional `SupplierPartAuxiliaryID`, description, unit
+price + currency, unit of measure, manufacturer info, and **one or more `Classification`** entries
+(each with its own `domain`, e.g. `UNSPSC` plus a supplier scheme like `eCl@ss`). A product may opt
+into **fractional order quantities** (e.g. `1.5` m of cable) via its `allowFractional` flag — the
+Mode-B catalog then accepts decimals for that item; all other items stay whole-number. These fields
+flow through to the punchback (`ItemIn`) and the resulting OrderRequest (`ItemOut`).
 
 ### Simulating different procurement platforms (Buyer profiles)
 
@@ -218,6 +234,7 @@ cxml-urlencoded) — i.e. the tool's original behavior.
 
 - `*/api/buyers`, `*/api/suppliers` — CRUD for the reusable parties
 - `*/api/profiles` — CRUD for procurement-platform profiles · `GET /api/profile-presets` — the built-in preset library
+- `*/api/product-lists` — CRUD for product lists · `GET /api/product-list-presets` — the built-in sample library
 - `*/api/connections` — CRUD for connection edges (reference a buyer + supplier)
 - `GET /api/connections/:id/setup/preview` · `POST …/setup` — preview / send the SetupRequest
 - `POST /api/connections/:id/order/preview` · `POST …/order` — preview / send the OrderRequest (multipart if attachments)
