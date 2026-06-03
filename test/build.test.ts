@@ -140,6 +140,25 @@ describe("buildPunchOutOrderMessage", () => {
   });
 });
 
+describe("SetupRequest operations (create / edit / inspect)", () => {
+  const base = {
+    from: buyer, to: supplier, sender: buyer, buyerCookie: "c1",
+    browserFormPostUrl: "http://localhost/punchout/return", payloadId: "p@h", timestamp: "2026-01-01T00:00:00.000Z",
+  };
+  const items = [{ quantity: 2, supplierPartId: "WIDGET-001", unitPriceAmount: 12.5, currency: "USD", description: "Widget", uom: "EA", classification: "31161500", classificationDomain: "UNSPSC" }];
+
+  it("create carries no ItemOut", () => {
+    const xml = buildSetupRequest({ ...base, operation: "create" });
+    expect(xml).toContain('operation="create"');
+    expect(xml).not.toContain("<ItemOut");
+  });
+  it("edit carries the prior items as ItemOut inside the setup", () => {
+    const xml = buildSetupRequest({ ...base, operation: "edit", items });
+    expect(xml).toContain('operation="edit"');
+    expect(xml).toMatch(/<PunchOutSetupRequest[\s\S]*<ItemOut quantity="2"[\s\S]*<SupplierPartID>WIDGET-001<\/SupplierPartID>[\s\S]*<\/PunchOutSetupRequest>/);
+  });
+});
+
 describe("addresses (ShipTo / BillTo / Contact)", () => {
   const orderBase = {
     from: buyer, to: supplier, sender: buyer, orderId: "PO-1", orderDate: "2026-01-01T00:00:00.000Z",

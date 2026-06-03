@@ -23,7 +23,12 @@ import {
 import { buildMultipartRelated, type MultipartAttachment } from "../cxml/multipart.js";
 import { getStartPage, getStatus, parseXml } from "../cxml/parse.js";
 import { validateDocument, type ExpectedCredentials } from "../cxml/validate.js";
-import type { Address, AddressMode, AttachmentEncoding, AttachmentRef, CartItem, Contact, Credential, DocType, ResolvedConnection } from "../cxml/types.js";
+import type { Address, AddressMode, AttachmentEncoding, AttachmentRef, CartItem, Contact, Credential, DocType, ResolvedConnection, SetupOperation } from "../cxml/types.js";
+
+const coerceOperation = (v: unknown): SetupOperation | undefined =>
+  v === "create" || v === "edit" || v === "inspect" ? v : undefined;
+const setupItems = (body: any): CartItem[] | undefined =>
+  Array.isArray(body?.items) && body.items.length > 0 ? (body.items as CartItem[]) : undefined;
 
 // Mode A (virtual-buyer): drive the SetupRequest and OrderRequest server-to-server,
 // validate + log every document in both directions (spec sections 8, 10).
@@ -120,11 +125,12 @@ function resolveVirtualBuyer(id: string): Resolved {
 
 // --- SetupRequest preview -----------------------------------------------------
 
-flowRoute.get("/:id/setup/preview", (c) => {
+flowRoute.post("/:id/setup/preview", async (c) => {
   const r = resolveVirtualBuyer(c.req.param("id"));
   if ("error" in r) return c.json({ error: r.error }, 400);
   const { ctx } = r;
-  const buyerCookie = c.req.query("buyerCookie") || `pos-${nanoid(16)}`;
+  const body = await c.req.json().catch(() => ({}));
+  const buyerCookie = body.buyerCookie || `pos-${nanoid(16)}`;
   const xml = buildSetupRequest({
     from: ctx.from,
     to: ctx.to,
@@ -135,11 +141,12 @@ flowRoute.get("/:id/setup/preview", (c) => {
     payloadId: makePayloadId(host(), new Date().toISOString()),
     timestamp: new Date().toISOString(),
     deploymentMode: ctx.deploymentMode,
-    operation: ctx.eff.setupOperation,
+    operation: coerceOperation(body.operation) ?? ctx.eff.setupOperation,
     dtdVersion: dtdVersionFor(ctx.eff, "SetupRequest"),
     userAgent: ctx.eff.userAgent,
     extrinsics: setupExtrinsics(ctx, buyerCookie),
     ...setupAddresses(ctx),
+    items: setupItems(body),
   });
   return c.json({ buyerCookie, xml, browserFormPostUrl: browserFormPostUrl() });
 });
@@ -165,11 +172,12 @@ flowRoute.post("/:id/setup", async (c) => {
       payloadId: makePayloadId(host(), new Date().toISOString()),
       timestamp: new Date().toISOString(),
       deploymentMode: ctx.deploymentMode,
-      operation: ctx.eff.setupOperation,
+      operation: coerceOperation(body.operation) ?? ctx.eff.setupOperation,
       dtdVersion: dtdVersionFor(ctx.eff, "SetupRequest"),
       userAgent: ctx.eff.userAgent,
       extrinsics: setupExtrinsics(ctx, buyerCookie),
       ...setupAddresses(ctx),
+      items: setupItems(body),
     });
 
   rememberSessionConnection(buyerCookie, ctx.connectionId);

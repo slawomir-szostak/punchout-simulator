@@ -174,7 +174,7 @@ describe("Mode A loopback", () => {
   });
 
   it("validates a request on demand without sending it", async () => {
-    const preview = await fetch(`${base}/api/connections/demo/setup/preview`).then((r) => r.json());
+    const preview = await fetch(`${base}/api/connections/demo/setup/preview`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }).then((r) => r.json());
     const good = await fetch(`${base}/api/connections/demo/validate`, {
       method: "POST",
       headers: { "content-type": "application/json" },

@@ -148,6 +148,31 @@ export interface SetupRequestOptions {
   shipTo?: Address;
   contact?: Contact;
   addressMode?: AddressMode;
+  /** Prior cart/items carried in an `edit`/`inspect` setup (emitted as ItemOut). */
+  items?: OrderRequestItem[];
+}
+
+// A compact ItemOut for the PunchOutSetupRequest (edit/inspect): no attachments,
+// no line-level Comments — just the identity + detail so the supplier can reopen
+// the cart / show the item. Shares the classification emitter with OrderRequest.
+function setupItemOut(it: OrderRequestItem, idx: number): string {
+  return `      <ItemOut quantity="${escapeXml(it.quantity)}" lineNumber="${idx}">
+        <ItemID>
+          <SupplierPartID>${escapeXml(it.supplierPartId ?? "")}</SupplierPartID>${
+            it.supplierPartAuxiliaryId
+              ? `\n          <SupplierPartAuxiliaryID>${escapeXml(it.supplierPartAuxiliaryId)}</SupplierPartAuxiliaryID>`
+              : ""
+          }
+        </ItemID>
+        <ItemDetail>
+          <UnitPrice>
+            <Money currency="${escapeXml(it.currency ?? "USD")}">${escapeXml(it.unitPriceAmount ?? 0)}</Money>
+          </UnitPrice>
+          <Description xml:lang="en">${escapeXml(it.description ?? "")}</Description>
+          <UnitOfMeasure>${escapeXml(it.uom ?? "EA")}</UnitOfMeasure>
+${classificationBlock(it, "          ")}
+        </ItemDetail>
+      </ItemOut>`;
 }
 
 export function buildSetupRequest(o: SetupRequestOptions): string {
@@ -158,6 +183,7 @@ export function buildSetupRequest(o: SetupRequestOptions): string {
   const mode = o.addressMode ?? "full";
   const shipTo = o.shipTo ? `\n${addressBlock("ShipTo", o.shipTo, mode)}` : "";
   const contact = o.contact ? `\n${contactBlock(o.contact, mode, "      ")}` : "";
+  const items = o.items && o.items.length > 0 ? `\n${o.items.map((it, i) => setupItemOut(it, i + 1)).join("\n")}` : "";
   const inner = `${header({
     from: o.from,
     to: o.to,
@@ -170,7 +196,7 @@ export function buildSetupRequest(o: SetupRequestOptions): string {
       <BuyerCookie>${escapeXml(o.buyerCookie)}</BuyerCookie>
       <BrowserFormPost>
         <URL>${escapeXml(o.browserFormPostUrl)}</URL>
-      </BrowserFormPost>${extrinsicBlock(o.extrinsics, "      ")}${shipTo}${contact}
+      </BrowserFormPost>${extrinsicBlock(o.extrinsics, "      ")}${shipTo}${contact}${items}
     </PunchOutSetupRequest>
   </Request>`;
   return envelope(o.payloadId, o.timestamp, lang, inner, o.dtdVersion);

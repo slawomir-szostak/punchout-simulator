@@ -50,6 +50,15 @@ export interface SessionSummary {
   lastTs?: string;
   docTypes: string[];
   hasErrors: boolean;
+  /** PunchOutSetupRequest @operation (create/edit/inspect), if the session has one. */
+  operation?: string;
+  // Enriched server-side from the resolved connection/supplier:
+  connectionName?: string;
+  buyerName?: string;
+  supplierName?: string;
+  mode?: string;
+  /** True when an external buyer initiated this session against our Mode-B endpoint. */
+  inbound?: boolean;
 }
 
 export interface SetupResult {

@@ -108,10 +108,12 @@ export const api = {
       jsonOrThrow<{ ok: boolean }>(r),
     ),
 
-  setupPreview: (id: string) =>
-    authFetch(`/api/connections/${id}/setup/preview`).then((r) =>
-      jsonOrThrow<{ buyerCookie: string; xml: string; browserFormPostUrl: string }>(r),
-    ),
+  setupPreview: (id: string, body: { buyerCookie?: string; operation?: string; items?: unknown[] } = {}) =>
+    authFetch(`/api/connections/${id}/setup/preview`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }).then((r) => jsonOrThrow<{ buyerCookie: string; xml: string; browserFormPostUrl: string }>(r)),
 
   // Validate the current cXML against its document rules without sending it.
   validate: (id: string, body: { docType: string; xml: string }) =>

@@ -460,12 +460,24 @@ export function validateDocument(raw: string, ctx: ValidationContext = {}): Vali
   checkGeneral(doc, ctx, issues, docType);
 
   switch (docType) {
-    case "SetupRequest":
+    case "SetupRequest": {
       checkSharedSecret(doc, ctx, issues);
-      if (!root(doc)?.Request?.PunchOutSetupRequest?.BrowserFormPost?.URL) {
+      const setup = root(doc)?.Request?.PunchOutSetupRequest;
+      if (!setup?.BrowserFormPost?.URL) {
         issues.warn("missing-browserformpost", "PunchOutSetupRequest/BrowserFormPost/URL is missing", "cXML/.../PunchOutSetupRequest/BrowserFormPost/URL");
       }
+      // edit/inspect reopen prior items, so they should carry ItemOut; create
+      // starts an empty cart, so ItemOut there is unexpected.
+      const op = attr(setup, "operation") ?? "create";
+      const hasItems = asArray(setup?.ItemOut).length > 0;
+      if ((op === "edit" || op === "inspect") && !hasItems) {
+        issues.warn("setup-missing-items", `operation="${op}" usually carries the prior item(s) as ItemOut, but none are present`, "cXML/.../PunchOutSetupRequest");
+      }
+      if (op === "create" && hasItems) {
+        issues.warn("setup-unexpected-items", 'operation="create" starts an empty cart, but ItemOut elements are present', "cXML/.../PunchOutSetupRequest");
+      }
       break;
+    }
     case "SetupResponse":
       checkSetupResponse(doc, issues);
       break;

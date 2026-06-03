@@ -24,6 +24,15 @@ describe("SetupResponse validation", () => {
     expect(c).toContain("status-not-200");
     expect(c).toContain("missing-startpage");
   });
+  it("warns when edit/inspect carries no items, and when create carries items", () => {
+    const setup = (op: string, items: string) =>
+      `<cXML payloadID="p@h" timestamp="t"><Request><PunchOutSetupRequest operation="${op}"><BuyerCookie>c</BuyerCookie><BrowserFormPost><URL>https://b/return</URL></BrowserFormPost>${items}</PunchOutSetupRequest></Request></cXML>`;
+    const itemOut = '<ItemOut quantity="1"><ItemID><SupplierPartID>A</SupplierPartID></ItemID><ItemDetail><UnitPrice><Money currency="USD">1</Money></UnitPrice></ItemDetail></ItemOut>';
+    expect(codes(setup("edit", ""))).toContain("setup-missing-items");
+    expect(codes(setup("create", itemOut))).toContain("setup-unexpected-items");
+    expect(codes(setup("edit", itemOut))).not.toContain("setup-missing-items");
+    expect(codes(setup("create", ""))).not.toContain("setup-unexpected-items");
+  });
   it("does NOT flag missing credentials on a (headerless) response, even with expected creds", () => {
     // Responses carry no <Header> by spec — the credential check is request-only.
     const setupResp = `<cXML payloadID="p@h" timestamp="t"><Response><Status code="200" text="OK"/><PunchOutSetupResponse><StartPage><URL>https://s/start</URL></StartPage></PunchOutSetupResponse></Response></cXML>`;

@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { getCart } from "../cart-store.js";
 import { readAttachment } from "../store/attachments.js";
 import { listSessions, readAllRecent, readSession } from "../store/log.js";
+import { getBuyer, getConnection, getSupplier } from "../store/config.js";
 import { getPublicUrl, getVersion } from "../runtime.js";
 import {
   buildMultipartRelated,
@@ -50,7 +51,32 @@ dataRoute.get("/runtime", (c) =>
   c.json({ publicUrl: getPublicUrl(), callbackUrl: `${getPublicUrl()}/punchout/return`, version: getVersion() }),
 );
 
-dataRoute.get("/sessions", (c) => c.json(listSessions()));
+// Enrich each session summary with the resolved parties + mode so the session
+// list is human-readable. A summary's connectionId is a real Connection id for
+// Mode-A-initiated sessions, or a Supplier id for inbound Mode-B traffic.
+dataRoute.get("/sessions", (c) => {
+  const enriched = listSessions().map((s) => {
+    const conn = s.connectionId ? getConnection(s.connectionId) : undefined;
+    if (conn) {
+      return {
+        ...s,
+        connectionName: conn.name,
+        mode: conn.mode,
+        buyerName: getBuyer(conn.buyerId)?.name,
+        supplierName: getSupplier(conn.supplierId)?.name,
+        inbound: false,
+      };
+    }
+    const supplier = s.connectionId ? getSupplier(s.connectionId) : undefined;
+    return {
+      ...s,
+      supplierName: supplier?.name,
+      mode: supplier ? "virtual-supplier" : undefined,
+      inbound: !!supplier, // an external buyer hit our /sim
+    };
+  });
+  return c.json(enriched);
+});
 
 dataRoute.get("/sessions/:id", (c) => c.json(readSession(c.req.param("id"))));
 

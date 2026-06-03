@@ -57,6 +57,8 @@ export interface SessionSummary {
   lastTs?: string;
   docTypes: string[];
   hasErrors: boolean;
+  /** PunchOutSetupRequest @operation for the session (create/edit/inspect), if any. */
+  operation?: string;
 }
 
 export function listSessions(): SessionSummary[] {
@@ -67,6 +69,8 @@ export function listSessions(): SessionSummary[] {
     const sessionId = file.replace(/\.jsonl$/, "");
     const records = readSession(sessionId);
     if (records.length === 0) continue;
+    const setup = records.find((r) => r.docType === "SetupRequest");
+    const operation = setup ? /<PunchOutSetupRequest[^>]*\boperation="([^"]+)"/.exec(setup.body)?.[1] : undefined;
     summaries.push({
       sessionId: records[0].sessionId ?? sessionId,
       connectionId: records[0].connectionId,
@@ -75,6 +79,7 @@ export function listSessions(): SessionSummary[] {
       lastTs: records[records.length - 1].ts,
       docTypes: [...new Set(records.map((r) => r.docType))],
       hasErrors: records.some((r) => r.validation && !r.validation.ok),
+      operation,
     });
   }
   return summaries.sort((a, b) => (b.lastTs ?? "").localeCompare(a.lastTs ?? ""));
