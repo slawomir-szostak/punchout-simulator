@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
 import { useStream } from "./hooks/useStream";
 import { toggleTheme, useTheme } from "./hooks/useTheme";
@@ -6,29 +6,51 @@ import {
   emptySession,
   type Buyer,
   type Cart,
+  type CartItem,
   type Connection,
   type ConnectionWithParties,
   type FlowSession,
   type LogRecord,
   type ProductList,
   type Profile,
+  type SessionSummary,
   type Supplier,
 } from "./types";
 import { ConnectionEditor } from "./components/ConnectionEditor";
 import { BuyerEditor, SupplierEditor } from "./components/PartyEditors";
 import { ProfileEditor } from "./components/ProfileEditor";
 import { ProductListEditor } from "./components/ProductListEditor";
-import { TabList } from "./components/TabList";
 import { BuyerFlow } from "./components/BuyerFlow";
 import { LiveLog } from "./components/LiveLog";
+import { SessionList, type SessionRow } from "./components/SessionList";
+import { NewSessionDialog, type NewSessionChoice } from "./components/NewSessionDialog";
 import { MessageDetail } from "./components/MessageDetail";
 
-type View = "connections" | "buyers" | "suppliers" | "products" | "profiles";
-type Panel = "flow" | "edit" | "new";
+type View = "sessions" | "connections" | "buyers" | "suppliers" | "products" | "profiles";
+type Panel = "edit" | "new";
 const NEW = "__new__";
 
+/** A Mode-A session the user is actively driving (client-side flow state). */
+interface Flow {
+  connectionId: string;
+  operation: string;
+  sourceItems?: CartItem[];
+  session: FlowSession;
+}
+
+const RUN_TABS: View[] = ["sessions"];
+const CONFIG_TABS: View[] = ["connections", "buyers", "suppliers", "products", "profiles"];
+const TAB_LABEL: Record<View, string> = {
+  sessions: "Sessions",
+  connections: "Connections",
+  buyers: "Buyers",
+  suppliers: "Suppliers",
+  products: "Products",
+  profiles: "Buyer Profiles",
+};
+
 export function App() {
-  const [view, setView] = useState<View>("connections");
+  const [view, setView] = useState<View>("sessions");
   const [connections, setConnections] = useState<ConnectionWithParties[]>([]);
   const [buyers, setBuyers] = useState<Buyer[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -36,14 +58,21 @@ export function App() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
 
   const [selectedConnId, setSelectedConnId] = useState<string | null>(null);
-  const [panel, setPanel] = useState<Panel>("flow");
+  const [panel, setPanel] = useState<Panel>("edit");
   const [selectedBuyerId, setSelectedBuyerId] = useState<string | null>(null);
   const [selectedSupplierId, setSelectedSupplierId] = useState<string | null>(null);
   const [selectedProductListId, setSelectedProductListId] = useState<string | null>(null);
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
 
+  // Sessions
+  const [flows, setFlows] = useState<Record<string, Flow>>({});
+  const [sessionSummaries, setSessionSummaries] = useState<SessionSummary[]>([]);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [showNewSession, setShowNewSession] = useState(false);
+  const flowSeq = useRef(0);
+  const [loadedSessions, setLoadedSessions] = useState<Set<string>>(new Set());
+
   const [carts, setCarts] = useState<Record<string, Cart>>({});
-  const [sessions, setSessions] = useState<Record<string, FlowSession>>({});
   const [records, setRecords] = useState<LogRecord[]>([]);
   const [detail, setDetail] = useState<LogRecord | null>(null);
   const [publicUrl, setPublicUrl] = useState<string>("");
@@ -59,13 +88,15 @@ export function App() {
   const reloadConnections = useCallback(async () => {
     const list = await api.listConnections();
     setConnections(list);
-    setSelectedConnId((cur) => cur ?? list[0]?.id ?? null);
     return list;
   }, []);
   const reloadBuyers = useCallback(async () => setBuyers(await api.buyers.list()), []);
   const reloadSuppliers = useCallback(async () => setSuppliers(await api.suppliers.list()), []);
   const reloadProductLists = useCallback(async () => setProductLists(await api.productLists.list()), []);
   const reloadProfiles = useCallback(async () => setProfiles(await api.profiles.list()), []);
+  const reloadSessions = useCallback(async () => {
+    try { setSessionSummaries(await api.listSessions()); } catch { /* ignore */ }
+  }, []);
 
   useEffect(() => {
     Promise.all([
@@ -74,6 +105,7 @@ export function App() {
       reloadSuppliers(),
       reloadProductLists(),
       reloadProfiles(),
+      reloadSessions(),
       api.runtime().then((r) => {
         setPublicUrl(r.publicUrl);
         setCallbackUrl(r.callbackUrl);
@@ -89,23 +121,56 @@ export function App() {
         ),
       );
     api.recent(200).then(setRecords).catch(() => {});
-  }, [reloadConnections, reloadBuyers, reloadSuppliers, reloadProductLists, reloadProfiles]);
+  }, [reloadConnections, reloadBuyers, reloadSuppliers, reloadProductLists, reloadProfiles, reloadSessions]);
 
   useStream({
-    onLog: (record) => setRecords((rs) => [...rs, record]),
+    onLog: (record) => {
+      setRecords((rs) => [...rs, record]);
+      reloadSessions(); // new sessions / status changes surface in the list live
+    },
     onCart: (_conn, cart) => setCarts((c) => ({ ...c, [cart.sessionId]: cart })),
   });
 
+  // --- derived session selection ---
+  const activeFlow = selectedSessionId ? flows[selectedSessionId] ?? null : null;
+  const flowConn = activeFlow ? connections.find((c) => c.id === activeFlow.connectionId) ?? null : null;
+  const serverSel = !activeFlow && selectedSessionId
+    ? sessionSummaries.find((s) => s.sessionId === selectedSessionId) ?? null
+    : null;
+  const logSid = activeFlow ? activeFlow.session.buyerCookie : serverSel?.sessionId;
+  const sessionRecords = logSid ? records.filter((r) => r.sessionId === logSid) : [];
+
+  // Load a session's full history (beyond the recent window) when it's selected.
   useEffect(() => {
-    const cookie = selectedConnId ? sessions[selectedConnId]?.buyerCookie : undefined;
+    if (!logSid || loadedSessions.has(logSid)) return;
+    api.getSession(logSid).then((recs) => {
+      setRecords((rs) => {
+        const have = new Set(rs.map((r) => r.id));
+        const add = recs.filter((r) => !have.has(r.id));
+        return add.length ? [...rs, ...add] : rs;
+      });
+      setLoadedSessions((s) => new Set(s).add(logSid));
+    }).catch(() => {});
+  }, [logSid, loadedSessions]);
+
+  // Lazily load the active flow's cart.
+  useEffect(() => {
+    const cookie = activeFlow?.session.buyerCookie;
     if (!cookie || carts[cookie]) return;
     api.getCart(cookie).then((cart) => cart && setCarts((c) => ({ ...c, [cookie]: cart }))).catch(() => {});
-  }, [selectedConnId, sessions, carts]);
+  }, [activeFlow?.session.buyerCookie, carts]);
 
-  const patchSession = useCallback((id: string, patch: Partial<FlowSession>) => {
-    setSessions((s) => ({ ...s, [id]: { ...(s[id] ?? emptySession()), ...patch } }));
+  const patchFlowSession = useCallback((key: string, patch: Partial<FlowSession>) => {
+    setFlows((f) => (f[key] ? { ...f, [key]: { ...f[key], session: { ...f[key].session, ...patch } } } : f));
   }, []);
-  const newSession = useCallback((id: string) => setSessions((s) => ({ ...s, [id]: emptySession() })), []);
+
+  const startSession = (choice: NewSessionChoice) => {
+    const key = `flow-${++flowSeq.current}`;
+    setFlows((f) => ({ ...f, [key]: { connectionId: choice.connectionId, operation: choice.operation, sourceItems: choice.items, session: emptySession() } }));
+    setSelectedSessionId(key);
+    setShowNewSession(false);
+    setView("sessions");
+  };
 
   // --- connection handlers ---
   const saveConnection = async (data: Partial<Connection>) => {
@@ -117,13 +182,13 @@ export function App() {
       await api.updateConnection(selectedConn.id, data);
       await reloadConnections();
     }
-    setPanel("flow");
+    setPanel("edit");
   };
   const deleteConnection = async (id: string) => {
     await api.deleteConnection(id);
     const list = await reloadConnections();
     setSelectedConnId(list[0]?.id ?? null);
-    setPanel("flow");
+    setPanel("edit");
   };
 
   // --- buyer handlers ---
@@ -199,6 +264,40 @@ export function App() {
   const selectedProductList = productLists.find((p) => p.id === selectedProductListId) ?? null;
   const selectedProfile = profiles.find((p) => p.id === selectedProfileId) ?? null;
 
+  // --- session list rows: active client flows first, then server-only sessions ---
+  const flowCookies = new Set(Object.values(flows).map((f) => f.session.buyerCookie).filter(Boolean));
+  const sessionRows: SessionRow[] = [
+    ...Object.entries(flows).map(([key, f]): SessionRow => {
+      const conn = connections.find((c) => c.id === f.connectionId);
+      const cookie = f.session.buyerCookie;
+      const summary = cookie ? sessionSummaries.find((s) => s.sessionId === cookie) : undefined;
+      return {
+        id: key,
+        title: conn?.name ?? f.connectionId,
+        subtitle: `${conn?.buyer?.name ?? "?"} → ${conn?.supplier?.name ?? "?"}${cookie ? ` · ${cookie.slice(0, 16)}…` : ""}`,
+        operation: f.operation,
+        hasErrors: summary?.hasErrors,
+        draft: !cookie,
+        count: summary?.count,
+      };
+    }),
+    ...sessionSummaries
+      .filter((s) => !flowCookies.has(s.sessionId))
+      .map((s): SessionRow => ({
+        id: s.sessionId,
+        title: s.connectionName ?? (s.inbound ? `${s.supplierName ?? "Supplier"} · inbound` : s.sessionId),
+        subtitle:
+          (s.buyerName && s.supplierName ? `${s.buyerName} → ${s.supplierName}` : s.sessionId.slice(0, 22)) +
+          (s.lastTs ? ` · ${new Date(s.lastTs).toLocaleTimeString([], { hour12: false })}` : ""),
+        operation: s.operation,
+        hasErrors: s.hasErrors,
+        inbound: s.inbound,
+        count: s.count,
+      })),
+  ];
+
+  const hasBuyerConn = connections.some((c) => c.mode === "virtual-buyer");
+
   return (
     <div className="app">
       <header className="topbar">
@@ -221,14 +320,20 @@ export function App() {
 
       <div className="layout">
         <aside className="sidebar">
-          <TabList
-            ariaLabel="Sections"
-            listClassName="viewtabs"
-            tabClassName="viewtab"
-            value={view}
-            onChange={setView}
-            tabs={(["connections", "buyers", "suppliers", "products", "profiles"] as View[]).map((v) => ({ value: v, label: v === "profiles" ? "buyer profiles" : v }))}
-          />
+          <nav className="viewnav" aria-label="Sections">
+            <div className="viewnav-group">Run</div>
+            {RUN_TABS.map((v) => (
+              <button key={v} className={`viewtab ${view === v ? "active" : ""}`} aria-current={view === v ? "page" : undefined} onClick={() => setView(v)}>{TAB_LABEL[v]}</button>
+            ))}
+            <div className="viewnav-group">Configure</div>
+            {CONFIG_TABS.map((v) => (
+              <button key={v} className={`viewtab ${view === v ? "active" : ""}`} aria-current={view === v ? "page" : undefined} onClick={() => setView(v)}>{TAB_LABEL[v]}</button>
+            ))}
+          </nav>
+
+          {view === "sessions" && (
+            <SessionList rows={sessionRows} selectedId={selectedSessionId} onSelect={setSelectedSessionId} onNew={() => setShowNewSession(true)} />
+          )}
 
           {view === "connections" && (
             <>
@@ -238,17 +343,17 @@ export function App() {
               </div>
               <ul className="conn-list">
                 {connections.map((c) => {
-                  const select = () => { setSelectedConnId(c.id); setPanel("flow"); };
+                  const select = () => { setSelectedConnId(c.id); setPanel("edit"); };
+                  const active = c.id === selectedConnId && panel !== "new";
                   return (
-                  <li key={c.id} className={c.id === selectedConnId && panel !== "new" ? "active" : ""}
-                      role="button" tabIndex={0}
-                      aria-current={c.id === selectedConnId && panel !== "new" ? "true" : undefined}
-                      onClick={select}
-                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select(); } }}>
-                    <span className={`mode-dot mode-${c.mode}`} />
-                    <div className="conn-name">{c.name}</div>
-                    <div className="conn-mode">{c.buyer?.name} → {c.supplier?.name}</div>
-                  </li>
+                    <li key={c.id} className={active ? "active" : ""} role="button" tabIndex={0}
+                        aria-current={active ? "true" : undefined}
+                        onClick={select}
+                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select(); } }}>
+                      <span className={`mode-dot mode-${c.mode}`} />
+                      <div className="conn-name">{c.name}</div>
+                      <div className="conn-mode">{c.buyer?.name} → {c.supplier?.name}</div>
+                    </li>
                   );
                 })}
               </ul>
@@ -278,6 +383,46 @@ export function App() {
         </aside>
 
         <main className="main">
+          {view === "sessions" && (
+            <>
+              {activeFlow && flowConn && (
+                <>
+                  <div className="main-head">
+                    <h2>{flowConn.name}</h2>
+                    <span className="hint">{flowConn.buyer?.name} → {flowConn.supplier?.name}</span>
+                  </div>
+                  <BuyerFlow
+                    connection={flowConn}
+                    session={activeFlow.session}
+                    cart={activeFlow.session.buyerCookie ? carts[activeFlow.session.buyerCookie] ?? null : null}
+                    operation={activeFlow.operation}
+                    sourceItems={activeFlow.sourceItems}
+                    onChange={(patch) => patchFlowSession(selectedSessionId!, patch)}
+                  />
+                  <SessionLog records={sessionRecords} connections={connections} onSelect={setDetail} />
+                </>
+              )}
+              {serverSel && (
+                <>
+                  <div className="main-head">
+                    <h2>{serverSel.connectionName ?? (serverSel.inbound ? `${serverSel.supplierName ?? "Supplier"} · inbound` : "Session")}</h2>
+                    {serverSel.operation && serverSel.operation !== "create" && <span className="badge badge-warn">{serverSel.operation}</span>}
+                  </div>
+                  <p className="hint">
+                    {serverSel.inbound
+                      ? "Initiated by an external buyer against this tool's Mode-B endpoint. Read-only log."
+                      : "From an earlier run — read-only message log. Start a new session to drive a fresh flow."}
+                    {" "}Session: <code>{serverSel.sessionId}</code>
+                  </p>
+                  <SessionLog records={sessionRecords} connections={connections} onSelect={setDetail} />
+                </>
+              )}
+              {!selectedSessionId && (
+                <SessionsEmpty hasBuyerConn={hasBuyerConn} onNew={() => setShowNewSession(true)} onConfigure={() => setView("connections")} />
+              )}
+            </>
+          )}
+
           {view === "connections" && (
             <>
               {panel === "new" && (<><h2>New connection</h2>
@@ -285,35 +430,10 @@ export function App() {
 
               {panel !== "new" && selectedConn && (
                 <>
-                  <div className="main-head">
-                    <h2>{selectedConn.name}</h2>
-                    <TabList
-                      ariaLabel="Connection view"
-                      listClassName="tabs"
-                      tabClassName="tab"
-                      value={panel === "edit" ? "edit" : "flow"}
-                      onChange={(p) => setPanel(p)}
-                      tabs={[
-                        { value: "flow", label: "Flow" },
-                        { value: "edit", label: "Settings" },
-                      ]}
-                    />
-                  </div>
-
-                  {panel === "edit" && (
-                    <ConnectionEditor connection={selectedConn} buyers={buyers} suppliers={suppliers}
-                      onSave={saveConnection} onDelete={deleteConnection} />
-                  )}
-                  {panel === "flow" && selectedConn.mode === "virtual-buyer" && (
-                    <BuyerFlow connection={selectedConn}
-                      session={sessions[selectedConn.id] ?? emptySession()}
-                      cart={sessions[selectedConn.id]?.buyerCookie ? carts[sessions[selectedConn.id].buyerCookie] ?? null : null}
-                      onChange={(patch) => patchSession(selectedConn.id, patch)}
-                      onNewSession={() => newSession(selectedConn.id)} />
-                  )}
-                  {panel === "flow" && selectedConn.mode === "virtual-supplier" && (
-                    <SupplierPanel supplier={selectedConn.supplier} publicUrl={publicUrl} />
-                  )}
+                  <div className="main-head"><h2>{selectedConn.name}</h2></div>
+                  <ConnectionEditor connection={selectedConn} buyers={buyers} suppliers={suppliers}
+                    onSave={saveConnection} onDelete={deleteConnection} />
+                  {selectedConn.mode === "virtual-supplier" && <SupplierPanel supplier={selectedConn.supplier} publicUrl={publicUrl} />}
                 </>
               )}
               {panel !== "new" && !selectedConn && connections.length === 0 && (
@@ -326,7 +446,7 @@ export function App() {
                 />
               )}
               {panel !== "new" && !selectedConn && connections.length > 0 && (
-                <p className="hint">No connection selected — pick one from the list.</p>
+                <p className="hint">Pick a connection to edit, or run it from the Sessions tab.</p>
               )}
             </>
           )}
@@ -367,14 +487,41 @@ export function App() {
             </>
           )}
         </main>
-
-        <section className="logpane">
-          <div className="logpane-head">Live log</div>
-          <LiveLog records={records} connections={connections} onSelect={setDetail} />
-        </section>
       </div>
 
+      {showNewSession && (
+        <NewSessionDialog connections={connections} sessions={sessionSummaries} onCancel={() => setShowNewSession(false)} onCreate={startSession} />
+      )}
       {detail && <MessageDetail record={detail} onClose={() => setDetail(null)} />}
+    </div>
+  );
+}
+
+function SessionLog({ records, connections, onSelect }: { records: LogRecord[]; connections: Connection[]; onSelect: (r: LogRecord) => void }) {
+  return (
+    <section className="session-log">
+      <div className="logpane-head">Messages ({records.length})</div>
+      <LiveLog records={records} connections={connections} onSelect={onSelect} />
+    </section>
+  );
+}
+
+function SessionsEmpty({ hasBuyerConn, onNew, onConfigure }: { hasBuyerConn: boolean; onNew: () => void; onConfigure: () => void }) {
+  return (
+    <div className="onboarding">
+      <h2>Sessions</h2>
+      <p>A session is one PunchOut conversation (a <code>BuyerCookie</code>): SetupRequest → catalog → cart → OrderRequest. Each session keeps its own message log.</p>
+      {hasBuyerConn ? (
+        <>
+          <p>Start one to drive a supplier (Mode A), or pick an existing session on the left. Sessions started by an external buyer against a Mode-B endpoint appear here automatically.</p>
+          <div className="form-actions"><button className="btn-primary" onClick={onNew}>+ New session</button></div>
+        </>
+      ) : (
+        <>
+          <p>You need a <strong>virtual-buyer</strong> connection to start a session.</p>
+          <div className="form-actions"><button className="btn-secondary" onClick={onConfigure}>Go to Connections</button></div>
+        </>
+      )}
     </div>
   );
 }
@@ -390,13 +537,11 @@ function ThemeToggle() {
       aria-label={`Switch to ${next} theme`}
     >
       {theme === "dark" ? (
-        // sun (click → light)
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="4" />
           <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
         </svg>
       ) : (
-        // moon (click → dark)
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
         </svg>
@@ -466,7 +611,7 @@ function Onboarding({
       <ol className="onboarding-steps">
         <li className={hasBuyers ? "done" : ""}><strong>Buyer</strong> — holds its cXML <code>From</code> identity.</li>
         <li className={hasSuppliers ? "done" : ""}><strong>Supplier</strong> — holds its <code>To</code> identity, endpoints, and the product lists it serves as its mock catalog.</li>
-        <li><strong>Connection</strong> — pairs a Buyer with a Supplier and picks the mode. Then run the flow.</li>
+        <li><strong>Connection</strong> — pairs a Buyer with a Supplier and picks the mode. Then run it from the Sessions tab.</li>
       </ol>
       <div className="form-actions">
         <button className="btn-primary" onClick={onNewConnection} disabled={!ready}>+ New connection</button>
@@ -494,7 +639,7 @@ function SupplierPanel({ supplier, publicUrl }: { supplier?: Supplier; publicUrl
         <tr><td>Order</td><td><code>{base}/order</code></td></tr>
         <tr><td>Catalog (preview)</td><td><a href={`${base}/catalog?theme=${theme}`} target="_blank" rel="noreferrer">{base}/catalog ↗</a></td></tr>
       </tbody></table>
-      <p className="hint">The built-in demo buyer is wired to the demo supplier, so the full roundtrip runs from the Demo connection.</p>
+      <p className="hint">Incoming requests appear as sessions in the Sessions tab.</p>
     </div>
   );
 }

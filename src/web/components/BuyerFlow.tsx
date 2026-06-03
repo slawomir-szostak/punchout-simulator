@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
-import type { AttachmentDraft, Cart, Connection, FlowSession, ValidationResult } from "../types";
+import type { AttachmentDraft, Cart, CartItem, Connection, FlowSession, ValidationResult } from "../types";
 import { CxmlEditor } from "./CxmlEditor";
 import { CartView } from "./CartView";
 import { ValidationPanel } from "./Validation";
@@ -15,14 +15,16 @@ interface Props {
   connection: Connection;
   session: FlowSession;
   cart: Cart | null;
+  /** The session's PunchOutSetupRequest operation (create/edit/inspect). */
+  operation?: string;
+  /** Prior items carried in an edit/inspect setup. */
+  sourceItems?: CartItem[];
   onChange: (patch: Partial<FlowSession>) => void;
-  /** Start a brand-new session (fresh BuyerCookie) for this connection. */
-  onNewSession: () => void;
 }
 
-// The Mode A driver UI. State lives in App (per connection) so it survives
-// Flow/Settings tab switches and supports editing + retrying the OrderRequest.
-export function BuyerFlow({ connection, session, cart, onChange, onNewSession }: Props) {
+// The Mode A driver UI for a single session. Session state lives in App so it
+// survives tab switches and supports editing + retrying the OrderRequest.
+export function BuyerFlow({ connection, session, cart, operation, sourceItems, onChange }: Props) {
   const theme = useTheme();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,10 +47,10 @@ export function BuyerFlow({ connection, session, cart, onChange, onNewSession }:
   useEffect(() => {
     if (session.buyerCookie || session.setupXml) return;
     api
-      .setupPreview(connection.id)
+      .setupPreview(connection.id, { operation, items: sourceItems })
       .then((p) => onChange({ buyerCookie: p.buyerCookie, setupXml: p.xml }))
       .catch((e) => setError(String(e)));
-  }, [connection.id, session.buyerCookie, session.setupXml]);
+  }, [connection.id, session.buyerCookie, session.setupXml, operation, sourceItems]);
 
   const sendSetup = async () => {
     setBusy(true);
@@ -156,9 +158,7 @@ export function BuyerFlow({ connection, session, cart, onChange, onNewSession }:
         </h3>
         <div className="step-meta">
           Session (BuyerCookie): <code>{session.buyerCookie || "…"}</code>
-          <button className="btn-link" onClick={onNewSession}>
-            new session
-          </button>
+          {operation && operation !== "create" && <span className="badge badge-warn" style={{ marginLeft: ".5rem" }}>{operation}</span>}
         </div>
         <CxmlEditor value={session.setupXml} onChange={(v) => { onChange({ setupXml: v }); setSetupCheck(null); }} height={240} />
         <div className="step-actions">

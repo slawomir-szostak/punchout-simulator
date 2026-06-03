@@ -30,15 +30,17 @@ That's it — no install, no build. It boots a local server, opens your browser,
 and seeds a **built-in demo**: a virtual buyer wired to a built-in mock supplier,
 so you can run the entire roundtrip immediately:
 
-1. Open the **Demo Buyer → Demo Supplier** connection.
+1. On the **Sessions** tab, click **+ New session**, pick the **Demo Buyer → Demo
+   Supplier** connection and the **create** operation.
 2. **Send SetupRequest** → the mock supplier replies with a StartPage.
 3. **Open the catalog**, set quantities, **return the cart** — the punchback
    lands back in the app live.
 4. **Build the OrderRequest**, edit the cXML if you want (tweak `<Comments>`,
    addresses, attachment refs), optionally attach files at the **order or item
    level**, optionally flip on the **dangling-`cid` test**, then **send it** and
-   inspect the supplier's response.
-5. If validation fails, **edit and re-send** — the flow session and cart persist.
+   inspect the supplier's response. (A **Validate** button lints the cXML before
+   you send.)
+5. If validation fails, **edit and re-send** — the session keeps its log and cart.
 
 Every document — inbound and outbound — is validated and logged.
 
@@ -139,6 +141,27 @@ receiver detects the missing attachment. `<Comments>` (and therefore
   and each attachment part) — with a one-click **Copy**. The raw body is
   reconstructed on demand from the document + the attachments on disk, so the
   log stays free of inlined base64.
+
+---
+
+## Sessions
+
+A **session** is one PunchOut conversation, keyed by its `BuyerCookie`:
+SetupRequest → catalog → cart → OrderRequest → OrderResponse. The **Sessions** tab
+(under **Run**, separate from the **Configure** sections) is the workspace:
+
+- A live **session list** — Mode-A sessions you start *and* Mode-B sessions an
+  external buyer initiates against the tool's endpoints (those show as **inbound**).
+- A per-session **message log** (each session keeps its own; no global firehose).
+- **+ New session** picks a connection and the SetupRequest **operation**:
+  - **create** — a fresh, empty cart (the default).
+  - **edit** — reopen a previous session's returned cart for modification; its
+    items are sent as `ItemOut` inside the SetupRequest (`operation="edit"`).
+  - **inspect** — view a previously ordered item read-only (`operation="inspect"`),
+    carrying that item (or the whole source cart) as `ItemOut`.
+
+Connections/Buyers/Suppliers/Products/Profiles remain under **Configure** — you set
+them up there, then run them from **Sessions**.
 
 ---
 
