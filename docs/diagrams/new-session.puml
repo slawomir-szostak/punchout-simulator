@@ -1,0 +1,19 @@
+@startuml new-session
+!theme plain
+title Starting a session
+
+start
+:Sessions tab -> New session;
+:Pick a Connection;
+if (operation?) then (create)
+  :empty cart;
+else (edit / inspect)
+  :pick source session;
+  :load its cart items;
+  if (inspect) then (narrow)
+    :optionally pick one item;
+  endif
+endif
+:Session opens in the chosen mode;
+stop
+@enduml

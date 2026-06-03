@@ -1,0 +1,26 @@
+@startuml mode-b-sequence
+!theme plain
+title Mode B — virtual supplier serves a mock catalog
+
+participant "Real buyer\n(procurement platform)" as Buyer
+participant "Browser" as Br
+participant "sim.ts (/sim)" as Sim
+participant "validate.ts" as Val
+database "session log" as Log
+participant "cart-store" as Cart
+
+Buyer -> Sim : POST PunchOutSetupRequest\n(credentials, BrowserFormPost URL)
+Sim -> Val : validate inbound request
+Sim -> Log : append request
+Sim -> Buyer : PunchOutSetupResponse\n(StartPage = /sim/:id/catalog?cookie=...)
+
+Buyer -> Br : redirect to StartPage
+Br -> Sim : GET catalog (themed HTML)
+Br -> Sim : build cart (fractional qty allowed per item)
+Br -> Sim : POST /sim/:id/checkout (requires cookie)
+Sim -> Cart : store cart for session
+Sim -> Sim : build PunchOutOrderMessage
+Sim -> Log : append cart
+Sim -> Br : HTML page auto-submitting form\n(action = BrowserFormPost)
+Br -> Buyer : POST PunchOutOrderMessage
+@enduml

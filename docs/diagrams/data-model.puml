@@ -1,0 +1,67 @@
+@startuml data-model
+!theme plain
+title Configuration data model
+
+entity Buyer {
+  * id
+  --
+  name
+  identity : Credential
+  profileId : -> Profile
+  shipTo / billTo : Address
+  contact : Contact
+}
+
+entity Supplier {
+  * id
+  --
+  name
+  identity : Credential
+  punchoutUrl / orderUrl
+  productListIds : -> ProductList[]
+  allowMixedCurrency
+}
+
+entity Connection {
+  * id
+  --
+  buyerId : -> Buyer
+  supplierId : -> Supplier
+  mode : A | B
+  sharedSecret
+  senderIdentity : Credential
+  deploymentMode
+  attachmentEncoding
+}
+
+entity Profile {
+  * id
+  --
+  name
+  cXML version / quirks
+  addressMode
+  shipToInSetup / contactInSetup
+  extrinsics
+}
+
+entity ProductList {
+  * id
+  --
+  name
+  items : CatalogItem[]
+  builtin
+}
+
+entity Session <<JSONL log>> {
+  * sessionId (BuyerCookie)
+  --
+  records[] (append-only)
+  operation
+}
+
+Buyer ||--o| Profile
+Buyer ||--o{ Connection
+Supplier ||--o{ Connection
+Supplier }o--o{ ProductList
+Connection ||..o{ Session
+@enduml

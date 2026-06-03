@@ -18,6 +18,11 @@ It is role-neutral and runs in two modes (mirror images of each other):
 
 Protocol scope: **cXML only**.
 
+> **New to PunchOut, or want the full picture?** See the in-depth reports in
+> [`docs/`](docs/): the [PunchOut business primer](docs/punchout-business-primer_en.html),
+> the [Architecture reference](docs/architecture_en.html), and the
+> [Operations & usage guide](docs/operations-guide_en.html).
+
 ---
 
 ## Quick start
@@ -198,6 +203,15 @@ src/
 └─ server/   Hono app, routes, cXML engine, storage, CLI
    └─ cxml/  build · parse · validate · multipart · types
 ```
+
+For a deeper treatment — component breakdown, the full data model, and Mode A /
+Mode B sequence diagrams — see the
+[**Architecture reference**](docs/architecture_en.html) in [`docs/`](docs/).
+The same folder holds a [**PunchOut business primer**](docs/punchout-business-primer_en.html)
+(the business process and where this tool fits) and an
+[**Operations & usage guide**](docs/operations-guide_en.html) (sessions,
+operations, profiles, product lists, validation). The reports are self-contained
+HTML; their canonical Markdown sources sit alongside them.
 
 ### Data model
 

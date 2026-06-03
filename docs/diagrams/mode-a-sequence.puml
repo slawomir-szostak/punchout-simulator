@@ -1,0 +1,40 @@
+@startuml mode-a-sequence
+!theme plain
+title Mode A — virtual buyer drives a real supplier
+
+actor Operator as Op
+participant "SPA" as SPA
+participant "flow.ts\n(/api)" as Flow
+participant "validate.ts" as Val
+participant "Real supplier" as Sup
+participant "/punchout\ncallback" as Cb
+database "session log" as Log
+
+Op -> SPA : New session (Connection + operation)
+SPA -> Flow : POST /:id/setup/preview
+Flow -> SPA : built PunchOutSetupRequest (Monaco)
+opt validate before send
+  Op -> SPA : Validate
+  SPA -> Flow : POST /:id/validate
+  Flow -> Val : check request
+  Val -> SPA : issues (error/warning)
+end
+Op -> SPA : Send
+SPA -> Flow : POST /:id/setup
+Flow -> Sup : PunchOutSetupRequest
+Sup -> Flow : PunchOutSetupResponse (StartPage URL)
+Flow -> Log : append request + response
+Flow -> SPA : StartPage URL
+
+Op -> Sup : open StartPage, shop in browser
+Sup -> Cb : browser auto-POSTs PunchOutOrderMessage\n(BrowserFormPost = /punchout)
+Cb -> Cb : parse cart, match BuyerCookie
+Cb -> Log : append inbound cart
+SPA -> Flow : poll / SSE -> cart appears in session
+
+Op -> SPA : build & send OrderRequest
+SPA -> Flow : POST /:id/order (optionally multipart)
+Flow -> Sup : OrderRequest
+Sup -> Flow : OrderResponse (Status)
+Flow -> Log : append
+@enduml

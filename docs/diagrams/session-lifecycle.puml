@@ -1,0 +1,17 @@
+@startuml session-lifecycle
+!theme plain
+title Session lifecycle
+
+[*] --> Created : New session\n(Connection + operation)
+Created --> Setup : send PunchOutSetupRequest
+Setup --> Shopping : StartPage opened
+Shopping --> CartReturned : PunchOutOrderMessage received
+CartReturned --> Ordered : OrderRequest sent
+Ordered --> [*]
+
+Setup --> Historical : reload tool
+Historical --> Resumed : resume (Mode A)
+Resumed --> Shopping
+Created --> Deleted : delete session
+Historical --> Deleted
+@enduml

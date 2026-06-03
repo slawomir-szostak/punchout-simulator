@@ -1,0 +1,18 @@
+@startuml simulator-positioning
+!theme plain
+title Where punchout-simulator fits
+
+rectangle "Mode A — virtual buyer" as A {
+  component "punchout-simulator\n(plays the procurement platform)" as SimA
+  cloud "Real supplier catalog\n(system under test)" as RealSup
+  SimA -down-> RealSup : PunchOutSetupRequest / OrderRequest
+  RealSup -up-> SimA : Response + returned cart
+}
+
+rectangle "Mode B — virtual supplier" as B {
+  cloud "Real procurement platform\n(system under test)" as RealBuyer
+  component "punchout-simulator\n(plays the supplier catalog)" as SimB
+  RealBuyer -down-> SimB : PunchOutSetupRequest + shopping
+  SimB -up-> RealBuyer : StartPage + PunchOutOrderMessage
+}
+@enduml

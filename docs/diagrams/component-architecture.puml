@@ -1,0 +1,58 @@
+@startuml component-architecture
+!theme plain
+title Component architecture
+
+package "SPA (src/web)" {
+  [App.tsx\nworkspace shell] as App
+  [BuyerFlow / CartView\nSessionList / editors] as Comp
+  [api.ts\ntyped client] as ApiClient
+}
+
+package "Server (src/server)" {
+  package "Routes" {
+    [parties / connections\nprofiles / products] as CfgRoutes
+    [flow.ts\nMode A driver] as Flow
+    [sim.ts\nMode B mock supplier] as Sim
+    [punchout-return.ts\nMode A cart callback] as Return
+    [data.ts / stream.ts\nsessions + SSE] as DataR
+  }
+  package "cXML core (cxml/)" {
+    [build.ts\ntemplate emit] as Build
+    [parse.ts\nfast-xml-parser] as Parse
+    [validate.ts\nfield-level checks] as Validate
+    [multipart.ts\nmultipart/related] as Multi
+    [types.ts / presets] as Types
+  }
+  package "Store" {
+    [config.ts\nlowdb entities] as Config
+    [log.ts\nJSONL sessions] as Log
+    [attachments.ts] as Att
+    [cart-store.ts\nin-memory carts] as CartStore
+  }
+}
+
+App --> Comp
+Comp --> ApiClient
+ApiClient --> CfgRoutes
+ApiClient --> Flow
+ApiClient --> DataR
+
+Flow --> Build
+Flow --> Validate
+Flow --> Log
+Return --> Parse
+Return --> CartStore
+Sim --> Build
+Sim --> Parse
+Sim --> Validate
+Sim --> CartStore
+Sim --> Log
+CfgRoutes --> Config
+Flow --> Config
+Sim --> Config
+Build --> Types
+Parse --> Types
+Validate --> Types
+Flow --> Multi
+DataR --> Log
+@enduml

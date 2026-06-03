@@ -1,0 +1,28 @@
+@startuml system-context
+!theme plain
+title punchout-simulator — system context
+
+actor "Integration\nengineer" as Op
+
+rectangle "punchout-simulator\n(single Node process)" as Sim {
+  component "SPA workspace\n(React + Monaco)" as SPA
+  component "Control-plane API\n(/api)" as API
+  component "Mode A driver\n(virtual buyer)" as MA
+  component "Mode B mock supplier\n(/sim)" as MB
+  database "data/\n(config.json + sessions/*.jsonl)" as DB
+}
+
+cloud "Real supplier\ncatalog endpoint" as RealSup
+cloud "Real procurement\nplatform (Ariba/Coupa...)" as RealBuyer
+
+Op --> SPA : browser (loopback)
+SPA --> API : JSON over same origin
+API --> DB : read / write
+MA --> DB
+MB --> DB
+
+MA --> RealSup : PunchOutSetupRequest / OrderRequest
+RealSup ..> MB : (n/a)
+RealBuyer --> MB : PunchOutSetupRequest\nbrowser shops catalog
+MB ..> RealBuyer : PunchOutOrderMessage (cart return)
+@enduml
