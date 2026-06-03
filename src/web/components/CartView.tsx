@@ -14,10 +14,10 @@ export function CartView({ cart }: { cart: Cart | null }) {
           <th>Description</th>
           <th>SupplierPartID</th>
           <th>Aux ID</th>
+          <th>Classification</th>
           <th>UoM</th>
           <th className="num">Qty</th>
           <th className="num">Unit price</th>
-          <th>Classification</th>
         </tr>
       </thead>
       <tbody>
@@ -26,26 +26,25 @@ export function CartView({ cart }: { cart: Cart | null }) {
             <td>{it.description}</td>
             <td>{it.supplierPartId}</td>
             <td>{it.supplierPartAuxiliaryId ?? "—"}</td>
-            <td>{it.uom}</td>
-            <td className="num">{it.quantity}</td>
-            <td className="num">{it.currency} {it.unitPriceAmount?.toFixed(2)}</td>
             <td>
               {it.classifications?.length
                 ? it.classifications.map((c) => `${c.domain}: ${c.value}`).join(", ")
                 : it.classification}
             </td>
+            <td>{it.uom}</td>
+            <td className="num">{it.quantity}</td>
+            <td className="num">{it.currency} {it.unitPriceAmount?.toFixed(2)}</td>
           </tr>
         ))}
       </tbody>
       {cart.total && (
         <tfoot>
           <tr>
-            <td colSpan={4}></td>
+            <td colSpan={5}></td>
             <td className="num">Total</td>
             <td className="num cart-total">
               {cart.total.currency} {cart.total.amount.toFixed(2)}
             </td>
-            <td></td>
           </tr>
         </tfoot>
       )}
