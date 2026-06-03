@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
-import type { AttachmentDraft, Cart, Connection, FlowSession } from "../types";
+import type { AttachmentDraft, Cart, Connection, FlowSession, ValidationResult } from "../types";
 import { CxmlEditor } from "./CxmlEditor";
 import { CartView } from "./CartView";
 import { ValidationPanel } from "./Validation";
@@ -20,6 +20,18 @@ export function BuyerFlow({ connection, session, cart, onChange, onNewSession }:
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [attachmentsDirty, setAttachmentsDirty] = useState(false);
+  // On-demand "validate before send" results (cleared when the document is edited).
+  const [setupCheck, setSetupCheck] = useState<ValidationResult | null>(null);
+  const [orderCheck, setOrderCheck] = useState<ValidationResult | null>(null);
+
+  const validate = async (docType: "SetupRequest" | "OrderRequest", xml: string, set: (v: ValidationResult) => void) => {
+    setError(null);
+    try {
+      set(await api.validate(connection.id, { docType, xml }));
+    } catch (e) {
+      setError(String(e));
+    }
+  };
 
   // Lazily initialize the session's SetupRequest preview the first time this
   // connection's session is empty. Persisted edits are never clobbered.
@@ -141,12 +153,21 @@ export function BuyerFlow({ connection, session, cart, onChange, onNewSession }:
             new session
           </button>
         </div>
-        <CxmlEditor value={session.setupXml} onChange={(v) => onChange({ setupXml: v })} height={240} />
+        <CxmlEditor value={session.setupXml} onChange={(v) => { onChange({ setupXml: v }); setSetupCheck(null); }} height={240} />
         <div className="step-actions">
           <button className="btn-primary" onClick={sendSetup} disabled={busy || !session.setupXml}>
             {busy ? "Working…" : "Send SetupRequest →"}
           </button>
+          <button className="btn-secondary" onClick={() => validate("SetupRequest", session.setupXml, setSetupCheck)} disabled={busy || !session.setupXml}>
+            Validate
+          </button>
         </div>
+        {setupCheck && (
+          <div className="precheck">
+            <span className="precheck-label">Pre-send validation</span>
+            <ValidationPanel validation={setupCheck} />
+          </div>
+        )}
         {session.setupResult && (
           <div className="result">
             <div className="result-line">
@@ -258,14 +279,23 @@ export function BuyerFlow({ connection, session, cart, onChange, onNewSession }:
                 </p>
                 <CxmlEditor
                   value={session.orderXml}
-                  onChange={(v) => onChange({ orderXml: v })}
+                  onChange={(v) => { onChange({ orderXml: v }); setOrderCheck(null); }}
                   height={300}
                 />
                 <div className="step-actions">
                   <button className="btn-primary" onClick={sendOrder} disabled={busy}>
                     {busy ? "Working…" : session.orderResult ? "Re-send OrderRequest ↻" : "Send OrderRequest →"}
                   </button>
+                  <button className="btn-secondary" onClick={() => validate("OrderRequest", session.orderXml, setOrderCheck)} disabled={busy || !session.orderXml}>
+                    Validate
+                  </button>
                 </div>
+                {orderCheck && (
+                  <div className="precheck">
+                    <span className="precheck-label">Pre-send validation</span>
+                    <ValidationPanel validation={orderCheck} />
+                  </div>
+                )}
               </>
             )}
           </>

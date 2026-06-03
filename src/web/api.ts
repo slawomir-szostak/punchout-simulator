@@ -10,6 +10,7 @@ import type {
   SessionSummary,
   SetupResult,
   Supplier,
+  ValidationResult,
 } from "./types";
 
 // --- API auth token --------------------------------------------------------
@@ -111,6 +112,14 @@ export const api = {
     authFetch(`/api/connections/${id}/setup/preview`).then((r) =>
       jsonOrThrow<{ buyerCookie: string; xml: string; browserFormPostUrl: string }>(r),
     ),
+
+  // Validate the current cXML against its document rules without sending it.
+  validate: (id: string, body: { docType: string; xml: string }) =>
+    authFetch(`/api/connections/${id}/validate`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }).then((r) => jsonOrThrow<ValidationResult>(r)),
 
   sendSetup: (id: string, body: { buyerCookie?: string; xml?: string }) =>
     authFetch(`/api/connections/${id}/setup`, {

@@ -174,7 +174,9 @@ a { color: var(--link); }
   width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: white; font-size: .8rem;
 }
 .step-meta { font-size: .82rem; color: var(--muted); margin-bottom: .6rem; }
-.step-actions { margin-top: .7rem; }
+.step-actions { margin-top: .7rem; display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+.precheck { margin-top: .6rem; }
+.precheck-label { display: block; font-size: .68rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: .25rem; }
 .result { margin-top: .8rem; border-top: 1px solid var(--border); padding-top: .7rem; }
 .result-line { margin-bottom: .3rem; font-size: .9rem; }
 

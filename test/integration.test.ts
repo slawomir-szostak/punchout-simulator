@@ -173,6 +173,25 @@ describe("Mode A loopback", () => {
     expect(bad.statusCode).toBe("400");
   });
 
+  it("validates a request on demand without sending it", async () => {
+    const preview = await fetch(`${base}/api/connections/demo/setup/preview`).then((r) => r.json());
+    const good = await fetch(`${base}/api/connections/demo/validate`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ docType: "SetupRequest", xml: preview.xml }),
+    }).then((r) => r.json());
+    expect(good.docType).toBe("SetupRequest");
+    expect(good.ok).toBe(true);
+
+    const bad = await fetch(`${base}/api/connections/demo/validate`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ docType: "SetupRequest", xml: "<cXML timestamp=\"t\"><Request><PunchOutSetupRequest operation=\"create\"><BuyerCookie>x</BuyerCookie></PunchOutSetupRequest></Request></cXML>" }),
+    }).then((r) => r.json());
+    expect(bad.ok).toBe(false);
+    expect(bad.issues.map((i: any) => i.code)).toContain("missing-payloadID");
+  });
+
   it("sends an edited OrderRequest cXML verbatim (retry path)", async () => {
     const preview = await fetch(`${base}/api/connections/demo/order/preview`, {
       method: "POST",

@@ -23,7 +23,7 @@ import {
 import { buildMultipartRelated, type MultipartAttachment } from "../cxml/multipart.js";
 import { getStartPage, getStatus, parseXml } from "../cxml/parse.js";
 import { validateDocument, type ExpectedCredentials } from "../cxml/validate.js";
-import type { Address, AddressMode, AttachmentEncoding, AttachmentRef, CartItem, Contact, Credential, ResolvedConnection } from "../cxml/types.js";
+import type { Address, AddressMode, AttachmentEncoding, AttachmentRef, CartItem, Contact, Credential, DocType, ResolvedConnection } from "../cxml/types.js";
 
 // Mode A (virtual-buyer): drive the SetupRequest and OrderRequest server-to-server,
 // validate + log every document in both directions (spec sections 8, 10).
@@ -215,6 +215,25 @@ flowRoute.post("/:id/setup", async (c) => {
     request: reqLog,
     response: respLog,
   });
+});
+
+// --- On-demand validation (validate-before-send) ------------------------------
+// Validate the current (possibly hand-edited) cXML against its document rules,
+// using the connection's expected credentials — without sending anything.
+flowRoute.post("/:id/validate", async (c) => {
+  const r = resolveVirtualBuyer(c.req.param("id"));
+  if ("error" in r) return c.json({ error: r.error }, 400);
+  const { ctx } = r;
+  const body = await c.req.json().catch(() => ({}));
+  const xml = String(body.xml ?? "");
+  const docType = (body.docType as DocType) ?? "Unknown";
+  return c.json(
+    validateDocument(xml, {
+      expected: ctx.expected,
+      forceDocType: docType,
+      allowMixedCurrency: ctx.allowMixedCurrency,
+    }),
+  );
 });
 
 // --- OrderRequest -------------------------------------------------------------
