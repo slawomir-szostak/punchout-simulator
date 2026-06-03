@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { CatalogItem, Classification, ProductList } from "../types";
 import { api } from "../api";
+import { CSV_TEMPLATE, csvToCatalogItems } from "../csv";
 import { Actions, useDraft, type SaveProps } from "./PartyEditors";
 
 // Editor for a reusable Product List — a named set of catalog products that one
@@ -26,6 +27,8 @@ export function ProductListEditor({ list, onSave, onDelete }: { list: ProductLis
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [presets, setPresets] = useState<ProductList[]>([]);
+  const [importMsg, setImportMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     api.listProductListPresets().then(setPresets).catch(() => setPresets([]));
@@ -56,6 +59,38 @@ export function ProductListEditor({ list, onSave, onDelete }: { list: ProductLis
   const removeClass = (i: number, ci: number) =>
     setItem(i, { classifications: (items[i].classifications ?? []).filter((_, j) => j !== ci) });
 
+  // CSV import: parse client-side and append to the current items. Non-destructive
+  // (existing rows are kept); the user reviews and Saves to persist.
+  const importCsv = (file: File) => {
+    setImportMsg(null);
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const { items: parsed, skipped } = csvToCatalogItems(String(reader.result ?? ""));
+        if (parsed.length === 0) {
+          setImportMsg({ ok: false, text: "No rows imported — check that the file has a SupplierPartID column with values." });
+          return;
+        }
+        setDraft({ ...draft, items: [...(draft.items ?? []), ...parsed] });
+        const skip = skipped > 0 ? `, skipped ${skipped} blank row${skipped === 1 ? "" : "s"}` : "";
+        setImportMsg({ ok: true, text: `Imported ${parsed.length} item${parsed.length === 1 ? "" : "s"}${skip}. Review below and Save to persist.` });
+      } catch (e) {
+        setImportMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
+      }
+    };
+    reader.onerror = () => setImportMsg({ ok: false, text: "Could not read the file." });
+    reader.readAsText(file);
+  };
+
+  const downloadTemplate = () => {
+    const url = URL.createObjectURL(new Blob([CSV_TEMPLATE], { type: "text/csv" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "product-list-template.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const loadPreset = (id: string) => {
     const preset = presets.find((p) => p.id === id);
     if (!preset) return;
@@ -84,6 +119,37 @@ export function ProductListEditor({ list, onSave, onDelete }: { list: ProductLis
             <option key={p.id} value={p.id}>{p.name} ({p.items.length} items)</option>
           ))}
         </select>
+      </div>
+
+      <div className="form-row">
+        <label>
+          Import from CSV{" "}
+          <span className="hint">(appends rows; header row required — column order is free)</span>
+        </label>
+        <div className="form-actions" style={{ marginTop: 0 }}>
+          <button type="button" className="btn-secondary" onClick={() => fileRef.current?.click()}>Import CSV…</button>
+          <button type="button" className="btn-link" onClick={downloadTemplate}>Download template</button>
+        </div>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".csv,text/csv"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) importCsv(f);
+            e.target.value = ""; // allow re-importing the same file
+          }}
+        />
+        <p className="hint" style={{ marginTop: ".35rem" }}>
+          Columns: <code>SupplierPartID</code>* · <code>SupplierPartAuxiliaryID</code> · <code>Description</code> ·{" "}
+          <code>UnitPrice</code> · <code>Currency</code> · <code>UoM</code> · <code>UNSPSC</code> (or{" "}
+          <code>Classifications</code> as <code>UNSPSC:31161500;eCl@ss:27-06</code>) · <code>ManufacturerPartID</code> ·{" "}
+          <code>ManufacturerName</code> · <code>AllowFractional</code>.
+        </p>
+        {importMsg && (
+          <p className={importMsg.ok ? "hint" : "form-error"} style={{ marginTop: ".25rem" }}>{importMsg.text}</p>
+        )}
       </div>
 
       <div className="form-row">

@@ -99,8 +99,8 @@ Document-specific:
 | Document | Checks |
 |---|---|
 | **PunchOutSetupResponse** | `Status` present & `200`; valid `StartPage/URL` |
-| **PunchOutOrderMessage** (punchback) | `BuyerCookie` matches the session; header `Total`/`Money`+currency; each `ItemIn` has quantity, `SupplierPartID`, `UnitPrice`+currency, `Description`, `UnitOfMeasure`, `Classification`@domain; **Total consistency** (sum of line totals) |
-| **OrderRequest** | `orderID`/`orderDate`/`Total`; `ShipTo`/`BillTo`; each `ItemOut`; **attachment `cid:` resolution** (see below) |
+| **PunchOutOrderMessage** (punchback) | `BuyerCookie` matches the session; header `Total`/`Money`+currency; each `ItemIn` has quantity, `SupplierPartID`, `UnitPrice`+currency, `Description`, `UnitOfMeasure`, `Classification`@domain; **single currency** (mixed-currency is an error unless the supplier allows it); **Total consistency** (sum of line totals) |
+| **OrderRequest** | `orderID`/`orderDate`/`Total`; `ShipTo`/`BillTo`; each `ItemOut`; **single currency** (as above); **attachment `cid:` resolution** (see below) |
 | **OrderResponse** | `Status` code present / not an error |
 
 > Note: full cXML DTD validation would require a native validating XML parser,
@@ -181,8 +181,8 @@ src/
 The config is normalized into five entities:
 
 - **Buyer** — a reusable party holding its own cXML identity (the `From` credential) and an optional **platform profile** reference (see below).
-- **Supplier** — a reusable party holding its cXML identity (`To`) plus its **endpoints** (PunchOut URL, Order URL) and the **product lists** it serves as its Mode-B catalog. Endpoints are intrinsic to the supplier — defined once, not per relationship.
-- **Connection** — the edge pairing one Buyer with one Supplier. It holds only what is specific to that pair: which side the tool simulates (`mode`), the `sharedSecret`, an optional per-pair Sender identity override (defaults to the buyer's identity), `authStyle`, `deploymentMode`, and `attachmentEncoding`.
+- **Supplier** — a reusable party holding its cXML identity (`To`) plus its **endpoints** (PunchOut URL, Order URL) and the **product lists** it serves as its Mode-B catalog. Endpoints are intrinsic to the supplier — defined once, not per relationship. An optional `allowMixedCurrency` flag relaxes the multi-currency check for this supplier (see below).
+- **Connection** — the edge pairing one Buyer with one Supplier. It holds only what is specific to that pair: which side the tool simulates (`mode`), the `sharedSecret`, an optional per-pair Sender identity override (defaults to the buyer's identity), `deploymentMode`, and `attachmentEncoding`.
 - **Product List** — a reusable, named set of catalog products. Assigned to one or more Suppliers; each supplier serves the **union** of its lists as its mock catalog. See below.
 - **Profile** — a reusable **procurement-platform profile** (Ariba/Coupa/Jaggaer/…) referenced by a Buyer. See below.
 
@@ -194,7 +194,11 @@ A **Product List** is a named set of catalog items, edited on its own and assign
 more Suppliers from the **Products** tab. In Mode B a supplier serves the union of its assigned
 lists; a supplier with no lists falls back to a small built-in demo catalog. A built-in
 **Sample assortment** (~20 office/industrial items) ships out of the box and can be **loaded
-into the editor** as a starting point.
+into the editor** as a starting point. You can also **import a CSV** (a header row, any column
+order; `SupplierPartID` required) to bulk-load a real catalog — a template is downloadable from
+the editor. Recognized columns: `SupplierPartID`, `SupplierPartAuxiliaryID`, `Description`,
+`UnitPrice`, `Currency`, `UoM`, `UNSPSC` (or a `Classifications` column as
+`UNSPSC:31161500;eCl@ss:27-06`), `ManufacturerPartID`, `ManufacturerName`, `AllowFractional`.
 
 Each product carries a `SupplierPartID`, an optional `SupplierPartAuxiliaryID`, description, unit
 price + currency, unit of measure, manufacturer info, and **one or more `Classification`** entries
@@ -202,6 +206,12 @@ price + currency, unit of measure, manufacturer info, and **one or more `Classif
 into **fractional order quantities** (e.g. `1.5` m of cable) via its `allowFractional` flag — the
 Mode-B catalog then accepts decimals for that item; all other items stay whole-number. These fields
 flow through to the punchback (`ItemIn`) and the resulting OrderRequest (`ItemOut`).
+
+**Currency.** A cXML `Total` is a single `Money`, so a document is expected to be single-currency.
+If a cart/order spans more than one currency the mock supplier emits `Total` `0` (rather than a
+meaningless cross-currency sum) and validation raises a `mixed-currency` **error**. A supplier that
+genuinely handles multi-currency orders can set **`allowMixedCurrency`**, which downgrades that to a
+non-blocking **warning** (the per-line `Money` currencies are always preserved either way).
 
 ### Simulating different procurement platforms (Buyer profiles)
 
