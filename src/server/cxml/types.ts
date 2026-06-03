@@ -141,6 +141,12 @@ export interface Supplier {
    */
   productListIds?: string[];
   /**
+   * When true, documents involving this supplier may span multiple currencies:
+   * the mixed-currency validation is a warning instead of an error (the
+   * supplier's system handles multi-currency orders). Defaults to false.
+   */
+  allowMixedCurrency?: boolean;
+  /**
    * @deprecated Legacy inline catalog. Read only, for one-time migration into a
    * generated Product List (see store/config.ts). No longer written from the UI.
    */

@@ -217,6 +217,17 @@ export function SupplierEditor({
         <label>Order URL <span className="hint">(order endpoint)</span></label>
         <input value={draft.orderUrl ?? ""} onChange={(e) => setDraft({ ...draft, orderUrl: e.target.value })} placeholder="https://supplier.example.com/order" />
       </div>
+      <div className="form-row">
+        <label className="check-row">
+          <input
+            type="checkbox"
+            checked={!!draft.allowMixedCurrency}
+            onChange={(e) => setDraft({ ...draft, allowMixedCurrency: e.target.checked })}
+          />
+          Allow mixed-currency orders
+          <span className="hint"> — treat multiple currencies in one document as a warning, not an error (this supplier handles it)</span>
+        </label>
+      </div>
 
       <fieldset>
         <legend>Mock catalog <span className="hint">(product lists served when the tool acts as this supplier)</span></legend>

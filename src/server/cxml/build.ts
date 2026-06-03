@@ -20,6 +20,20 @@ export function makePayloadId(host: string, nowIso: string): string {
   return `${nowIso}.${nanoid(10)}@${host}`;
 }
 
+// Sum of (unit price × quantity) across the line items — but only when they
+// share one currency. A cXML Total is a single Money, so a cross-currency sum
+// would be meaningless; we return 0 in that case rather than fabricate a number
+// (it also makes the inconsistency visible via the total-mismatch / mixed-currency
+// validations). `headerCurrency` is the fallback for items without their own.
+export function lineItemsTotal(
+  items: Array<{ unitPriceAmount?: number; quantity: number; currency?: string }>,
+  headerCurrency: string,
+): number {
+  const currencies = new Set(items.map((it) => it.currency || headerCurrency));
+  if (currencies.size > 1) return 0;
+  return items.reduce((sum, it) => sum + (it.unitPriceAmount ?? 0) * it.quantity, 0);
+}
+
 // Emit one `<Classification>` per entry. Prefers the `classifications` array;
 // falls back to the legacy single classificationDomain/classification pair so
 // items built from older carts (or simple fixtures) still produce one element.
@@ -374,10 +388,7 @@ export interface PunchbackOptions {
 }
 
 export function buildPunchOutOrderMessage(o: PunchbackOptions): string {
-  const total = o.items.reduce(
-    (sum, it) => sum + (it.unitPriceAmount ?? 0) * it.quantity,
-    0,
-  );
+  const total = lineItemsTotal(o.items, o.currency);
   const items = o.items
     .map(
       (it) => `    <ItemIn quantity="${escapeXml(it.quantity)}">

@@ -42,6 +42,12 @@ export interface ValidationContext {
   availableContentIds?: Set<string>;
   /** Force the doc type rather than inferring it (e.g. when shape is ambiguous). */
   forceDocType?: DocType;
+  /**
+   * When true, a document spanning multiple currencies is reported as a warning
+   * instead of an error (the receiving supplier handles multi-currency orders).
+   * Resolved from the supplier involved in the exchange.
+   */
+  allowMixedCurrency?: boolean;
 }
 
 class Issues {
@@ -211,6 +217,7 @@ function checkPunchback(doc: ParsedDoc, ctx: ValidationContext, issues: Issues) 
   }
 
   let lineSum = 0;
+  const lineCurrencies: string[] = [];
   items.forEach((it, i) => {
     const base = `cXML/.../ItemIn[${i + 1}]`;
     const qty = num(attr(it, "quantity"));
@@ -227,10 +234,13 @@ function checkPunchback(doc: ParsedDoc, ctx: ValidationContext, issues: Issues) 
     }
     const up = detail.UnitPrice?.Money;
     const upAmount = num(text(up));
+    const upCurrency = attr(up, "currency");
     if (up == null) {
       issues.error("item-missing-unitprice", `ItemIn[${i + 1}] is missing ItemDetail/UnitPrice/Money`, `${base}/ItemDetail/UnitPrice`);
-    } else if (!attr(up, "currency")) {
+    } else if (!upCurrency) {
       issues.error("item-missing-currency", `ItemIn[${i + 1}] UnitPrice/Money is missing @currency`, `${base}/ItemDetail/UnitPrice/Money`);
+    } else {
+      lineCurrencies.push(upCurrency);
     }
     if (!text(detail.Description)) {
       issues.error("item-missing-description", `ItemIn[${i + 1}] is missing ItemDetail/Description`, `${base}/ItemDetail/Description`);
@@ -249,8 +259,21 @@ function checkPunchback(doc: ParsedDoc, ctx: ValidationContext, issues: Issues) 
     if (qty != null && upAmount != null) lineSum += qty * upAmount;
   });
 
-  // Total consistency: sum of (quantity * unit price) vs the header Total.
-  if (totalAmount != null && items.length > 0) {
+  // A cXML Total is a single Money — every line and the Total must share one
+  // currency. Mixing them is invalid (real receivers reject it), so it's an
+  // error, not a warning.
+  const singleCurrency = checkSingleCurrency(
+    lineCurrencies,
+    totalCurrency,
+    issues,
+    "cXML/.../PunchOutOrderMessageHeader/Total",
+    ctx.allowMixedCurrency,
+  );
+
+  // Total consistency: sum of (quantity * unit price) vs the header Total. Only
+  // meaningful when the document is single-currency (otherwise the mock supplier
+  // deliberately sends Total 0 and the mixed-currency error above already fired).
+  if (singleCurrency && totalAmount != null && items.length > 0) {
     const diff = Math.abs(totalAmount - lineSum);
     if (diff > 0.01) {
       issues.warn(
@@ -260,6 +283,39 @@ function checkPunchback(doc: ParsedDoc, ctx: ValidationContext, issues: Issues) 
       );
     }
   }
+}
+
+// Returns true when the document is single-currency. When the line items + Total
+// span more than one currency it emits `mixed-currency` — an error by default
+// (a cXML Total is a single Money; most receivers reject it), or a warning when
+// the receiving supplier is configured to handle multi-currency orders.
+function checkSingleCurrency(
+  lineCurrencies: string[],
+  totalCurrency: string | undefined,
+  issues: Issues,
+  path: string,
+  allowMixed = false,
+): boolean {
+  const all = new Set(lineCurrencies.filter(Boolean));
+  if (totalCurrency) all.add(totalCurrency);
+  if (all.size > 1) {
+    const list = [...all].join(", ");
+    if (allowMixed) {
+      issues.warn(
+        "mixed-currency",
+        `Multiple currencies in one document (${list}); allowed for this supplier. The header Total is a single Money — rely on the per-line currencies.`,
+        path,
+      );
+    } else {
+      issues.error(
+        "mixed-currency",
+        `Multiple currencies in one document (${list}). A cXML Total is a single Money — all line items and the Total must share one currency.`,
+        path,
+      );
+    }
+    return false;
+  }
+  return true;
 }
 
 function checkOrderRequest(doc: ParsedDoc, ctx: ValidationContext, issues: Issues) {
@@ -289,18 +345,25 @@ function checkOrderRequest(doc: ParsedDoc, ctx: ValidationContext, issues: Issue
   if (items.length === 0) {
     issues.error("no-itemout", "OrderRequest contains no ItemOut elements", "cXML/.../OrderRequest");
   }
+  const lineCurrencies: string[] = [];
   items.forEach((it, i) => {
     const base = `cXML/.../ItemOut[${i + 1}]`;
     if (!text(it?.ItemID?.SupplierPartID)) {
       issues.error("itemout-missing-id", `ItemOut[${i + 1}] is missing ItemID/SupplierPartID`, `${base}/ItemID`);
     }
-    if (it?.ItemDetail?.UnitPrice?.Money == null) {
+    const up = it?.ItemDetail?.UnitPrice?.Money;
+    if (up == null) {
       issues.error("itemout-missing-unitprice", `ItemOut[${i + 1}] is missing ItemDetail/UnitPrice/Money`, `${base}/ItemDetail/UnitPrice`);
+    } else {
+      const cur = attr(up, "currency");
+      if (cur) lineCurrencies.push(cur);
     }
     if (num(attr(it, "quantity")) == null) {
       issues.error("itemout-missing-quantity", `ItemOut[${i + 1}] is missing @quantity`, base);
     }
   });
+
+  checkSingleCurrency(lineCurrencies, attr(header?.Total?.Money, "currency"), issues, "cXML/.../OrderRequestHeader/Total", ctx.allowMixedCurrency);
 
   // Attachment cid resolution (spec section 11). Scan Comments at both levels.
   const refs = collectCidReferences(doc);

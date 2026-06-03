@@ -61,6 +61,33 @@ describe("punchback validation", () => {
   it("errors on BuyerCookie mismatch", () => {
     expect(codes(base("20.00"), { expectedBuyerCookie: "other" })).toContain("buyercookie-mismatch");
   });
+  it("errors on a mixed-currency cart and skips the (meaningless) total-mismatch warning", () => {
+    const mixed = `<cXML payloadID="p@h" timestamp="t"><Message><PunchOutOrderMessage>
+      <BuyerCookie>cookie-1</BuyerCookie>
+      <PunchOutOrderMessageHeader operationAllowed="create"><Total><Money currency="USD">0.00</Money></Total></PunchOutOrderMessageHeader>
+      <ItemIn quantity="1"><ItemID><SupplierPartID>A</SupplierPartID></ItemID>
+        <ItemDetail><UnitPrice><Money currency="USD">10.00</Money></UnitPrice><Description>x</Description><UnitOfMeasure>EA</UnitOfMeasure><Classification domain="UNSPSC">1</Classification></ItemDetail></ItemIn>
+      <ItemIn quantity="2"><ItemID><SupplierPartID>B</SupplierPartID></ItemID>
+        <ItemDetail><UnitPrice><Money currency="EUR">1.15</Money></UnitPrice><Description>y</Description><UnitOfMeasure>MTR</UnitOfMeasure><Classification domain="UNSPSC">2</Classification></ItemDetail></ItemIn>
+    </PunchOutOrderMessage></Message></cXML>`;
+    const c = codes(mixed);
+    expect(c).toContain("mixed-currency");
+    expect(c).not.toContain("total-mismatch");
+  });
+  it("downgrades mixed-currency to a non-blocking warning when the supplier allows it", () => {
+    const mixed = `<cXML payloadID="p@h" timestamp="t"><Message><PunchOutOrderMessage>
+      <BuyerCookie>cookie-1</BuyerCookie>
+      <PunchOutOrderMessageHeader operationAllowed="create"><Total><Money currency="USD">0.00</Money></Total></PunchOutOrderMessageHeader>
+      <ItemIn quantity="1"><ItemID><SupplierPartID>A</SupplierPartID></ItemID>
+        <ItemDetail><UnitPrice><Money currency="USD">10.00</Money></UnitPrice><Description>x</Description><UnitOfMeasure>EA</UnitOfMeasure><Classification domain="UNSPSC">1</Classification></ItemDetail></ItemIn>
+      <ItemIn quantity="2"><ItemID><SupplierPartID>B</SupplierPartID></ItemID>
+        <ItemDetail><UnitPrice><Money currency="EUR">1.15</Money></UnitPrice><Description>y</Description><UnitOfMeasure>MTR</UnitOfMeasure><Classification domain="UNSPSC">2</Classification></ItemDetail></ItemIn>
+    </PunchOutOrderMessage></Message></cXML>`;
+    const r = validateDocument(mixed, { expectedBuyerCookie: "cookie-1", allowMixedCurrency: true });
+    expect(r.ok).toBe(true); // warning, not error → does not block
+    const mc = r.issues.find((i) => i.code === "mixed-currency");
+    expect(mc?.severity).toBe("warning");
+  });
   it("errors when a required item field is missing", () => {
     const xml = `<cXML payloadID="p@h" timestamp="t"><Message><PunchOutOrderMessage>
       <BuyerCookie>c</BuyerCookie>

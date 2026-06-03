@@ -15,6 +15,7 @@ import {
   applyExtrinsicTokens,
   buildOrderRequest,
   buildSetupRequest,
+  lineItemsTotal,
   makePayloadId,
   type ExtrinsicVal,
   type OrderAttachmentMeta,
@@ -51,6 +52,8 @@ interface BuyerContext {
   /** Effective platform profile (buyer profile layered with connection overrides). */
   eff: EffectiveProfile;
   expected: ExpectedCredentials;
+  /** Whether the target supplier tolerates multi-currency documents. */
+  allowMixedCurrency: boolean;
 }
 
 function buyerContext(r: ResolvedConnection): BuyerContext {
@@ -71,6 +74,7 @@ function buyerContext(r: ResolvedConnection): BuyerContext {
     attachmentEncoding: eff.attachmentEncoding,
     eff,
     expected: { from, to, sender, sharedSecret: connection.sharedSecret },
+    allowMixedCurrency: supplier.allowMixedCurrency ?? false,
   };
 }
 
@@ -220,8 +224,10 @@ interface OrderBody {
 function buildOrderXml(ctx: BuyerContext, body: OrderBody): { xml: string; orderId: string } {
   const items = body.items ?? [];
   const currency = body.currency || items[0]?.currency || "USD";
-  const total =
-    body.total ?? items.reduce((s, it) => s + (it.unitPriceAmount ?? 0) * it.quantity, 0);
+  // Mixed-currency carts can't have a meaningful single Total — lineItemsTotal
+  // returns 0 in that case (see build.ts), matching the mock supplier and
+  // tripping the mixed-currency validation rather than fabricating a sum.
+  const total = body.total ?? lineItemsTotal(items, currency);
   const orderId = body.orderId || `PO-${nanoid(8)}`;
   const attMeta: OrderAttachmentMeta[] = (body.attachments ?? []).map((a) => ({
     contentId: a.contentId,
@@ -309,6 +315,7 @@ flowRoute.post("/:id/order", async (c) => {
     expected: ctx.expected,
     forceDocType: "OrderRequest",
     availableContentIds: inputAtts.length > 0 ? availableContentIds : undefined,
+    allowMixedCurrency: ctx.allowMixedCurrency,
   });
 
   const reqLog = appendLog({

@@ -110,6 +110,25 @@ describe("buildPunchOutOrderMessage", () => {
     expect(xml).toContain("<BuyerCookie>c1</BuyerCookie>");
   });
 
+  it("sends Total 0 when the cart mixes currencies (no fabricated cross-currency sum)", () => {
+    const xml = buildPunchOutOrderMessage({
+      from: supplier,
+      to: buyer,
+      sender: supplier,
+      buyerCookie: "c1",
+      payloadId: "p@h",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      currency: "USD",
+      items: [
+        { quantity: 1, supplierPartId: "A", unitPriceAmount: 12.5, currency: "USD" },
+        { quantity: 2, supplierPartId: "B", unitPriceAmount: 1.15, currency: "EUR" },
+      ],
+    });
+    expect(xml).toContain('<Money currency="USD">0.00</Money>'); // header Total
+    // line-level currencies are preserved
+    expect(xml).toContain('<Money currency="EUR">1.15</Money>');
+  });
+
   it("honors a custom operationAllowed and DTD version", () => {
     const xml = buildPunchOutOrderMessage({
       from: supplier, to: buyer, sender: supplier, buyerCookie: "c1",

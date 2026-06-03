@@ -269,7 +269,10 @@ simRoute.post("/:id/checkout", async (c) => {
     docType: "PunchOutOrderMessage",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: xml,
-    validation: validateDocument(xml, { forceDocType: "PunchOutOrderMessage" }),
+    validation: validateDocument(xml, {
+      forceDocType: "PunchOutOrderMessage",
+      allowMixedCurrency: supplier.allowMixedCurrency,
+    }),
   });
 
   // The buyer's platform dictates how the browser returns the cart. Default
@@ -363,6 +366,7 @@ simRoute.post("/:id/order", async (c) => {
     expected: expectedFor(supplier.id, from),
     forceDocType: "OrderRequest",
     availableContentIds: isMultipart(ct) ? availableContentIds : undefined,
+    allowMixedCurrency: supplier.allowMixedCurrency,
   });
 
   appendLog({

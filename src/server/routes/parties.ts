@@ -74,6 +74,7 @@ function normalizeSupplier(body: any): SupplierInput {
     punchoutUrl: body?.punchoutUrl ? String(body.punchoutUrl) : undefined,
     orderUrl: body?.orderUrl ? String(body.orderUrl) : undefined,
     productListIds,
+    allowMixedCurrency: Boolean(body?.allowMixedCurrency),
   };
 }
 
