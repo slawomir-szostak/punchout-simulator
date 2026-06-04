@@ -329,7 +329,10 @@ In Mode B a real procurement platform calls the tool. The tool answers the
 `PunchOutSetupRequest` with a StartPage, serves a themed HTML catalog at
 `/sim/:supplierId/*`, and when the operator checks out it builds the
 `PunchOutOrderMessage` and auto-POSTs it back to the buyer's `BrowserFormPost`
-URL.
+URL. The mock supplier also **honours the setup `operation`**: for `edit` it
+re-reads the carried `ItemOut` from the session log and pre-fills the catalog
+quantities (items it doesn't list show as extra rows); for `inspect` it renders
+the carried item(s) read-only and returns them unchanged.
 
 ```plantuml
 @startuml mode-b-sequence

@@ -167,6 +167,12 @@ SetupRequest → catalog → cart → OrderRequest → OrderResponse. The **Sess
   - **inspect** — view a previously ordered item read-only (`operation="inspect"`),
     carrying that item (or the whole source cart) as `ItemOut`.
 
+The built-in **mock supplier honours these on the receiving side too**: an
+`edit` pre-fills the catalog quantities from the carried `ItemOut` (items it
+doesn't list appear as extra "from cart" rows), and an `inspect` shows the
+item(s) read-only and returns them unchanged — so the full round-trip is
+exercisable end-to-end against the built-in mock.
+
 Connections/Buyers/Suppliers/Products/Profiles remain under **Configure** — you set
 them up there, then run them from **Sessions**.
 
