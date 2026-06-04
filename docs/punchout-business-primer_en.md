@@ -121,12 +121,12 @@ items (as `ItemOut` blocks) inside the `PunchOutSetupRequest`. A
 business-complete supplier honours those by restoring the cart to that state.
 
 > [!TIP]
-> In the simulator, the *outbound* document fully reflects the operation —
-> `edit`/`inspect` carry `operation="edit"` and the prior cart items as
-> `ItemOut`. The Mode-B mock supplier, however, currently ignores incoming
-> `ItemOut`, so the demo exercises the buyer-side document rather than the
-> supplier-side cart restoration. See the Operations & usage guide for how to
-> drive this.
+> The simulator supports this on both ends. The *outbound* document fully
+> reflects the operation — `edit`/`inspect` carry `operation="edit"` and the
+> prior cart items as `ItemOut`. The Mode-B mock supplier also *honours* an
+> incoming `edit` by pre-loading the catalog (quantities pre-filled, non-catalog
+> items shown as extra rows) and an `inspect` by showing the item read-only. See
+> the Operations & usage guide for the details.
 
 ## cXML versus OCI
 

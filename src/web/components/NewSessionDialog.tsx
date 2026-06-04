@@ -31,8 +31,11 @@ export function NewSessionDialog({
   const [itemIdx, setItemIdx] = useState<number>(-1); // -1 = all items
   const ref = useRef<HTMLDivElement>(null);
 
-  // Sessions that returned a cart make sensible edit/inspect sources.
-  const sources = sessions.filter((s) => s.docTypes.includes("PunchOutOrderMessage"));
+  // Every session is listed so none silently disappears; only those that
+  // actually returned a cart can supply items, so the rest are shown disabled.
+  const hasCart = (s: SessionSummary) => s.docTypes.includes("PunchOutOrderMessage");
+  const sources = sessions;
+  const anySelectable = sources.some(hasCart);
 
   useEffect(() => { ref.current?.focus(); }, []);
   useEffect(() => {
@@ -102,16 +105,20 @@ export function NewSessionDialog({
               <div className="form-row">
                 <label>Source session <span className="hint">(its returned cart supplies the items)</span></label>
                 {sources.length === 0 ? (
-                  <p className="hint">No prior session with a returned cart yet — run a create session first.</p>
+                  <p className="hint">No sessions yet — run a create session first.</p>
                 ) : (
                   <select value={sourceId} onChange={(e) => setSourceId(e.target.value)}>
                     <option value="">— choose a session —</option>
                     {sources.map((s) => (
-                      <option key={s.sessionId} value={s.sessionId}>
-                        {(s.connectionName ?? s.sessionId)} · {s.lastTs ? new Date(s.lastTs).toLocaleString() : ""}
+                      <option key={s.sessionId} value={s.sessionId} disabled={!hasCart(s)}>
+                        {(s.connectionName ?? s.sessionId)} · {s.lastTs ? new Date(s.lastTs).toLocaleString() : ""} · {s.sessionId}
+                        {hasCart(s) ? "" : " — no cart yet"}
                       </option>
                     ))}
                   </select>
+                )}
+                {sources.length > 0 && !anySelectable && (
+                  <span className="hint">No session has a returned cart yet — finish a create session (shop and return the cart) to use it as a source.</span>
                 )}
               </div>
               {operation === "inspect" && sourceCart && sourceCart.length > 0 && (

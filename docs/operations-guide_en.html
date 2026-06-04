@@ -312,7 +312,7 @@ figure.diagram figcaption {
 <header class="header">
   <div class="brand"></div>
   <h1>punchout-simulator — Operations & Usage Guide</h1>
-  <p class="subtitle">Sessions, operations, profiles, product lists, addresses, attachments, and validation · 2026-06-03</p>
+  <p class="subtitle">Sessions, operations, profiles, product lists, addresses, attachments, and validation · 2026-06-04</p>
   <span class="version">v1.0 — June 2026</span>
 </header>
 
@@ -334,7 +334,7 @@ figure.diagram figcaption {
 </ul>
 </li>
 <li><a href="#operations-explained">Operations explained</a><ul>
-<li><a href="#what-edit-actually-does-and-its-current-limit">What "edit" actually does — and its current limit</a></li>
+<li><a href="#what-edit-actually-does-both-ends">What "edit" actually does — both ends</a></li>
 </ul>
 </li>
 <li><a href="#validation">Validation</a></li>
@@ -526,24 +526,30 @@ never logged as a session.</p>
 </tr>
 </tbody>
 </table>
-<h3 id="what-edit-actually-does-and-its-current-limit">What "edit" actually does — and its current limit</h3>
-<p><code>edit</code> is about the <strong>outbound</strong> document. The buyer-side
+<h3 id="what-edit-actually-does-both-ends">What "edit" actually does — both ends</h3>
+<p><code>edit</code> is, first, about the <strong>outbound</strong> document. The buyer-side
 <code>PunchOutSetupRequest</code> you send declares <code>operation="edit"</code> and includes the
 prior cart items as <code>ItemOut</code> blocks. A <em>real</em> supplier honours this by
 pre-loading its cart to that state so the user can adjust it.</p>
-<div class="alert alert-warning">
-<div class="alert-label">Warning</div>
-<p>The Mode-B <strong>mock supplier currently ignores incoming <code>ItemOut</code></strong> — it always
-serves a fresh catalog. So when you test <code>edit</code>/<code>inspect</code> against the tool's
-own mock supplier, you exercise the <strong>buyer-side document</strong> (the correctly
-formed <code>operation="edit"</code> request with <code>ItemOut</code>), not the supplier-side cart
-restoration. To see <code>edit</code> end-to-end with cart pre-load, point Mode A at a
-real supplier that implements it. (Pre-loading incoming <code>ItemOut</code> in the mock
-supplier is a candidate future enhancement.)</p>
+<p>The <strong>Mode-B mock supplier now honours it too.</strong> When it receives an
+<code>operation="edit"</code> request, it reads the carried <code>ItemOut</code> items (from the
+session's setup request) and pre-loads the catalog:</p>
+<ul>
+<li>Items the buyer already had that exist in the supplier's catalog show with
+  their <strong>quantities pre-filled</strong> — change them and return the revised cart.</li>
+<li>Items the buyer had that the catalog doesn't list appear as <strong>extra "from
+  cart" rows</strong> so the edit round-trips faithfully.</li>
+</ul>
+<p>For <strong><code>inspect</code></strong>, the mock supplier shows the carried item(s) <strong>read-only</strong> and
+returns them unchanged on checkout — matching the "view this item" intent.</p>
+<div class="alert alert-note">
+<div class="alert-label">Note</div>
+<p>The pre-load is derived from the latest inbound <code>PunchOutSetupRequest</code> in the
+session log, so the catalog and the checkout always agree without extra state.
+Catalog matching is by <code>SupplierPartID</code> (plus <code>SupplierPartAuxiliaryID</code> when
+present); items the supplier doesn't carry pricing for keep the values the
+buyer sent.</p>
 </div>
-<p>This is the nuance that makes <code>edit</code> feel like "nothing happened" when tested
-purely against the simulator: the document is right, but the mock counterparty
-doesn't act on it.</p>
 <h2 id="validation">Validation</h2>
 <p>Every outbound document can be validated <strong>before sending</strong> with the
 <strong>Validate</strong> button next to <strong>Send</strong>. Validation is bidirectional and

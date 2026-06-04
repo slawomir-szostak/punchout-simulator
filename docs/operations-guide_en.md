@@ -173,25 +173,31 @@ The operation you choose sets the `operation` attribute on the outbound
 | **edit** | `operation="edit"` + the source cart's items as `ItemOut`. | Revise items already chosen from this supplier. |
 | **inspect** | `operation="inspect"` + the item(s) to view as `ItemOut`. | Re-check a previously selected item's spec/price. |
 
-### What "edit" actually does — and its current limit
+### What "edit" actually does — both ends
 
-`edit` is about the **outbound** document. The buyer-side
+`edit` is, first, about the **outbound** document. The buyer-side
 `PunchOutSetupRequest` you send declares `operation="edit"` and includes the
 prior cart items as `ItemOut` blocks. A *real* supplier honours this by
 pre-loading its cart to that state so the user can adjust it.
 
-> [!WARNING]
-> The Mode-B **mock supplier currently ignores incoming `ItemOut`** — it always
-> serves a fresh catalog. So when you test `edit`/`inspect` against the tool's
-> own mock supplier, you exercise the **buyer-side document** (the correctly
-> formed `operation="edit"` request with `ItemOut`), not the supplier-side cart
-> restoration. To see `edit` end-to-end with cart pre-load, point Mode A at a
-> real supplier that implements it. (Pre-loading incoming `ItemOut` in the mock
-> supplier is a candidate future enhancement.)
+The **Mode-B mock supplier now honours it too.** When it receives an
+`operation="edit"` request, it reads the carried `ItemOut` items (from the
+session's setup request) and pre-loads the catalog:
 
-This is the nuance that makes `edit` feel like "nothing happened" when tested
-purely against the simulator: the document is right, but the mock counterparty
-doesn't act on it.
+- Items the buyer already had that exist in the supplier's catalog show with
+  their **quantities pre-filled** — change them and return the revised cart.
+- Items the buyer had that the catalog doesn't list appear as **extra "from
+  cart" rows** so the edit round-trips faithfully.
+
+For **`inspect`**, the mock supplier shows the carried item(s) **read-only** and
+returns them unchanged on checkout — matching the "view this item" intent.
+
+> [!NOTE]
+> The pre-load is derived from the latest inbound `PunchOutSetupRequest` in the
+> session log, so the catalog and the checkout always agree without extra state.
+> Catalog matching is by `SupplierPartID` (plus `SupplierPartAuxiliaryID` when
+> present); items the supplier doesn't carry pricing for keep the values the
+> buyer sent.
 
 ## Validation
 

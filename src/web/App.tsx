@@ -336,9 +336,13 @@ export function App() {
       .map((s): SessionRow => ({
         id: s.sessionId,
         title: s.connectionName ?? (s.inbound ? `${s.supplierName ?? "Supplier"} · inbound` : s.sessionId),
-        subtitle:
-          (s.buyerName && s.supplierName ? `${s.buyerName} → ${s.supplierName}` : s.sessionId.slice(0, 22)) +
-          (s.lastTs ? ` · ${new Date(s.lastTs).toLocaleTimeString([], { hour12: false })}` : ""),
+        subtitle: [
+          s.buyerName && s.supplierName ? `${s.buyerName} → ${s.supplierName}` : null,
+          s.lastTs ? new Date(s.lastTs).toLocaleTimeString([], { hour12: false }) : null,
+          s.sessionId,
+        ]
+          .filter(Boolean)
+          .join(" · "),
         operation: s.operation,
         hasErrors: s.hasErrors,
         inbound: s.inbound,

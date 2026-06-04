@@ -5,6 +5,7 @@ import {
   getHeaderCredentials,
   getStartPage,
   parseCart,
+  parseSetupItems,
   parseXml,
 } from "../src/server/cxml/parse.js";
 
@@ -96,6 +97,41 @@ describe("parseCart", () => {
       classificationDomain: "UNSPSC",
     });
     expect(cart.total).toEqual({ amount: 59, currency: "USD" });
+  });
+});
+
+describe("parseSetupItems", () => {
+  it("defaults to create with no items", () => {
+    const xml = `<cXML><Request><PunchOutSetupRequest operation="create"><BuyerCookie>x</BuyerCookie></PunchOutSetupRequest></Request></cXML>`;
+    expect(parseSetupItems(parseXml(xml))).toEqual({ operation: "create", items: [] });
+  });
+
+  it("parses the operation and carried ItemOut blocks (edit/inspect)", () => {
+    const xml = `<cXML><Request><PunchOutSetupRequest operation="edit">
+      <BuyerCookie>x</BuyerCookie>
+      <ItemOut quantity="3" lineNumber="1">
+        <ItemID><SupplierPartID>WIDGET-001</SupplierPartID><SupplierPartAuxiliaryID>WIDGET-001-STD</SupplierPartAuxiliaryID></ItemID>
+        <ItemDetail>
+          <UnitPrice><Money currency="USD">12.50</Money></UnitPrice>
+          <Description xml:lang="en">Premium Steel Widget</Description>
+          <UnitOfMeasure>EA</UnitOfMeasure>
+          <Classification domain="UNSPSC">31161500</Classification>
+        </ItemDetail>
+      </ItemOut>
+    </PunchOutSetupRequest></Request></cXML>`;
+    const { operation, items } = parseSetupItems(parseXml(xml));
+    expect(operation).toBe("edit");
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      quantity: 3,
+      supplierPartId: "WIDGET-001",
+      supplierPartAuxiliaryId: "WIDGET-001-STD",
+      unitPriceAmount: 12.5,
+      currency: "USD",
+      uom: "EA",
+      classification: "31161500",
+      classificationDomain: "UNSPSC",
+    });
   });
 });
 

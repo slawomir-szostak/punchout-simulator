@@ -242,33 +242,54 @@ export function collectCidReferences(doc: ParsedDoc): CidReference[] {
   return refs;
 }
 
+// A single cart line, parsed from either an <ItemIn> (PunchOutOrderMessage) or an
+// <ItemOut> (the edit/inspect PunchOutSetupRequest) — they share the same
+// quantity + ItemID + ItemDetail shape.
+function itemFromNode(it: any): CartItem {
+  const detail = it?.ItemDetail;
+  const up = money(detail?.UnitPrice);
+  const classifications = asArray(detail?.Classification)
+    .filter((c) => c != null)
+    .map((c) => ({ domain: attr(c, "domain") ?? "", value: text(c) ?? "" }));
+  const classFirst = classifications[0];
+  return {
+    quantity: Number(attr(it, "quantity") ?? "1") || 1,
+    supplierPartId: text(it?.ItemID?.SupplierPartID),
+    supplierPartAuxiliaryId: text(it?.ItemID?.SupplierPartAuxiliaryID),
+    description: text(detail?.Description),
+    uom: text(detail?.UnitOfMeasure),
+    unitPriceAmount: up.amount,
+    currency: up.currency,
+    classifications: classifications.length > 0 ? classifications : undefined,
+    classificationDomain: classFirst?.domain,
+    classification: classFirst?.value,
+    manufacturerPartId: text(detail?.ManufacturerPartID),
+    manufacturerName: text(detail?.ManufacturerName),
+  };
+}
+
+/** The operation + carried line items of an inbound PunchOutSetupRequest. For
+ * `edit`/`inspect` the buyer sends the existing cart as ItemOut blocks so the
+ * supplier can re-open it; `create` carries none. */
+export interface SetupItems {
+  operation: string;
+  items: CartItem[];
+}
+
+export function parseSetupItems(doc: ParsedDoc): SetupItems {
+  const sr = root(doc)?.Request?.PunchOutSetupRequest;
+  return {
+    operation: attr(sr, "operation") ?? "create",
+    items: asArray(sr?.ItemOut).map(itemFromNode),
+  };
+}
+
 export function parseCart(doc: ParsedDoc): Cart {
   const pom = root(doc)?.Message?.PunchOutOrderMessage;
   const sessionId = text(pom?.BuyerCookie) ?? "";
   const headerNode = pom?.PunchOutOrderMessageHeader;
   const total = money(headerNode?.Total);
-  const items: CartItem[] = asArray(pom?.ItemIn).map((it) => {
-    const detail = it?.ItemDetail;
-    const up = money(detail?.UnitPrice);
-    const classifications = asArray(detail?.Classification)
-      .filter((c) => c != null)
-      .map((c) => ({ domain: attr(c, "domain") ?? "", value: text(c) ?? "" }));
-    const classFirst = classifications[0];
-    return {
-      quantity: Number(attr(it, "quantity") ?? "1") || 1,
-      supplierPartId: text(it?.ItemID?.SupplierPartID),
-      supplierPartAuxiliaryId: text(it?.ItemID?.SupplierPartAuxiliaryID),
-      description: text(detail?.Description),
-      uom: text(detail?.UnitOfMeasure),
-      unitPriceAmount: up.amount,
-      currency: up.currency,
-      classifications: classifications.length > 0 ? classifications : undefined,
-      classificationDomain: classFirst?.domain,
-      classification: classFirst?.value,
-      manufacturerPartId: text(detail?.ManufacturerPartID),
-      manufacturerName: text(detail?.ManufacturerName),
-    };
-  });
+  const items: CartItem[] = asArray(pom?.ItemIn).map(itemFromNode);
   return {
     sessionId,
     operationAllowed: attr(headerNode, "operationAllowed"),

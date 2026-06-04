@@ -312,7 +312,7 @@ figure.diagram figcaption {
 <header class="header">
   <div class="brand"></div>
   <h1>PunchOut — A Business Primer</h1>
-  <p class="subtitle">What PunchOut is, who the actors are, and where punchout-simulator fits in the procurement process · 2026-06-03</p>
+  <p class="subtitle">What PunchOut is, who the actors are, and where punchout-simulator fits in the procurement process · 2026-06-04</p>
   <span class="version">v1.0 — June 2026</span>
 </header>
 
@@ -456,12 +456,12 @@ items (as <code>ItemOut</code> blocks) inside the <code>PunchOutSetupRequest</co
 business-complete supplier honours those by restoring the cart to that state.</p>
 <div class="alert alert-tip">
 <div class="alert-label">Tip</div>
-<p>In the simulator, the <em>outbound</em> document fully reflects the operation —
-<code>edit</code>/<code>inspect</code> carry <code>operation="edit"</code> and the prior cart items as
-<code>ItemOut</code>. The Mode-B mock supplier, however, currently ignores incoming
-<code>ItemOut</code>, so the demo exercises the buyer-side document rather than the
-supplier-side cart restoration. See the Operations &amp; usage guide for how to
-drive this.</p>
+<p>The simulator supports this on both ends. The <em>outbound</em> document fully
+reflects the operation — <code>edit</code>/<code>inspect</code> carry <code>operation="edit"</code> and the
+prior cart items as <code>ItemOut</code>. The Mode-B mock supplier also <em>honours</em> an
+incoming <code>edit</code> by pre-loading the catalog (quantities pre-filled, non-catalog
+items shown as extra rows) and an <code>inspect</code> by showing the item read-only. See
+the Operations &amp; usage guide for the details.</p>
 </div>
 <h2 id="cxml-versus-oci">cXML versus OCI</h2>
 <p>"Supporting PunchOut" is not a single target. The protocol family matters:</p>

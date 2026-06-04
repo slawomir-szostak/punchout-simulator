@@ -8,7 +8,7 @@ import {
   getSupplier,
   type EffectiveProfile,
 } from "../store/config.js";
-import { appendLog } from "../store/log.js";
+import { appendLog, readSession } from "../store/log.js";
 import { saveAttachment } from "../store/attachments.js";
 import { getPublicUrl } from "../runtime.js";
 import {
@@ -18,7 +18,7 @@ import {
   escapeXml,
   makePayloadId,
 } from "../cxml/build.js";
-import { getHeaderCredentials, parseXml, root, text } from "../cxml/parse.js";
+import { getHeaderCredentials, parseSetupItems, parseXml, root, text, type SetupItems } from "../cxml/parse.js";
 import {
   isMultipart,
   normalizeContentId,
@@ -55,6 +55,32 @@ const catalogOf = (s: Supplier): CatalogItem[] => {
   const items = catalogForSupplier(s);
   return items.length > 0 ? items : DEMO_CATALOG;
 };
+
+// The edit/inspect state of a session: re-parsed from the latest inbound
+// PunchOutSetupRequest in the session log. The append-only log is the source of
+// truth, so both the catalog GET and the checkout POST recompute the same thing
+// (no extra mutable server state). A `create` setup carries no items.
+function setupContextFor(cookie: string): SetupItems {
+  if (!cookie) return { operation: "create", items: [] };
+  const records = readSession(cookie);
+  for (let i = records.length - 1; i >= 0; i--) {
+    const r = records[i];
+    if (r.direction === "in" && r.docType === "SetupRequest") {
+      return parseSetupItems(parseXml(r.body));
+    }
+  }
+  return { operation: "create", items: [] };
+}
+
+// Two cart lines refer to the same product when their SupplierPartID (and aux id,
+// when present) match — used to merge a carried edit cart onto the catalog.
+function sameProduct(a: { supplierPartId?: string; supplierPartAuxiliaryId?: string }, b: { supplierPartId?: string; supplierPartAuxiliaryId?: string }): boolean {
+  return (
+    !!a.supplierPartId &&
+    a.supplierPartId === b.supplierPartId &&
+    (a.supplierPartAuxiliaryId ?? "") === (b.supplierPartAuxiliaryId ?? "")
+  );
+}
 
 // The BrowserFormPost URL is buyer-supplied and later rendered as an
 // auto-submitted <form action>; reject non-http(s) schemes to avoid XSS.
@@ -157,34 +183,76 @@ simRoute.post("/:id/punchout", async (c) => {
 
 // --- 2. Catalog UI ------------------------------------------------------------
 
-simRoute.get("/:id/catalog", (c) => {
-  const supplier = getSupplier(c.req.param("id"));
-  if (!supplier) return c.text("supplier not found", 404);
-  const cookie = c.req.query("cookie") ?? "";
-  const formpost = safeHttpUrl(c.req.query("formpost") ?? "");
-  const bd = c.req.query("bd") ?? "";
-  const bi = c.req.query("bi") ?? "";
-  const items = catalogOf(supplier);
+// A normalized view of one row (a catalog item or a carried buyer-cart item).
+interface RowView {
+  description?: string;
+  supplierPartId?: string;
+  supplierPartAuxiliaryId?: string;
+  uom?: string;
+  currency?: string;
+  price?: number;
+  classifications?: { domain: string; value: string }[];
+}
+const catalogView = (it: CatalogItem): RowView => ({
+  description: it.description,
+  supplierPartId: it.supplierPartId,
+  supplierPartAuxiliaryId: it.supplierPartAuxiliaryId,
+  uom: it.uom,
+  currency: it.currency,
+  price: it.unitPrice,
+  classifications: it.classifications,
+});
+const cartView = (it: CartItem): RowView => ({
+  description: it.description,
+  supplierPartId: it.supplierPartId,
+  supplierPartAuxiliaryId: it.supplierPartAuxiliaryId,
+  uom: it.uom,
+  currency: it.currency,
+  price: it.unitPriceAmount,
+  classifications: it.classifications,
+});
 
-  const rows = items
-    .map((it, i) => {
-      const partId =
-        escapeXml(it.supplierPartId) +
-        (it.supplierPartAuxiliaryId ? ` / ${escapeXml(it.supplierPartAuxiliaryId)}` : "");
-      const cls = (it.classifications ?? [])
-        .map((c) => `${escapeXml(c.domain)} ${escapeXml(c.value)}`)
-        .join(" · ");
-      return `<tr>
-      <td><strong>${escapeXml(it.description)}</strong><br><small>${partId} · ${escapeXml(it.uom)}${cls ? ` · ${cls}` : ""}</small></td>
-      <td class="price">${escapeXml(it.currency)} ${it.unitPrice.toFixed(2)}</td>
-      <td><input type="number" name="q_${i}" value="0" min="0" step="${it.allowFractional ? "any" : "1"}" inputmode="${it.allowFractional ? "decimal" : "numeric"}"></td>
+function rowLabelCells(v: RowView): string {
+  const partId =
+    escapeXml(v.supplierPartId ?? "") +
+    (v.supplierPartAuxiliaryId ? ` / ${escapeXml(v.supplierPartAuxiliaryId)}` : "");
+  const cls = (v.classifications ?? []).map((c) => `${escapeXml(c.domain)} ${escapeXml(c.value)}`).join(" · ");
+  return `<td><strong>${escapeXml(v.description ?? "")}</strong><br><small>${partId} · ${escapeXml(v.uom ?? "")}${cls ? ` · ${cls}` : ""}</small></td>
+      <td class="price">${escapeXml(v.currency ?? "")} ${(v.price ?? 0).toFixed(2)}</td>`;
+}
+
+// An editable quantity row. `fractional` controls the input step; `value` is the
+// initial quantity (pre-filled from a carried edit cart, else 0).
+function qtyRow(v: RowView, name: string, value: number, fractional: boolean, tag?: string): string {
+  return `<tr>
+      ${rowLabelCells(v)}
+      <td><input type="number" name="${name}" value="${escapeXml(value)}" min="0" step="${fractional ? "any" : "1"}" inputmode="${fractional ? "decimal" : "numeric"}">${tag ? ` <span class="tag">${tag}</span>` : ""}</td>
     </tr>`;
-    })
-    .join("\n");
+}
 
-  return c.html(`<!doctype html><html lang="en"><head><meta charset="utf-8">
+// A read-only row (inspect): the quantity is shown but cannot be changed.
+function readonlyRow(v: RowView, qty: number): string {
+  return `<tr>
+      ${rowLabelCells(v)}
+      <td class="ro">${escapeXml(qty)}</td>
+    </tr>`;
+}
+
+interface CatalogPageOpts {
+  supplier: Supplier;
+  banner: string;
+  rows: string;
+  submitLabel: string;
+  cookie: string;
+  formpost: string;
+  bd: string;
+  bi: string;
+}
+
+function catalogPage(o: CatalogPageOpts): string {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeXml(supplier.name)} — mock catalog</title>
+<title>${escapeXml(o.supplier.name)} — mock catalog</title>
 <script>
   // Match the main app's theme. The app appends ?theme= to the catalog link
   // (works even when the SPA is on a different origin, e.g. the Vite dev server);
@@ -202,31 +270,77 @@ simRoute.get("/:id/catalog", (c) => {
   })();
 </script>
 <style>
-  :root{--bg:#0f172a;--text:#e2e8f0;--muted:#94a3b8;--panel:#1e293b;--th:#0b1220;--border:#334155;--field:#0b1220;--price:#fbbf24;--accent:#6366f1;--accent-hover:#4f46e5}
-  :root[data-theme="light"]{--bg:#f5f7fb;--text:#1e293b;--muted:#4b5a73;--panel:#ffffff;--th:#eef1f7;--border:#d4dae8;--field:#ffffff;--price:#b45309;--accent:#6366f1;--accent-hover:#4f46e5}
+  :root{--bg:#0f172a;--text:#e2e8f0;--muted:#94a3b8;--panel:#1e293b;--th:#0b1220;--border:#334155;--field:#0b1220;--price:#fbbf24;--accent:#6366f1;--accent-hover:#4f46e5;--banner:#1e293b}
+  :root[data-theme="light"]{--bg:#f5f7fb;--text:#1e293b;--muted:#4b5a73;--panel:#ffffff;--th:#eef1f7;--border:#d4dae8;--field:#ffffff;--price:#b45309;--accent:#6366f1;--accent-hover:#4f46e5;--banner:#eef1f7}
   body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);margin:0;padding:2rem}
   .wrap{max-width:720px;margin:0 auto}
   h1{font-size:1.4rem}.sub{color:var(--muted);margin-bottom:1.5rem}
+  .banner{background:var(--banner);border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:8px;padding:.7rem 1rem;margin-bottom:1.25rem;font-size:.95rem}
+  .banner.inspect{border-left-color:var(--price)}
   table{width:100%;border-collapse:collapse;background:var(--panel);border-radius:12px;overflow:hidden}
   th,td{padding:.75rem 1rem;text-align:left;border-bottom:1px solid var(--border)}
   th{background:var(--th);font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
   .price{white-space:nowrap;color:var(--price)}
+  .ro{color:var(--muted)}
+  .tag{font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-left:.4rem}
   input[type=number]{width:5rem;background:var(--field);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:.35rem .5rem}
   button{margin-top:1.5rem;background:var(--accent);color:#fff;border:0;border-radius:8px;padding:.7rem 1.4rem;font-size:1rem;cursor:pointer}
   button:hover{background:var(--accent-hover)}
 </style></head><body><div class="wrap">
-  <h1>${escapeXml(supplier.name)} <small>(virtual supplier)</small></h1>
+  <h1>${escapeXml(o.supplier.name)} <small>(virtual supplier)</small></h1>
   <div class="sub">Mock catalog served by punchout-simulator. Set quantities and return the cart.</div>
-  <form method="post" action="${getPublicUrl()}/sim/${supplier.id}/checkout">
-    <input type="hidden" name="cookie" value="${escapeXml(cookie)}">
-    <input type="hidden" name="formpost" value="${escapeXml(formpost)}">
-    <input type="hidden" name="bd" value="${escapeXml(bd)}">
-    <input type="hidden" name="bi" value="${escapeXml(bi)}">
+  ${o.banner}
+  <form method="post" action="${getPublicUrl()}/sim/${o.supplier.id}/checkout">
+    <input type="hidden" name="cookie" value="${escapeXml(o.cookie)}">
+    <input type="hidden" name="formpost" value="${escapeXml(o.formpost)}">
+    <input type="hidden" name="bd" value="${escapeXml(o.bd)}">
+    <input type="hidden" name="bi" value="${escapeXml(o.bi)}">
     <table><thead><tr><th>Item</th><th>Price</th><th>Qty</th></tr></thead>
-    <tbody>${rows}</tbody></table>
-    <button type="submit">Return cart to buyer →</button>
+    <tbody>${o.rows}</tbody></table>
+    <button type="submit">${escapeXml(o.submitLabel)}</button>
   </form>
-</div></body></html>`);
+</div></body></html>`;
+}
+
+simRoute.get("/:id/catalog", (c) => {
+  const supplier = getSupplier(c.req.param("id"));
+  if (!supplier) return c.text("supplier not found", 404);
+  const cookie = c.req.query("cookie") ?? "";
+  const formpost = safeHttpUrl(c.req.query("formpost") ?? "");
+  const bd = c.req.query("bd") ?? "";
+  const bi = c.req.query("bi") ?? "";
+  const items = catalogOf(supplier);
+  const ctx = setupContextFor(cookie);
+  const page = (banner: string, rows: string, submitLabel: string) =>
+    c.html(catalogPage({ supplier, banner, rows, submitLabel, cookie, formpost, bd, bi }));
+
+  // inspect: the buyer wants to view the carried item(s). Show them read-only and
+  // return them unchanged. (Falls through to the catalog if none were carried.)
+  if (ctx.operation === "inspect" && ctx.items.length > 0) {
+    const rows = ctx.items.map((it) => readonlyRow(cartView(it), it.quantity)).join("\n");
+    const banner = `<div class="banner inspect">Inspect — ${ctx.items.length} item(s), read-only. Returning the cart unchanged to the buyer.</div>`;
+    return page(banner, rows, "Return to buyer →");
+  }
+
+  // create / edit. For edit, pre-fill quantities from the carried cart and add
+  // any carried items the catalog doesn't list as extra editable rows.
+  const isEdit = ctx.operation === "edit";
+  const prefill = (it: CatalogItem): number =>
+    isEdit ? (ctx.items.find((p) => sameProduct(p, it))?.quantity ?? 0) : 0;
+  const catalogRows = items
+    .map((it, i) => qtyRow(catalogView(it), `q_${i}`, prefill(it), !!it.allowFractional))
+    .join("\n");
+
+  const extras = isEdit ? ctx.items.filter((p) => !items.some((it) => sameProduct(p, it))) : [];
+  const extraRows = extras
+    .map((p, j) => qtyRow(cartView(p), `qx_${j}`, p.quantity, true, "from cart"))
+    .join("\n");
+
+  const banner = isEdit
+    ? `<div class="banner edit">Edit — ${ctx.items.length} item(s) pre-loaded from the buyer's cart. Adjust quantities and return.</div>`
+    : "";
+  const rows = extraRows ? `${catalogRows}\n${extraRows}` : catalogRows;
+  return page(banner, rows, "Return cart to buyer →");
 });
 
 // --- 3. Checkout -> auto-submit punchback ------------------------------------
@@ -246,31 +360,46 @@ simRoute.post("/:id/checkout", async (c) => {
   const formpost = safeHttpUrl(String(form.formpost ?? ""));
   const buyerCred: Credential = { domain: String(form.bd ?? ""), identity: String(form.bi ?? "") };
   const catalog = catalogOf(supplier);
+  const ctx = setupContextFor(cookie);
 
-  const items: CartItem[] = [];
-  catalog.forEach((it, i) => {
-    let qty = Number(form[`q_${i}`] ?? 0);
-    // Mirror the input's step server-side: whole numbers unless the item opts in.
-    if (!it.allowFractional) qty = Math.floor(qty);
-    if (qty > 0) {
-      items.push({
-        quantity: qty,
-        supplierPartId: it.supplierPartId,
-        supplierPartAuxiliaryId: it.supplierPartAuxiliaryId,
-        description: it.description,
-        uom: it.uom,
-        unitPriceAmount: it.unitPrice,
-        currency: it.currency,
-        classifications: it.classifications,
-        // Keep the legacy single fields populated from the first classification
-        // for back-compat display (CartView) and any single-domain consumer.
-        classificationDomain: it.classifications[0]?.domain,
-        classification: it.classifications[0]?.value,
-        manufacturerPartId: it.manufacturerPartId,
-        manufacturerName: it.manufacturerName,
+  let items: CartItem[] = [];
+  if (ctx.operation === "inspect" && ctx.items.length > 0) {
+    // Inspect is read-only: return exactly the item(s) the buyer asked to view.
+    items = ctx.items;
+  } else {
+    catalog.forEach((it, i) => {
+      let qty = Number(form[`q_${i}`] ?? 0);
+      // Mirror the input's step server-side: whole numbers unless the item opts in.
+      if (!it.allowFractional) qty = Math.floor(qty);
+      if (qty > 0) {
+        items.push({
+          quantity: qty,
+          supplierPartId: it.supplierPartId,
+          supplierPartAuxiliaryId: it.supplierPartAuxiliaryId,
+          description: it.description,
+          uom: it.uom,
+          unitPriceAmount: it.unitPrice,
+          currency: it.currency,
+          classifications: it.classifications,
+          // Keep the legacy single fields populated from the first classification
+          // for back-compat display (CartView) and any single-domain consumer.
+          classificationDomain: it.classifications[0]?.domain,
+          classification: it.classifications[0]?.value,
+          manufacturerPartId: it.manufacturerPartId,
+          manufacturerName: it.manufacturerName,
+        });
+      }
+    });
+    // Carried edit-cart items the catalog doesn't list: same set/order as the
+    // catalog's extra rows (recomputed from the log), with quantities from the form.
+    if (ctx.operation === "edit") {
+      const extras = ctx.items.filter((p) => !catalog.some((it) => sameProduct(p, it)));
+      extras.forEach((p, j) => {
+        const qty = Number(form[`qx_${j}`] ?? p.quantity);
+        if (qty > 0) items.push({ ...p, quantity: qty });
       });
     }
-  });
+  }
 
   const currency = items[0]?.currency ?? "USD";
   const eff = effFor(supplier.id, buyerCred);

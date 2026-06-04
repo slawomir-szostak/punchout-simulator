@@ -351,3 +351,95 @@ describe("Mode A loopback", () => {
     expect(res.statusCode).toBe("400");
   });
 });
+
+describe("Mode B edit / inspect", () => {
+  // Send a PunchOutSetupRequest to the mock supplier carrying an operation and
+  // (for edit/inspect) prior cart items as ItemOut, returning its BuyerCookie.
+  async function sendSetup(cookie: string, operation: string, itemOuts: string): Promise<void> {
+    const xml = `<cXML payloadID="p@h" timestamp="t"><Header>
+      <From><Credential domain="DUNS"><Identity>123456789</Identity></Credential></From>
+      <To><Credential domain="DUNS"><Identity>987654321</Identity></Credential></To>
+      <Sender><Credential domain="DUNS"><Identity>123456789</Identity><SharedSecret>demo-secret</SharedSecret></Credential></Sender>
+      </Header><Request><PunchOutSetupRequest operation="${operation}">
+        <BuyerCookie>${cookie}</BuyerCookie>
+        <BrowserFormPost><URL>${base}/punchout/return</URL></BrowserFormPost>
+        ${itemOuts}
+      </PunchOutSetupRequest></Request></cXML>`;
+    await fetch(`${base}/sim/demo-supplier/punchout`, {
+      method: "POST",
+      headers: { "content-type": "text/xml" },
+      body: xml,
+    }).then((r) => r.text());
+  }
+
+  const itemOut = (part: string, qty: number, desc: string, price: string, aux?: string) =>
+    `<ItemOut quantity="${qty}" lineNumber="1">
+      <ItemID><SupplierPartID>${part}</SupplierPartID>${aux ? `<SupplierPartAuxiliaryID>${aux}</SupplierPartAuxiliaryID>` : ""}</ItemID>
+      <ItemDetail>
+        <UnitPrice><Money currency="USD">${price}</Money></UnitPrice>
+        <Description xml:lang="en">${desc}</Description>
+        <UnitOfMeasure>EA</UnitOfMeasure>
+      </ItemDetail>
+    </ItemOut>`;
+
+  const punchbackOf = (html: string) => decodeHtml(/name="cxml-urlencoded" value="([\s\S]*?)">/.exec(html)![1]);
+
+  it("edit pre-loads the catalog and carries non-catalog items as extra rows", async () => {
+    // WIDGET-001/WIDGET-001-STD is the first sample-catalog item; EXTRA-XYZ is not.
+    await sendSetup(
+      "edit-1",
+      "edit",
+      itemOut("WIDGET-001", 3, "Premium Steel Widget", "12.50", "WIDGET-001-STD") +
+        itemOut("EXTRA-XYZ", 2, "Custom buyer item", "9.99"),
+    );
+
+    const catalog = await fetch(`${base}/sim/demo-supplier/catalog?cookie=edit-1`).then((r) => r.text());
+    expect(catalog).toContain("Edit");
+    expect(catalog).toContain('value="3"'); // widget quantity pre-filled
+    expect(catalog).toContain("EXTRA-XYZ"); // non-catalog item shown as an extra row
+    expect(catalog).toContain("from cart");
+
+    // Keep the widget at 3 and the extra at 2; the punchback carries both.
+    const html = await fetch(`${base}/sim/demo-supplier/checkout`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        cookie: "edit-1",
+        formpost: `${base}/punchout/return`,
+        bd: "DUNS",
+        bi: "123456789",
+        q_0: "3",
+        qx_0: "2",
+      }).toString(),
+    }).then((r) => r.text());
+    const punchback = punchbackOf(html);
+    expect(punchback).toContain("WIDGET-001");
+    expect(punchback).toContain("EXTRA-XYZ");
+    expect(punchback).toContain('quantity="3"');
+    expect(punchback).toContain('quantity="2"');
+  });
+
+  it("inspect renders read-only and returns the carried item unchanged", async () => {
+    await sendSetup("inspect-1", "inspect", itemOut("INSPECT-ME", 5, "Item under inspection", "4.00"));
+
+    const catalog = await fetch(`${base}/sim/demo-supplier/catalog?cookie=inspect-1`).then((r) => r.text());
+    expect(catalog).toContain("Inspect");
+    expect(catalog).toContain("INSPECT-ME");
+    expect(catalog).not.toContain('type="number"'); // read-only: no editable quantities
+
+    // No quantity fields are posted; the supplier returns the inspected item as-is.
+    const html = await fetch(`${base}/sim/demo-supplier/checkout`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        cookie: "inspect-1",
+        formpost: `${base}/punchout/return`,
+        bd: "DUNS",
+        bi: "123456789",
+      }).toString(),
+    }).then((r) => r.text());
+    const punchback = punchbackOf(html);
+    expect(punchback).toContain("INSPECT-ME");
+    expect(punchback).toContain('quantity="5"');
+  });
+});
