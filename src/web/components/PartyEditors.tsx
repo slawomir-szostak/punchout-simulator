@@ -160,6 +160,11 @@ export function BuyerEditor({
         </select>
       </div>
 
+      <p className="hint">
+        These addresses pre-fill and are sent in the <strong>OrderRequest</strong>. They appear in the{" "}
+        <strong>PunchOutSetupRequest</strong> only when this buyer's profile enables it
+        (Buyer Profiles → Addresses → “Send ShipTo / Contact in the PunchOutSetupRequest”).
+      </p>
       <fieldset>
         <legend>Ship-to address <span className="hint">(default for this buyer's orders; pre-fills the OrderRequest)</span></legend>
         <AddressFields value={draft.shipTo ?? {}} onChange={(shipTo: Address) => setDraft({ ...draft, shipTo })} />

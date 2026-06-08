@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
+import { exportFlowPdf } from "./flow-pdf";
+import { collapseExchanges } from "./log-dedup";
 import { useStream } from "./hooks/useStream";
 import { toggleTheme, useTheme } from "./hooks/useTheme";
 import {
@@ -139,6 +141,9 @@ export function App() {
     : null;
   const logSid = activeFlow ? activeFlow.session.buyerCookie : serverSel?.sessionId;
   const sessionRecords = logSid ? records.filter((r) => r.sessionId === logSid) : [];
+  // For export, collapse the same-exchange buyer/supplier duplicates exactly as
+  // the on-screen log does, so the PDF evidence matches what the user sees.
+  const exportRecords = collapseExchanges(sessionRecords, new Set(connections.map((c) => c.id)));
 
   // Load a session's full history (beyond the recent window) when it's selected.
   useEffect(() => {
@@ -443,7 +448,27 @@ export function App() {
                 <>
                   <div className="main-head">
                     <h2>{flowConn.name} <span className="hint">— {flowConn.buyer?.name} → {flowConn.supplier?.name}</span></h2>
-                    <ConfirmButton onConfirm={() => deleteSession(selectedSessionId!)} label="Delete session" confirmLabel="Confirm delete?" />
+                    <div className="head-actions">
+                      <button
+                        className="btn-secondary"
+                        disabled={sessionRecords.length === 0}
+                        title={sessionRecords.length === 0 ? "No messages to export yet" : "Export this flow as a PDF (print)"}
+                        onClick={() =>
+                          exportFlowPdf(
+                            {
+                              title: flowConn.name,
+                              subtitle: `${flowConn.buyer?.name ?? "?"} → ${flowConn.supplier?.name ?? "?"}`,
+                              sessionId: logSid ?? activeFlow.session.buyerCookie ?? "",
+                              operation: activeFlow.operation,
+                            },
+                            exportRecords,
+                          )
+                        }
+                      >
+                        Export PDF
+                      </button>
+                      <ConfirmButton onConfirm={() => deleteSession(selectedSessionId!)} label="Delete session" confirmLabel="Confirm delete?" />
+                    </div>
                   </div>
                   <BuyerFlow
                     connection={flowConn}
@@ -463,7 +488,30 @@ export function App() {
                       {serverSel.connectionName ?? (serverSel.inbound ? `${serverSel.supplierName ?? "Supplier"} · inbound` : "Session")}
                       {serverSel.operation && serverSel.operation !== "create" && <span className="badge badge-warn" style={{ marginLeft: ".5rem" }}>{serverSel.operation}</span>}
                     </h2>
-                    <ConfirmButton onConfirm={() => deleteSession(selectedSessionId!)} label="Delete session" confirmLabel="Confirm delete?" />
+                    <div className="head-actions">
+                      <button
+                        className="btn-secondary"
+                        disabled={sessionRecords.length === 0}
+                        title={sessionRecords.length === 0 ? "No messages to export yet" : "Export this flow as a PDF (print)"}
+                        onClick={() =>
+                          exportFlowPdf(
+                            {
+                              title: serverSel.connectionName ?? (serverSel.inbound ? `${serverSel.supplierName ?? "Supplier"} · inbound` : "Session"),
+                              subtitle:
+                                serverSel.buyerName && serverSel.supplierName
+                                  ? `${serverSel.buyerName} → ${serverSel.supplierName}`
+                                  : undefined,
+                              sessionId: serverSel.sessionId,
+                              operation: serverSel.operation,
+                            },
+                            exportRecords,
+                          )
+                        }
+                      >
+                        Export PDF
+                      </button>
+                      <ConfirmButton onConfirm={() => deleteSession(selectedSessionId!)} label="Delete session" confirmLabel="Confirm delete?" />
+                    </div>
                   </div>
                   {(() => {
                     const resumable = !serverSel.inbound

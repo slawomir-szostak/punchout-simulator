@@ -169,6 +169,7 @@ a { color: var(--link); }
 
 .main { padding: 1.2rem 1.6rem; overflow-y: auto; }
 .main-head { display: flex; align-items: center; justify-content: space-between; }
+.main-head .head-actions { display: flex; gap: .5rem; align-items: center; }
 .main h2 { margin: 0 0 .2rem; font-size: 1.2rem; }
 .tabs { display: flex; gap: .3rem; }
 .tab {
@@ -191,7 +192,30 @@ a { color: var(--link); }
 .result { margin-top: .8rem; border-top: 1px solid var(--border); padding-top: .7rem; }
 .result-line { margin-bottom: .3rem; font-size: .9rem; }
 
-.editor-shell { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.editor-shell { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; position: relative; }
+.editor-toolbar {
+  position: absolute;
+  top: 6px;
+  right: 14px;
+  z-index: 5;
+  display: flex;
+  gap: 6px;
+  opacity: 0.55;
+  transition: opacity 0.12s ease-in-out;
+}
+.editor-shell:hover .editor-toolbar,
+.editor-shell:focus-within .editor-toolbar { opacity: 1; }
+.editor-tool {
+  font-size: 0.72rem;
+  line-height: 1;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+.editor-tool:hover { border-color: var(--accent); }
 
 .editor-form { max-width: 720px; display: flex; flex-direction: column; gap: .9rem; margin-top: 1rem; }
 .form-row { display: flex; flex-direction: column; gap: .3rem; }

@@ -11,7 +11,6 @@ export function MessageDetail({ record, onClose }: { record: LogRecord; onClose:
   const [view, setView] = useState<View>("cxml");
   const [raw, setRaw] = useState<string | null>(null);
   const [rawError, setRawError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
   const modalRef = useRef<HTMLDivElement>(null);
 
   const isMultipart = /^multipart\//i.test(record.contentType ?? "");
@@ -21,7 +20,6 @@ export function MessageDetail({ record, onClose }: { record: LogRecord; onClose:
     setView("cxml");
     setRaw(null);
     setRawError(null);
-    setCopied(false);
   }, [record.id]);
 
   // Accessibility: move focus into the dialog on open, restore it on close,
@@ -66,15 +64,6 @@ export function MessageDetail({ record, onClose }: { record: LogRecord; onClose:
       .then(setRaw)
       .catch((e) => setRawError(e instanceof Error ? e.message : String(e)));
   }, [view, raw, rawError, record.sessionId, record.id]);
-
-  const activeText = view === "raw" ? raw ?? "" : record.body;
-  const copy = () => {
-    if (!navigator.clipboard) return;
-    navigator.clipboard.writeText(activeText).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
-  };
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -127,9 +116,6 @@ export function MessageDetail({ record, onClose }: { record: LogRecord; onClose:
               { value: "raw", label: `Raw${isMultipart ? " (multipart)" : ""}` },
             ]}
           />
-          <button className="btn-secondary" onClick={copy} disabled={view === "raw" && raw === null}>
-            {copied ? "Copied ✓" : "Copy"}
-          </button>
         </div>
 
         {view === "cxml" ? (
