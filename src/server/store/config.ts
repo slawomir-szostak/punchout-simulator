@@ -469,6 +469,19 @@ function migrateProfiles(data: Schema): void {
     p.shipToInSetup ??= preset?.shipToInSetup ?? false;
     p.contactInSetup ??= preset?.contactInSetup ?? false;
   }
+
+  // The built-in Jaggaer profile originally shipped with a placeholder name
+  // ("JAGGAER"), UserAgent ("JAGGAER Procurement") and DTD 1.2.021. Real tenants
+  // send UserAgent "JAGGAER" (and a legacy "SciQuest" variant, now its own
+  // preset) on DTD 1.2.011. Refresh the seeded row to the observed values, but
+  // ONLY while it is still the untouched original (don't clobber a user edit).
+  // The "jaggaer-sciquest" row is added by seedBuiltinProfiles.
+  const jaggaer = (data.profiles as any[]).find((p) => p.id === "jaggaer" && p.builtin);
+  if (jaggaer && jaggaer.name === "JAGGAER" && jaggaer.userAgent === "JAGGAER Procurement") {
+    jaggaer.name = "Jaggaer";
+    jaggaer.userAgent = "JAGGAER";
+    if (jaggaer.dtdVersions?.default === "1.2.021") jaggaer.dtdVersions.default = "1.2.011";
+  }
 }
 
 /**

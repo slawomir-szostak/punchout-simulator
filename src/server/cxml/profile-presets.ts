@@ -61,13 +61,34 @@ export const PROFILE_PRESETS: ProfilePreset[] = [
     shipToInSetup: false,
     contactInSetup: false,
   },
+  // Jaggaer (formerly SciQuest) is observed sending TWO different UserAgent
+  // strings in the wild — the modern "JAGGAER" and the legacy "SciQuest" — so we
+  // ship both presets. They are identical except for name + userAgent, letting
+  // you faithfully reproduce whichever tenant you're testing against. DTD 1.2.011
+  // is confirmed on real OrderRequests for both; setup requests are assumed to
+  // use the same version (set as `default`, easily overridden per document type).
   {
     id: "jaggaer",
-    name: "JAGGAER",
+    name: "Jaggaer",
     platform: "Jaggaer",
     builtin: true,
-    dtdVersions: { default: "1.2.021" },
-    userAgent: "JAGGAER Procurement",
+    dtdVersions: { default: "1.2.011" },
+    userAgent: "JAGGAER",
+    setupOperation: "create",
+    attachmentEncoding: "binary",
+    cartReturnTransport: "cxml-urlencoded",
+    extrinsics: [],
+    addressMode: "full",
+    shipToInSetup: false,
+    contactInSetup: false,
+  },
+  {
+    id: "jaggaer-sciquest",
+    name: "Jaggaer (SciQuest)",
+    platform: "Jaggaer",
+    builtin: true,
+    dtdVersions: { default: "1.2.011" },
+    userAgent: "SciQuest",
     setupOperation: "create",
     attachmentEncoding: "binary",
     cartReturnTransport: "cxml-urlencoded",

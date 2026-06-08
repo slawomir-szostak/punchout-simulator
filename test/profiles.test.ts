@@ -44,6 +44,20 @@ describe("built-in preset seeding", () => {
     expect(ids).toContain("coupa");
     expect(getProfile("coupa")?.dtdVersions.PunchOutOrderMessage).toBe("1.2.023");
   });
+
+  it("ships both Jaggaer UserAgent variants on observed DTD 1.2.011", () => {
+    // Real tenants emit either "JAGGAER" (modern) or "SciQuest" (legacy), both on
+    // DTD 1.2.011 — shipped as two presets so either can be reproduced exactly.
+    const jaggaer = getProfile("jaggaer");
+    expect(jaggaer?.name).toBe("Jaggaer");
+    expect(jaggaer?.userAgent).toBe("JAGGAER");
+    expect(jaggaer?.dtdVersions.default).toBe("1.2.011");
+
+    const sciquest = getProfile("jaggaer-sciquest");
+    expect(sciquest?.name).toBe("Jaggaer (SciQuest)");
+    expect(sciquest?.userAgent).toBe("SciQuest");
+    expect(sciquest?.dtdVersions.default).toBe("1.2.011");
+  });
 });
 
 describe("profile resolution", () => {
