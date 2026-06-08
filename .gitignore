@@ -8,3 +8,6 @@ data/
 coverage/
 *.tsbuildinfo
 .claude/settings.local.json
+
+# Private, non-public analysis & notes (kept out of the public repo).
+private_docs/
