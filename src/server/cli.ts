@@ -7,6 +7,7 @@ import { initConfig } from "./store/config.js";
 import { setDataDir } from "./store/paths.js";
 import { setRuntime, getPublicUrl } from "./runtime.js";
 import { seedDemoIfEmpty } from "./seed.js";
+import { setupProxy } from "./proxy.js";
 
 // CLI entry (spec section 9): boot Hono, serve the built SPA, open the browser.
 // Binds loopback by default; when exposed (non-loopback --public-url or --host),
@@ -115,6 +116,12 @@ Options:
 
 async function main() {
   const flags = parseFlags(process.argv.slice(2));
+
+  // Honour HTTP_PROXY/HTTPS_PROXY/NO_PROXY for outbound cXML (corporate networks,
+  // commonly Windows). Node's fetch ignores them by default; this wires them in.
+  // Must run before any outbound fetch. Loopback always bypasses the proxy.
+  setupProxy();
+
   const publicUrl = flags.publicUrl ?? `http://localhost:${flags.port}`;
   const bindHost = flags.host ?? "127.0.0.1";
 

@@ -187,6 +187,26 @@ them up there, then run them from **Sessions**.
 - **Mode B may need the tool publicly reachable.** A real buyer system sends
   SetupRequest/OrderRequest *inbound* to the tool. If that system is remote, run
   behind ngrok/cloudflared and pass `--public-url <https://...>`.
+- **Behind a corporate proxy?** Node's `fetch` ignores the system proxy by
+  default, so on a locked-down network an outbound SetupRequest/OrderRequest can
+  hang until it times out and shows **`HTTP 0` / "operation was aborted"** even
+  though the endpoint works in Postman. The tool honours the standard
+  `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` environment variables — set them and
+  it routes outbound cXML through the proxy (loopback/`localhost` always bypasses
+  it, so the built-in mock still works). Works on Windows and Linux:
+
+  ```bash
+  # Linux/macOS
+  HTTPS_PROXY=http://proxy.corp:8080 npx punchout-simulator
+  ```
+  ```powershell
+  # Windows PowerShell
+  $env:HTTPS_PROXY="http://proxy.corp:8080"; npx punchout-simulator
+  ```
+
+  > Note: a Windows *system* proxy (set in Windows/Edge settings, or via a PAC
+  > file) is not an environment variable — set `HTTPS_PROXY` explicitly to the
+  > proxy URL your IT uses.
 
 ---
 
