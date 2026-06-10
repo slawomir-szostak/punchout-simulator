@@ -9,6 +9,7 @@ import { setDataDir } from "./store/paths.js";
 import { setRuntime, getPublicUrl } from "./runtime.js";
 import { seedDemoIfEmpty } from "./seed.js";
 import { setupProxy } from "./proxy.js";
+import { detectSystemProxy, proxyBannerLines } from "./proxy-detect.js";
 
 // CLI entry (spec section 9): boot Hono, serve the built SPA, open the browser.
 // Binds loopback by default; when exposed (non-loopback --public-url or --host),
@@ -158,7 +159,11 @@ async function main() {
   // Honour HTTP_PROXY/HTTPS_PROXY/NO_PROXY for outbound cXML (corporate networks,
   // commonly Windows). Node's fetch ignores them by default; this wires them in.
   // Must run before any outbound fetch. Loopback always bypasses the proxy.
-  setupProxy();
+  // The status line is composed into the banner below (log silenced here);
+  // when no env vars are set, the OS-level config is checked too, so a system/
+  // PAC proxy the tool can't use is surfaced instead of silently ignored.
+  const proxySettings = setupProxy(process.env, () => {});
+  const proxyLines = proxyBannerLines(proxySettings, proxySettings ? null : detectSystemProxy());
 
   const publicUrl = flags.publicUrl ?? `http://localhost:${flags.port}`;
   const bindHost = flags.host ?? "127.0.0.1";
@@ -186,6 +191,7 @@ async function main() {
     if (getPublicUrl() !== local) console.log(`  public URL: ${getPublicUrl()}`);
     console.log(`  data dir:   ${resolve(flags.dataDir)}`);
     console.log(`  callback:   ${getPublicUrl()}/punchout/return`);
+    for (const line of proxyLines) console.log(line);
 
     const openUrl = token ? `${getPublicUrl()}/?token=${token}` : local;
     if (token) {
