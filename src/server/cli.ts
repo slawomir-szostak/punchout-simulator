@@ -220,6 +220,11 @@ async function main() {
 }
 
 main().catch((e) => {
+  // Expected boot refusals (e.g. the config schema downgrade guard) carry a
+  // user-facing message — print just that; keep the stack for real bugs.
+  if (e instanceof Error && e.message.includes("config.json")) {
+    fail(e.message);
+  }
   console.error(e);
   process.exit(1);
 });
