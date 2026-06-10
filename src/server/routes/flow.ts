@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { nanoid } from "nanoid";
+import { readJsonBody } from "./json-body.js";
 import {
   dtdVersionFor,
   effectiveProfile,
@@ -129,7 +130,7 @@ flowRoute.post("/:id/setup/preview", async (c) => {
   const r = resolveVirtualBuyer(c.req.param("id"));
   if ("error" in r) return c.json({ error: r.error }, 400);
   const { ctx } = r;
-  const body = await c.req.json().catch(() => ({}));
+  const body = await readJsonBody(c);
   const buyerCookie = body.buyerCookie || `pos-${nanoid(16)}`;
   const xml = buildSetupRequest({
     from: ctx.from,
@@ -158,7 +159,7 @@ flowRoute.post("/:id/setup", async (c) => {
   if ("error" in r) return c.json({ error: r.error }, 400);
   const { ctx } = r;
 
-  const body = await c.req.json().catch(() => ({}));
+  const body = await readJsonBody(c);
   const buyerCookie: string = body.buyerCookie || `pos-${nanoid(16)}`;
   const xml: string =
     body.xml ||
@@ -232,7 +233,7 @@ flowRoute.post("/:id/validate", async (c) => {
   const r = resolveVirtualBuyer(c.req.param("id"));
   if ("error" in r) return c.json({ error: r.error }, 400);
   const { ctx } = r;
-  const body = await c.req.json().catch(() => ({}));
+  const body = await readJsonBody(c);
   const xml = String(body.xml ?? "");
   const docType = (body.docType as DocType) ?? "Unknown";
   return c.json(
@@ -312,7 +313,7 @@ function buildOrderXml(ctx: BuyerContext, body: OrderBody): { xml: string; order
 flowRoute.post("/:id/order/preview", async (c) => {
   const r = resolveVirtualBuyer(c.req.param("id"));
   if ("error" in r) return c.json({ error: r.error }, 400);
-  const body = (await c.req.json().catch(() => ({}))) as OrderBody;
+  const body = (await readJsonBody(c)) as OrderBody;
   const { xml, orderId } = buildOrderXml(r.ctx, body);
   return c.json({ xml, orderId });
 });
@@ -322,7 +323,7 @@ flowRoute.post("/:id/order", async (c) => {
   if ("error" in r) return c.json({ error: r.error }, 400);
   const { ctx } = r;
 
-  const body = (await c.req.json().catch(() => ({}))) as OrderBody;
+  const body = (await readJsonBody(c)) as OrderBody;
   const sessionId = body.sessionId || `pos-${nanoid(16)}`;
   const dangling = !!body.danglingCid;
   const inputAtts = body.attachments ?? [];

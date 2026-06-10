@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import { serve } from "@hono/node-server";
 import { nanoid } from "nanoid";
 import { createApp } from "./app.js";
@@ -41,20 +42,20 @@ function parseFlags(argv: string[]): Flags {
     switch (a) {
       case "--port":
       case "-p":
-        flags.port = Number(next());
+        flags.port = parsePort(next());
         break;
       case "--data-dir":
       case "-d":
-        flags.dataDir = next();
+        flags.dataDir = requireValue(a, next());
         break;
       case "--public-url":
-        flags.publicUrl = next();
+        flags.publicUrl = requireValue(a, next());
         break;
       case "--host":
-        flags.host = next();
+        flags.host = requireValue(a, next());
         break;
       case "--token":
-        flags.token = next();
+        flags.token = requireValue(a, next());
         break;
       case "--no-open":
         flags.open = false;
@@ -66,13 +67,40 @@ function parseFlags(argv: string[]): Flags {
       case "--no-seed":
         flags.seed = false;
         break;
+      case "--version":
+      case "-v":
+        console.log(readVersion() ?? "unknown");
+        process.exit(0);
+        break;
       case "--help":
       case "-h":
         printHelp();
         process.exit(0);
+        break;
+      default:
+        fail(`unknown option "${a}" — run with --help to see available options`);
     }
   }
   return flags;
+}
+
+/** Print a usage error to stderr and exit non-zero. */
+function fail(msg: string): never {
+  console.error(`punchout-simulator: ${msg}`);
+  process.exit(1);
+}
+
+function requireValue(flag: string, value: string | undefined): string {
+  if (value === undefined) fail(`${flag} expects a value`);
+  return value;
+}
+
+function parsePort(value: string | undefined): number {
+  const n = Number(requireValue("--port", value));
+  if (!Number.isInteger(n) || n < 1 || n > 65535) {
+    fail(`--port expects an integer 1–65535, got "${value}"`);
+  }
+  return n;
 }
 
 const LOOPBACK = new Set(["localhost", "127.0.0.1", "::1", "[::1]", ""]);
@@ -110,12 +138,22 @@ Options:
       --no-open          Do not open a browser on start
       --no-seed          Do not seed the built-in demo connections on first run
       --dev              Dev mode (do not serve SPA, do not open browser)
+  -v, --version          Print the version and exit
   -h, --help             Show this help
+
+Environment:
+  PORT, DATA_DIR, HOST   Defaults for --port / --data-dir / --host
+  POS_TOKEN              Sets the /api token (same as --token)
+  HTTP_PROXY, HTTPS_PROXY, NO_PROXY
+                         Outbound proxy for cXML (corporate networks)
 `);
 }
 
 async function main() {
   const flags = parseFlags(process.argv.slice(2));
+  if (!Number.isInteger(flags.port) || flags.port < 1 || flags.port > 65535) {
+    fail(`PORT must be an integer 1–65535, got "${process.env.PORT}"`);
+  }
 
   // Honour HTTP_PROXY/HTTPS_PROXY/NO_PROXY for outbound cXML (corporate networks,
   // commonly Windows). Node's fetch ignores them by default; this wires them in.
@@ -142,11 +180,11 @@ async function main() {
 
   const app = createApp({ webRoot, quiet: false });
 
-  serve({ fetch: app.fetch, port: flags.port, hostname: bindHost }, (info) => {
+  const server = serve({ fetch: app.fetch, port: flags.port, hostname: bindHost }, (info) => {
     const local = `http://${bindHost}:${info.port}`;
-    console.log(`\n  punchout-simulator listening on ${local}`);
+    console.log(`\n  punchout-simulator v${readVersion() ?? "?"} listening on ${local}`);
     if (getPublicUrl() !== local) console.log(`  public URL: ${getPublicUrl()}`);
-    console.log(`  data dir:   ${flags.dataDir}`);
+    console.log(`  data dir:   ${resolve(flags.dataDir)}`);
     console.log(`  callback:   ${getPublicUrl()}/punchout/return`);
 
     const openUrl = token ? `${getPublicUrl()}/?token=${token}` : local;
@@ -164,6 +202,20 @@ async function main() {
           /* opening a browser is best-effort */
         });
     }
+  });
+
+  // The listen error (e.g. port already taken) is emitted asynchronously and
+  // can't be caught by main().catch, so handle it on the server directly and
+  // exit with a one-line explanation instead of an uncaught stack trace.
+  server.on("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EADDRINUSE") {
+      fail(`port ${flags.port} is already in use (another punchout-simulator?). Pick another with --port <n>.`);
+    }
+    if (err.code === "EACCES") {
+      fail(`port ${flags.port} requires elevated privileges. Pick a port ≥1024 with --port <n>.`);
+    }
+    console.error(err);
+    process.exit(1);
   });
 }
 

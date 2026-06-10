@@ -68,9 +68,32 @@ export async function sendCxml(
       headers: {},
       body: "",
       rawBody: Buffer.alloc(0),
-      error: e instanceof Error ? e.message : String(e),
+      error: describeFetchError(e, timeoutMs),
     };
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * Turn a thrown fetch error into something diagnosable. Node's `fetch` wraps the
+ * real reason (ECONNREFUSED, ENOTFOUND, TLS failures) in `e.cause`, so the bare
+ * message is usually just "fetch failed"; we surface the cause, and translate an
+ * abort into the timeout-with-proxy-hint that the most common field failure (a
+ * corporate proxy swallowing the connection) actually needs.
+ */
+function describeFetchError(e: unknown, timeoutMs: number): string {
+  if (!(e instanceof Error)) return String(e);
+  if (e.name === "AbortError") {
+    const secs = Math.round(timeoutMs / 1000);
+    return `timed out after ${secs}s — endpoint unreachable. If you're behind a corporate proxy, set HTTPS_PROXY (see README).`;
+  }
+  const cause = (e as { cause?: unknown }).cause;
+  const detail =
+    cause instanceof Error
+      ? cause.message
+      : typeof cause === "string"
+        ? cause
+        : (cause as { code?: string } | undefined)?.code;
+  return detail ? `${e.message} (${detail})` : e.message;
 }

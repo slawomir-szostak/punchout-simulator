@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { readJsonBody } from "./json-body.js";
 import {
   createProfile,
   deleteProfile,
@@ -81,7 +82,7 @@ function normalizeProfile(body: any): ProfileInput {
 
 profilesRoute.get("/", (c) => c.json(listProfiles()));
 profilesRoute.post("/", async (c) => {
-  const input = normalizeProfile(await c.req.json().catch(() => ({})));
+  const input = normalizeProfile(await readJsonBody(c));
   if (!input.name.trim()) return c.json({ errors: ["name is required"] }, 400);
   return c.json(await createProfile(input), 201);
 });
@@ -91,7 +92,7 @@ profilesRoute.get("/:id", (c) => {
 });
 profilesRoute.put("/:id", async (c) => {
   if (!getProfile(c.req.param("id"))) return c.json({ error: "not found" }, 404);
-  const input = normalizeProfile(await c.req.json().catch(() => ({})));
+  const input = normalizeProfile(await readJsonBody(c));
   return c.json(await updateProfile(c.req.param("id"), input));
 });
 profilesRoute.delete("/:id", async (c) => {

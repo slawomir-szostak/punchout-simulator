@@ -60,6 +60,32 @@ describe("multipart round-trip", () => {
     expect(Array.from(parsed.byContentId.get("bin")!.body)).toEqual(Array.from(bytes));
   });
 
+  it("preserves a binary part that ends in newline bytes (no over-trim)", () => {
+    // Regression: a part whose content legitimately ends in CR/LF must keep
+    // those bytes — only the single CRLF framing the boundary is stripped.
+    const bytes = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x0a, 0x0a]); // "%PDF\n\n"
+    const built = buildMultipartRelated("<cXML/>", [
+      { contentId: "bin", contentType: "application/octet-stream", data: bytes },
+    ]);
+    const parsed = parseMultipartRelated(built.body, built.contentType);
+    expect(Array.from(parsed.byContentId.get("bin")!.body)).toEqual(Array.from(bytes));
+  });
+
+  it("does not split on boundary bytes that appear mid-line in part content", () => {
+    // The boundary string occurring inside a part body (not at a line start)
+    // must not be treated as a delimiter.
+    const ct = 'multipart/related; boundary="BND"; type="application/xml"; start="<root>"';
+    const body = Buffer.concat([
+      Buffer.from("--BND\r\nContent-Type: application/xml\r\nContent-ID: <root>\r\n\r\n<cXML/>\r\n"),
+      Buffer.from("--BND\r\nContent-Type: application/octet-stream\r\nContent-ID: <bin>\r\n\r\n"),
+      Buffer.from("data--BNDmore"),
+      Buffer.from("\r\n--BND--\r\n"),
+    ]);
+    const parsed = parseMultipartRelated(body, ct);
+    expect(parsed.root?.body.toString("utf8")).toBe("<cXML/>");
+    expect(parsed.byContentId.get("bin")?.body.toString("utf8")).toBe("data--BNDmore");
+  });
+
   it("base64-encodes attachment parts and decodes them back on parse", () => {
     // Binary that would corrupt as raw text but survives base64 cleanly.
     const bytes = Buffer.from([0, 255, 13, 10, 0, 200, 100, 1, 2]);

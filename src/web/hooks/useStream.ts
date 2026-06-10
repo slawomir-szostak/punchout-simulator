@@ -5,6 +5,9 @@ import type { Cart, LogRecord } from "../types";
 interface Handlers {
   onLog?: (record: LogRecord) => void;
   onCart?: (connectionId: string, cart: Cart) => void;
+  /** Fires on every (re)connect. Any records appended while the stream was down
+   *  are not replayed, so this is the cue to resync from the on-disk log. */
+  onReady?: () => void;
 }
 
 // Subscribe to the server's SSE live log. Reconnects automatically via the
@@ -31,6 +34,7 @@ export function useStream(handlers: Handlers) {
         /* ignore */
       }
     });
+    es.addEventListener("ready", () => ref.current.onReady?.());
     return () => es.close();
   }, []);
 }

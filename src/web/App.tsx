@@ -76,6 +76,8 @@ export function App() {
 
   const [carts, setCarts] = useState<Record<string, Cart>>({});
   const [records, setRecords] = useState<LogRecord[]>([]);
+  // Bumped on every SSE (re)connect; drives a resync from the on-disk log.
+  const [streamEpoch, setStreamEpoch] = useState(0);
   const [detail, setDetail] = useState<LogRecord | null>(null);
   const [publicUrl, setPublicUrl] = useState<string>("");
   const [callbackUrl, setCallbackUrl] = useState<string>("");
@@ -131,7 +133,27 @@ export function App() {
       reloadSessions(); // new sessions / status changes surface in the list live
     },
     onCart: (_conn, cart) => setCarts((c) => ({ ...c, [cart.sessionId]: cart })),
+    onReady: () => setStreamEpoch((e) => e + 1),
   });
+
+  // Resync on SSE (re)connect. The stream has no replay, so any records appended
+  // while it was down (laptop sleep, server restart, proxy idle-timeout) are
+  // missing; the on-disk log is the replay buffer. Re-pull the recent window,
+  // drop the per-session backfill guard so the selected session re-loads in full,
+  // and clear carts so a missed cart event is re-fetched. Skipped on first
+  // connect (the boot effect already loaded everything).
+  const firstReady = useRef(true);
+  useEffect(() => {
+    if (streamEpoch === 0) return;
+    if (firstReady.current) {
+      firstReady.current = false;
+      return;
+    }
+    setLoadedSessions(new Set());
+    setCarts({});
+    api.recent(200).then(setRecords).catch(() => {});
+    reloadSessions();
+  }, [streamEpoch, reloadSessions]);
 
   // --- derived session selection ---
   const activeFlow = selectedSessionId ? flows[selectedSessionId] ?? null : null;

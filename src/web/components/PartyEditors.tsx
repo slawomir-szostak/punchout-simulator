@@ -47,28 +47,51 @@ export interface SaveProps {
 }
 
 /** Two-step delete button: first click arms it, second click confirms.
- *  Auto-disarms after 3s. Avoids accidental destructive clicks. */
+ *  Auto-disarms after 3s. Avoids accidental destructive clicks. A rejected
+ *  onConfirm (e.g. the server refusing to delete a referenced entity with 409)
+ *  is reported via onError so the editor can surface it instead of failing
+ *  silently in the console. */
 export function ConfirmButton({
   onConfirm,
+  onError,
   label = "Delete",
   confirmLabel = "Confirm delete?",
 }: {
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
+  onError?: (msg: string) => void;
   label?: string;
   confirmLabel?: string;
 }) {
   const [armed, setArmed] = useState(false);
+  const [busy, setBusy] = useState(false);
   useEffect(() => {
     if (!armed) return;
     const t = setTimeout(() => setArmed(false), 3000);
     return () => clearTimeout(t);
   }, [armed]);
+  const click = async () => {
+    if (!armed) {
+      setArmed(true);
+      return;
+    }
+    setBusy(true);
+    onError?.("");
+    try {
+      await onConfirm();
+    } catch (e) {
+      setArmed(false);
+      onError?.(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <button
       type="button"
       className="btn-danger"
+      disabled={busy}
       aria-label={armed ? confirmLabel : label}
-      onClick={() => (armed ? onConfirm() : setArmed(true))}
+      onClick={click}
     >
       {armed ? confirmLabel : label}
     </button>
@@ -82,13 +105,15 @@ export function Actions({
   noun,
   onSave,
   onDelete,
+  onError,
 }: {
   saving: boolean;
   err: string | null;
   isNew: boolean;
   noun: string;
   onSave: () => void;
-  onDelete?: () => void;
+  onDelete?: () => void | Promise<void>;
+  onError?: (msg: string) => void;
 }) {
   return (
     <>
@@ -97,7 +122,7 @@ export function Actions({
         <button className="btn-primary" onClick={onSave} disabled={saving}>
           {saving ? "Saving…" : isNew ? `Create ${noun}` : "Save changes"}
         </button>
-        {!isNew && onDelete && <ConfirmButton onConfirm={onDelete} />}
+        {!isNew && onDelete && <ConfirmButton onConfirm={onDelete} onError={onError} />}
       </div>
     </>
   );
@@ -178,7 +203,7 @@ export function BuyerEditor({
         <ContactFields value={(draft.contact ?? { role: "endUser" }) as Contact} onChange={(contact: Contact) => setDraft({ ...draft, contact })} />
       </fieldset>
 
-      <Actions saving={saving} err={err} isNew={!buyer} noun="buyer" onSave={save} onDelete={buyer && onDelete ? () => onDelete(buyer.id) : undefined} />
+      <Actions saving={saving} err={err} isNew={!buyer} noun="buyer" onSave={save} onError={setErr} onDelete={buyer && onDelete ? () => onDelete(buyer.id) : undefined} />
     </div>
   );
 }
@@ -274,7 +299,7 @@ export function SupplierEditor({
         )}
       </fieldset>
 
-      <Actions saving={saving} err={err} isNew={!supplier} noun="supplier" onSave={save} onDelete={supplier && onDelete ? () => onDelete(supplier.id) : undefined} />
+      <Actions saving={saving} err={err} isNew={!supplier} noun="supplier" onSave={save} onError={setErr} onDelete={supplier && onDelete ? () => onDelete(supplier.id) : undefined} />
     </div>
   );
 }

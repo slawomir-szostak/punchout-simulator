@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { readJsonBody } from "./json-body.js";
 import {
   createBuyer,
   createSupplier,
@@ -69,7 +70,7 @@ function normalizeBuyer(body: any): BuyerInput {
 
 buyersRoute.get("/", (c) => c.json(listBuyers()));
 buyersRoute.post("/", async (c) => {
-  const input = normalizeBuyer(await c.req.json().catch(() => ({})));
+  const input = normalizeBuyer(await readJsonBody(c));
   if (!input.name.trim()) return c.json({ errors: ["name is required"] }, 400);
   return c.json(await createBuyer(input), 201);
 });
@@ -79,7 +80,7 @@ buyersRoute.get("/:id", (c) => {
 });
 buyersRoute.put("/:id", async (c) => {
   if (!getBuyer(c.req.param("id"))) return c.json({ error: "not found" }, 404);
-  const input = normalizeBuyer(await c.req.json().catch(() => ({})));
+  const input = normalizeBuyer(await readJsonBody(c));
   return c.json(await updateBuyer(c.req.param("id"), input));
 });
 buyersRoute.delete("/:id", async (c) => {
@@ -113,7 +114,7 @@ function normalizeSupplier(body: any): SupplierInput {
 
 suppliersRoute.get("/", (c) => c.json(listSuppliers()));
 suppliersRoute.post("/", async (c) => {
-  const input = normalizeSupplier(await c.req.json().catch(() => ({})));
+  const input = normalizeSupplier(await readJsonBody(c));
   if (!input.name.trim()) return c.json({ errors: ["name is required"] }, 400);
   return c.json(await createSupplier(input), 201);
 });
@@ -123,7 +124,7 @@ suppliersRoute.get("/:id", (c) => {
 });
 suppliersRoute.put("/:id", async (c) => {
   if (!getSupplier(c.req.param("id"))) return c.json({ error: "not found" }, 404);
-  const input = normalizeSupplier(await c.req.json().catch(() => ({})));
+  const input = normalizeSupplier(await readJsonBody(c));
   return c.json(await updateSupplier(c.req.param("id"), input));
 });
 suppliersRoute.delete("/:id", async (c) => {

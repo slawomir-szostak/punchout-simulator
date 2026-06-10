@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { readJsonBody } from "./json-body.js";
 import {
   createConnection,
   deleteConnection,
@@ -66,7 +67,7 @@ connectionsRoute.get("/", (c) =>
 );
 
 connectionsRoute.post("/", async (c) => {
-  const input = normalize(await c.req.json().catch(() => ({})));
+  const input = normalize(await readJsonBody(c));
   const errors = validate(input);
   if (errors.length) return c.json({ errors }, 400);
   return c.json(maskSecret(await createConnection(withLabel(input))), 201);
@@ -82,7 +83,7 @@ connectionsRoute.get("/:id", (c) => {
 connectionsRoute.put("/:id", async (c) => {
   const existing = getConnection(c.req.param("id"));
   if (!existing) return c.json({ error: "not found" }, 404);
-  const body = await c.req.json().catch(() => ({}));
+  const body = await readJsonBody(c);
   // A blank sharedSecret on update means "unchanged" (it is never sent back to
   // the client to begin with), so keep the stored one rather than clearing it.
   if (!body || !body.sharedSecret) delete (body as any).sharedSecret;

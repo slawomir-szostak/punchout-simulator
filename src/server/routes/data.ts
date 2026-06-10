@@ -108,8 +108,14 @@ dataRoute.get("/cart/:sessionId", (c) => {
 });
 
 dataRoute.get("/attachments/:hash", (c) => {
-  const data = readAttachment(c.req.param("hash"));
+  const hash = c.req.param("hash");
+  const data = readAttachment(hash);
   if (!data) return c.json({ error: "not found" }, 404);
+  // These bytes are attacker-supplied (inbound /sim multipart) and served
+  // same-origin. Stop the browser sniffing them into HTML and force a download
+  // rather than inline rendering.
   c.header("Content-Type", "application/octet-stream");
+  c.header("X-Content-Type-Options", "nosniff");
+  c.header("Content-Disposition", `attachment; filename="attachment-${hash.replace(/[^a-f0-9]/gi, "").slice(0, 16)}.bin"`);
   return c.body(data as any);
 });

@@ -73,6 +73,12 @@ export function ProfileEditor({ profile, onSave, onDelete }: { profile: Profile 
   const loadPreset = (id: string) => {
     const preset = presets.find((p) => p.id === id);
     if (!preset) return;
+    // Loading a preset overwrites the form fields. When editing an existing
+    // profile (rather than creating a new one), confirm so hand-tuned values
+    // aren't silently replaced.
+    if (profile && !window.confirm(`Replace this profile's fields with the "${preset.name}" preset?`)) {
+      return;
+    }
     // Fill the form from the preset, but keep this row's own id/builtin flag so
     // we edit/create the current profile rather than the read-only library item.
     const { id: _id, builtin: _b, createdAt: _c, updatedAt: _u, ...fields } = preset;
@@ -197,10 +203,10 @@ export function ProfileEditor({ profile, onSave, onDelete }: { profile: Profile 
       </fieldset>
 
       {profile?.builtin && (
-        <p className="hint">This is a built-in preset. Saving edits it in place; deleting removes it (it can be re-seeded on next start).</p>
+        <p className="hint">This is a built-in preset. Saving edits it in place; deleting removes it, but it will be re-created on the next start.</p>
       )}
 
-      <Actions saving={saving} err={err} isNew={!profile} noun="profile" onSave={save} onDelete={profile && onDelete ? () => onDelete(profile.id) : undefined} />
+      <Actions saving={saving} err={err} isNew={!profile} noun="profile" onSave={save} onError={setErr} onDelete={profile && onDelete ? () => onDelete(profile.id) : undefined} />
     </div>
   );
 }

@@ -30,12 +30,34 @@ export function CxmlEditor({ value, onChange, readOnly, height = 320, language =
   const shown = override ?? value;
 
   const [copied, setCopied] = useState(false);
+  const flashCopied = () => {
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
   const copy = () => {
-    if (!navigator.clipboard) return;
-    navigator.clipboard.writeText(shown).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
+    // navigator.clipboard is undefined on insecure origins (e.g. LAN access over
+    // plain http://192.168.x.x). Fall back to the legacy execCommand path so the
+    // Copy button still works there instead of silently doing nothing.
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(shown).then(flashCopied).catch(legacyCopy);
+    } else {
+      legacyCopy();
+    }
+  };
+  const legacyCopy = () => {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = shown;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      flashCopied();
+    } catch {
+      /* clipboard genuinely unavailable; nothing more we can do */
+    }
   };
 
   const prettify = () => {

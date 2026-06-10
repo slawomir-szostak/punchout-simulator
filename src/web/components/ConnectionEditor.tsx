@@ -165,7 +165,7 @@ export function ConnectionEditor({ connection, buyers, suppliers, onSave, onDele
         <button className="btn-primary" onClick={save} disabled={saving || noParties}>
           {saving ? "Saving…" : connection ? "Save changes" : "Create connection"}
         </button>
-        {connection && onDelete && <ConfirmButton onConfirm={() => onDelete(connection.id)} />}
+        {connection && onDelete && <ConfirmButton onConfirm={() => onDelete(connection.id)} onError={setErr} />}
       </div>
     </div>
   );

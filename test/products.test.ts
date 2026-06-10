@@ -83,6 +83,22 @@ describe("products route", () => {
     expect(presets.map((p: any) => p.id)).toContain("sample");
   });
 
+  it("rejects a malformed JSON body with 400 instead of coercing to {}", async () => {
+    const res = await app.request("/api/product-lists", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{ not valid json",
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/not valid json/i);
+  });
+
+  it("still accepts an empty body as defaults", async () => {
+    const res = await app.request("/api/product-lists", { method: "POST" });
+    // empty body -> {} -> name defaults, so creation succeeds (201)
+    expect(res.status).toBe(201);
+  });
+
   it("blocks deleting a list referenced by a supplier (409)", async () => {
     const list = await createProductList({ name: "Referenced", items: [item()] });
     await createSupplier({ name: "Ref Supplier", identity: { domain: "DUNS", identity: "9" }, productListIds: [list.id] });

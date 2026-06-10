@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { readJsonBody } from "./json-body.js";
 import {
   createProductList,
   deleteProductList,
@@ -54,7 +55,7 @@ function normalizeProductList(body: any): ProductListInput {
 
 productsRoute.get("/", (c) => c.json(listProductLists()));
 productsRoute.post("/", async (c) => {
-  const input = normalizeProductList(await c.req.json().catch(() => ({})));
+  const input = normalizeProductList(await readJsonBody(c));
   if (!input.name.trim()) return c.json({ errors: ["name is required"] }, 400);
   return c.json(await createProductList(input), 201);
 });
@@ -64,7 +65,7 @@ productsRoute.get("/:id", (c) => {
 });
 productsRoute.put("/:id", async (c) => {
   if (!getProductList(c.req.param("id"))) return c.json({ error: "not found" }, 404);
-  const input = normalizeProductList(await c.req.json().catch(() => ({})));
+  const input = normalizeProductList(await readJsonBody(c));
   return c.json(await updateProductList(c.req.param("id"), input));
 });
 productsRoute.delete("/:id", async (c) => {

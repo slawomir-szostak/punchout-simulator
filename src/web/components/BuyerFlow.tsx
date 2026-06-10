@@ -11,6 +11,18 @@ import { useTheme } from "../hooks/useTheme";
 const withTheme = (url: string, theme: string) =>
   url + (url.includes("?") ? "&" : "?") + "theme=" + theme;
 
+// The StartPage comes verbatim from the remote supplier's response. Only treat
+// it as a clickable link when it is an http(s) URL, so a malicious/buggy
+// supplier can't slip a javascript:/data: href into the buyer-side UI.
+const isHttpUrl = (url: string): boolean => {
+  try {
+    const p = new URL(url).protocol;
+    return p === "http:" || p === "https:";
+  } catch {
+    return false;
+  }
+};
+
 interface Props {
   connection: Connection;
   session: FlowSession;
@@ -183,9 +195,13 @@ export function BuyerFlow({ connection, session, cart, operation, sourceItems, o
             {session.setupResult.startPage && (
               <div className="result-line">
                 StartPage:{" "}
-                <a href={withTheme(session.setupResult.startPage, theme)} target="_blank" rel="noreferrer">
-                  open catalog in new tab ↗
-                </a>
+                {isHttpUrl(session.setupResult.startPage) ? (
+                  <a href={withTheme(session.setupResult.startPage, theme)} target="_blank" rel="noreferrer">
+                    open catalog in new tab ↗
+                  </a>
+                ) : (
+                  <code title="not an http(s) URL — not linked">{session.setupResult.startPage}</code>
+                )}
               </div>
             )}
             <ValidationPanel validation={session.setupResult.request.validation} />

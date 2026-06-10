@@ -180,14 +180,21 @@ export function parseMultipartRelated(
 
 // --- buffer helpers -----------------------------------------------------------
 
+// Split on the boundary delimiter, but only where it sits at the start of a line
+// (offset 0, or immediately after a LF). RFC 2046 requires the delimiter to be
+// preceded by CRLF, so anchoring this way stops binary part content that merely
+// *contains* the boundary bytes mid-line from being mistaken for a delimiter.
 function splitBuffer(buf: Buffer, delimiter: Buffer): Buffer[] {
   const out: Buffer[] = [];
   let start = 0;
   let idx = buf.indexOf(delimiter, start);
   while (idx !== -1) {
-    out.push(buf.subarray(start, idx));
-    start = idx + delimiter.length;
-    idx = buf.indexOf(delimiter, start);
+    const atLineStart = idx === 0 || buf[idx - 1] === 0x0a;
+    if (atLineStart) {
+      out.push(buf.subarray(start, idx));
+      start = idx + delimiter.length;
+    }
+    idx = buf.indexOf(delimiter, idx + delimiter.length);
   }
   out.push(buf.subarray(start));
   return out;
@@ -199,10 +206,15 @@ function trimLeadingCrlf(buf: Buffer): Buffer {
   return buf.subarray(i);
 }
 
+// Remove ONLY the single CRLF that frames the boundary (RFC 2046: the delimiter
+// is `CRLF--boundary`). Stripping every trailing CR/LF — as a naive trim would —
+// silently truncates binary parts whose content legitimately ends in newline
+// bytes, corrupting the stored file, its sha256 and the logged size.
 function stripBoundaryTrailingCrlf(buf: Buffer): Buffer {
-  let end = buf.length;
-  while (end > 0 && (buf[end - 1] === 0x0d || buf[end - 1] === 0x0a)) end--;
-  return buf.subarray(0, end);
+  const n = buf.length;
+  if (n >= 2 && buf[n - 2] === 0x0d && buf[n - 1] === 0x0a) return buf.subarray(0, n - 2);
+  if (n >= 1 && (buf[n - 1] === 0x0a || buf[n - 1] === 0x0d)) return buf.subarray(0, n - 1);
+  return buf;
 }
 
 /** Index of the start of the body (just after the blank line). */

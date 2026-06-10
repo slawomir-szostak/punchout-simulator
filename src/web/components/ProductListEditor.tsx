@@ -94,6 +94,13 @@ export function ProductListEditor({ list, onSave, onDelete }: { list: ProductLis
   const loadPreset = (id: string) => {
     const preset = presets.find((p) => p.id === id);
     if (!preset) return;
+    // Loading a preset replaces the current items (unlike CSV import, which
+    // appends). Confirm first if the user has already entered rows, so a stray
+    // click doesn't discard their work.
+    const current = draft.items ?? [];
+    if (current.length > 0 && !window.confirm(`Replace the current ${current.length} item(s) with the "${preset.name}" preset?`)) {
+      return;
+    }
     // Fill from the preset but keep editing/creating the current row, not the
     // read-only library item. Append a tag so a duplicate name is obvious.
     setDraft({
@@ -183,7 +190,12 @@ export function ProductListEditor({ list, onSave, onDelete }: { list: ProductLis
             </div>
             <div className="product-card-grid">
               <Field label="Unit price">
-                <input type="number" step="0.01" value={it.unitPrice} onChange={(e) => setItem(i, { unitPrice: Number(e.target.value) })} />
+                <input
+                  type="number"
+                  step="0.01"
+                  value={Number.isFinite(it.unitPrice) ? it.unitPrice : ""}
+                  onChange={(e) => setItem(i, { unitPrice: e.target.value === "" ? Number.NaN : Number(e.target.value) })}
+                />
               </Field>
               <Field label="Currency">
                 <input value={it.currency} onChange={(e) => setItem(i, { currency: e.target.value })} />
@@ -219,10 +231,10 @@ export function ProductListEditor({ list, onSave, onDelete }: { list: ProductLis
       </fieldset>
 
       {list?.builtin && (
-        <p className="hint">This is a built-in sample list. Saving edits it in place; deleting removes it (it can be re-seeded on next start).</p>
+        <p className="hint">This is a built-in sample list. Saving edits it in place; deleting removes it, but it will be re-created on the next start.</p>
       )}
 
-      <Actions saving={saving} err={err} isNew={!list} noun="product list" onSave={save} onDelete={list && onDelete ? () => onDelete(list.id) : undefined} />
+      <Actions saving={saving} err={err} isNew={!list} noun="product list" onSave={save} onError={setErr} onDelete={list && onDelete ? () => onDelete(list.id) : undefined} />
     </div>
   );
 }

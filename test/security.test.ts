@@ -51,3 +51,36 @@ describe("API token gate (exposed deployment)", () => {
     expect(res.status).toBe(401);
   });
 });
+
+describe("Host-header gate (DNS-rebinding defense)", () => {
+  it("rejects /api when the Host is neither loopback nor the public URL", async () => {
+    const res = await app.request("/api/connections", {
+      headers: { host: "evil.example.net", authorization: `Bearer ${TOKEN}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("allows the configured public-URL host", async () => {
+    const res = await app.request("/api/connections", {
+      headers: { host: "exposed.example.com", authorization: `Bearer ${TOKEN}` },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("allows a loopback Host", async () => {
+    const res = await app.request("/api/connections", {
+      headers: { host: "127.0.0.1:8080", authorization: `Bearer ${TOKEN}` },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("leaves the health probe open regardless of Host", async () => {
+    const res = await app.request("/api/health", { headers: { host: "evil.example.net" } });
+    expect(res.status).toBe(200);
+  });
+
+  it("does not gate the inbound buyer surface (/sim) on Host", async () => {
+    const res = await app.request("/sim/nope/catalog", { headers: { host: "evil.example.net" } });
+    expect(res.status).toBe(404);
+  });
+});
