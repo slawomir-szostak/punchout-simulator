@@ -6,6 +6,7 @@ import {
   parseScutil,
   parseWindowsRegistry,
   proxyBannerLines,
+  proxyStatus,
   suggestEnvValue,
 } from "../src/server/proxy-detect.js";
 import { detectProxy } from "../src/server/proxy.js";
@@ -158,6 +159,29 @@ describe("suggestEnvValue", () => {
   });
   it("keeps an explicit scheme", () => {
     expect(suggestEnvValue("socks5://p:1080")).toBe("socks5://p:1080");
+  });
+});
+
+describe("proxyStatus (served over /api/runtime)", () => {
+  it("env mode carries the redacted via + NO_PROXY", () => {
+    const s = proxyStatus(detectProxy({ HTTPS_PROXY: "http://u:pw@proxy.corp:8080" }), null);
+    expect(s.mode).toBe("env");
+    expect(s.via).toContain("proxy.corp:8080");
+    expect(s.via).not.toContain("pw");
+    expect(s.noProxy).toContain("localhost");
+  });
+  it("nothing anywhere → mode none", () => {
+    expect(proxyStatus(null, null)).toEqual({ mode: "none" });
+  });
+  it("system-ignored carries source, redacted server, and a ready suggestion", () => {
+    const s = proxyStatus(null, { source: "Windows registry (Internet Settings)", server: "https=h2:443;http=h1:80" });
+    expect(s.mode).toBe("system-ignored");
+    expect(s.suggestion).toBe("http://h2:443");
+  });
+  it("PAC-only system proxy has no suggestion", () => {
+    const s = proxyStatus(null, { source: "GNOME settings", pacUrl: "http://pac/x.pac" });
+    expect(s.pacUrl).toBe("http://pac/x.pac");
+    expect(s.suggestion).toBeUndefined();
   });
 });
 

@@ -164,6 +164,42 @@ export function suggestEnvValue(server: string): string {
 }
 
 /**
+ * The proxy situation as a data object — served over /api/runtime so the UI can
+ * show it too (the banner scrolls away or is invisible when the tool runs in
+ * the background/as a service). All URLs are redacted before they leave here.
+ */
+export interface ProxyStatus {
+  /** "env" = a proxy is in effect; "none" = direct; "system-ignored" = the OS
+   *  has a proxy configured that outbound cXML will NOT use. */
+  mode: "env" | "none" | "system-ignored";
+  /** Redacted proxy URL in effect (mode "env"). */
+  via?: string;
+  noProxy?: string;
+  /** Where the ignored system proxy was found (mode "system-ignored"). */
+  source?: string;
+  server?: string;
+  pacUrl?: string;
+  autoDetect?: boolean;
+  /** Ready-to-paste HTTPS_PROXY value (mode "system-ignored" with a manual proxy). */
+  suggestion?: string;
+}
+
+export function proxyStatus(env: ProxySettings | null, system: SystemProxyInfo | null): ProxyStatus {
+  if (env?.enabled) {
+    return { mode: "env", via: redactProxyUrl(env.httpsProxy ?? env.httpProxy ?? ""), noProxy: env.noProxy };
+  }
+  if (!system) return { mode: "none" };
+  return {
+    mode: "system-ignored",
+    source: system.source,
+    server: system.server ? redactProxyUrl(system.server) : undefined,
+    pacUrl: system.pacUrl,
+    autoDetect: system.autoDetect,
+    suggestion: system.server ? suggestEnvValue(system.server) : undefined,
+  };
+}
+
+/**
  * The `proxy:` banner lines: what is in effect, what was merely detected, and —
  * when they disagree — how to fix it. `env` is setupProxy()'s result (null when
  * no proxy env vars were present).

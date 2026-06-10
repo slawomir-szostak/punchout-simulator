@@ -3,7 +3,7 @@ import { forgetSession, getCart } from "../cart-store.js";
 import { readAttachment } from "../store/attachments.js";
 import { deleteSession, listSessions, readAllRecent, readSession } from "../store/log.js";
 import { getBuyer, getConnection, getSupplier } from "../store/config.js";
-import { getPublicUrl, getVersion } from "../runtime.js";
+import { getProxyStatus, getPublicUrl, getVersion } from "../runtime.js";
 import {
   buildMultipartRelated,
   getBoundary,
@@ -12,7 +12,7 @@ import {
   type MultipartAttachment,
 } from "../cxml/multipart.js";
 import type { LogRecord } from "../cxml/types.js";
-import type { SessionSummary } from "./dto.js";
+import type { RuntimeInfo, SessionSummary } from "./dto.js";
 
 // Read-only endpoints backing the SPA: sessions, log records, the active cart,
 // attachment downloads, and runtime info.
@@ -48,9 +48,15 @@ function rawMessage(record: LogRecord): string {
 
 dataRoute.get("/health", (c) => c.json({ ok: true }));
 
-dataRoute.get("/runtime", (c) =>
-  c.json({ publicUrl: getPublicUrl(), callbackUrl: `${getPublicUrl()}/punchout/return`, version: getVersion() }),
-);
+dataRoute.get("/runtime", (c) => {
+  const info: RuntimeInfo = {
+    publicUrl: getPublicUrl(),
+    callbackUrl: `${getPublicUrl()}/punchout/return`,
+    version: getVersion(),
+    proxy: getProxyStatus(),
+  };
+  return c.json(info);
+});
 
 // Enrich each session summary with the resolved parties + mode so the session
 // list is human-readable. A summary's connectionId is a real Connection id for

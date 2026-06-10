@@ -15,6 +15,7 @@ import {
   type LogRecord,
   type ProductList,
   type Profile,
+  type ProxyStatus,
   type SessionSummary,
   type Supplier,
 } from "./types";
@@ -82,6 +83,7 @@ export function App() {
   const [publicUrl, setPublicUrl] = useState<string>("");
   const [callbackUrl, setCallbackUrl] = useState<string>("");
   const [version, setVersion] = useState<string>("");
+  const [proxy, setProxy] = useState<ProxyStatus | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
 
   const selectedConn = useMemo(
@@ -114,6 +116,7 @@ export function App() {
         setPublicUrl(r.publicUrl);
         setCallbackUrl(r.callbackUrl);
         setVersion(r.version ?? "");
+        setProxy(r.proxy ?? null);
       }),
     ])
       .then(() => setBootError(null))
@@ -387,6 +390,7 @@ export function App() {
           {version && <span className="brand-version">v{version}</span>}
         </div>
         <div className="topbar-right">
+          {proxy && <ProxyBadge proxy={proxy} />}
           <span className="topbar-meta">callback: <code>{callbackUrl || "…"}</code></span>
           <ThemeToggle />
         </div>
@@ -667,6 +671,51 @@ function SessionsEmpty({ hasBuyerConn, onNew, onConfigure }: { hasBuyerConn: boo
         </>
       )}
     </div>
+  );
+}
+
+// Outbound-proxy status in the header (mirrors the CLI banner — visible even
+// when the tool runs in the background and nobody sees the terminal).
+function ProxyBadge({ proxy }: { proxy: ProxyStatus }) {
+  if (proxy.mode === "env") {
+    return (
+      <span
+        className="topbar-meta"
+        title={`Outbound cXML goes through this proxy (NO_PROXY=${proxy.noProxy ?? ""}).`}
+      >
+        proxy: <code>{proxy.via}</code>
+      </span>
+    );
+  }
+  if (proxy.mode === "none") {
+    return (
+      <span
+        className="topbar-meta"
+        title="No HTTP(S)_PROXY env vars and no system proxy detected — outbound cXML connects directly."
+      >
+        proxy: none
+      </span>
+    );
+  }
+  // mode === "system-ignored": the OS has a proxy this tool will NOT use.
+  const found = [
+    proxy.server && `a manual proxy (${proxy.server})`,
+    proxy.pacUrl && `a PAC script (${proxy.pacUrl})`,
+    proxy.autoDetect && "auto-detect (WPAD)",
+  ]
+    .filter(Boolean)
+    .join(", ");
+  const fix = proxy.suggestion
+    ? `restart the tool with HTTPS_PROXY=${proxy.suggestion}`
+    : "find the proxy host in the PAC/WPAD config (or ask IT) and restart with HTTPS_PROXY=http://<host>:<port>";
+  return (
+    <span
+      className="badge badge-warn"
+      tabIndex={0}
+      title={`${proxy.source} has ${found} configured, but outbound cXML only honours the HTTP(S)_PROXY env vars — the proxy is NOT being used. If suppliers are unreachable, ${fix}.`}
+    >
+      ⚠ system proxy ignored
+    </span>
   );
 }
 

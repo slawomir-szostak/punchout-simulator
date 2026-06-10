@@ -1,9 +1,20 @@
 import type { Buyer, Connection, LogRecord, Supplier } from "../cxml/types.js";
+import type { ProxyStatus } from "../proxy-detect.js";
 import type { SessionSummary as LogSessionSummary } from "../store/log.js";
+
+export type { ProxyStatus } from "../proxy-detect.js";
 
 // Response DTOs shared between the route handlers and the SPA (re-exported
 // type-only from src/web/types.ts). Routes annotate their c.json() payloads
 // with these so a server-side rename breaks the build instead of the UI.
+
+/** GET /api/runtime — boot-time facts the SPA shows in its header. */
+export interface RuntimeInfo {
+  publicUrl: string;
+  callbackUrl: string;
+  version?: string;
+  proxy?: ProxyStatus;
+}
 
 /** A connection as returned by the list/detail API — enriched with its parties. */
 export interface ConnectionWithParties extends Connection {

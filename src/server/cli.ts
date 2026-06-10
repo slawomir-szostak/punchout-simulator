@@ -9,7 +9,7 @@ import { setDataDir } from "./store/paths.js";
 import { setRuntime, getPublicUrl } from "./runtime.js";
 import { seedDemoIfEmpty } from "./seed.js";
 import { setupProxy } from "./proxy.js";
-import { detectSystemProxy, proxyBannerLines } from "./proxy-detect.js";
+import { detectSystemProxy, proxyBannerLines, proxyStatus } from "./proxy-detect.js";
 
 // CLI entry (spec section 9): boot Hono, serve the built SPA, open the browser.
 // Binds loopback by default; when exposed (non-loopback --public-url or --host),
@@ -163,7 +163,8 @@ async function main() {
   // when no env vars are set, the OS-level config is checked too, so a system/
   // PAC proxy the tool can't use is surfaced instead of silently ignored.
   const proxySettings = setupProxy(process.env, () => {});
-  const proxyLines = proxyBannerLines(proxySettings, proxySettings ? null : detectSystemProxy());
+  const systemProxy = proxySettings ? null : detectSystemProxy();
+  const proxyLines = proxyBannerLines(proxySettings, systemProxy);
 
   const publicUrl = flags.publicUrl ?? `http://localhost:${flags.port}`;
   const bindHost = flags.host ?? "127.0.0.1";
@@ -175,7 +176,7 @@ async function main() {
   const token = flags.token || (exposed ? nanoid(24) : undefined);
 
   setDataDir(flags.dataDir);
-  setRuntime({ port: flags.port, publicUrl, token, version: readVersion() });
+  setRuntime({ port: flags.port, publicUrl, token, version: readVersion(), proxy: proxyStatus(proxySettings, systemProxy) });
   await initConfig();
   if (flags.seed) await seedDemoIfEmpty();
 

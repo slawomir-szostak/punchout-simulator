@@ -4,6 +4,8 @@
 // with --public-url when fronting the tool with ngrok/cloudflared (spec
 // sections 4 and 12).
 
+import type { ProxyStatus } from "./proxy-detect.js";
+
 interface Runtime {
   port: number;
   publicUrl: string;
@@ -11,6 +13,8 @@ interface Runtime {
   token?: string;
   /** The package version of the running process (set by the CLI at boot). */
   version?: string;
+  /** Outbound-proxy situation detected at boot (shown in the UI header). */
+  proxy?: ProxyStatus;
 }
 
 const runtime: Runtime = {
@@ -34,6 +38,11 @@ export function getToken(): string | undefined {
 /** The running package version, if the CLI provided it. */
 export function getVersion(): string | undefined {
   return runtime.version;
+}
+
+/** The boot-time proxy detection result, if the CLI provided it. */
+export function getProxyStatus(): ProxyStatus | undefined {
+  return runtime.proxy;
 }
 
 export function getPublicUrl(): string {
