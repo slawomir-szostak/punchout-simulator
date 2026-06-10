@@ -12,6 +12,7 @@ import {
   type MultipartAttachment,
 } from "../cxml/multipart.js";
 import type { LogRecord } from "../cxml/types.js";
+import type { SessionSummary } from "./dto.js";
 
 // Read-only endpoints backing the SPA: sessions, log records, the active cart,
 // attachment downloads, and runtime info.
@@ -55,7 +56,7 @@ dataRoute.get("/runtime", (c) =>
 // list is human-readable. A summary's connectionId is a real Connection id for
 // Mode-A-initiated sessions, or a Supplier id for inbound Mode-B traffic.
 dataRoute.get("/sessions", (c) => {
-  const enriched = listSessions().map((s) => {
+  const enriched: SessionSummary[] = listSessions().map((s) => {
     const conn = s.connectionId ? getConnection(s.connectionId) : undefined;
     if (conn) {
       return {

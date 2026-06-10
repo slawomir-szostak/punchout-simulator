@@ -87,8 +87,12 @@ moment the tool is **exposed** — a non-loopback `--public-url` (ngrok/cloudfla
 or `--host 0.0.0.0` — it **requires a token** on `/api/*`: one is auto-generated
 (or pass `--token`/`POS_TOKEN`) and printed as a `…/?token=…` URL to open the UI
 with. The **inbound buyer surface stays open** (`/sim/*`, `/punchout/return`) so a
-real buyer system can still reach Mode B. Shared secrets are **write-only** over
-the API (masked on read) and **redacted from all logs**.
+real buyer system can still reach Mode B. When exposed, that open surface gets a
+built-in rate limit (per-client and global, per minute) on top of the request
+body-size cap — enough to stop a dumb flood, but for anything internet-facing
+and long-lived you should still front the tool with a rate-limiting reverse
+proxy (or your tunnel provider's protection). Shared secrets are **write-only**
+over the API (masked on read) and **redacted from all logs**.
 
 ---
 

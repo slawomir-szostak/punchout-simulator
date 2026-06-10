@@ -25,6 +25,7 @@ import { buildMultipartRelated, type MultipartAttachment } from "../cxml/multipa
 import { getStartPage, getStatus, parseXml } from "../cxml/parse.js";
 import { validateDocument, type ExpectedCredentials } from "../cxml/validate.js";
 import type { Address, AddressMode, AttachmentEncoding, AttachmentRef, CartItem, Contact, Credential, DocType, ResolvedConnection, SetupOperation } from "../cxml/types.js";
+import type { OrderResult, SetupResult } from "./dto.js";
 
 const coerceOperation = (v: unknown): SetupOperation | undefined =>
   v === "create" || v === "edit" || v === "inspect" ? v : undefined;
@@ -215,7 +216,7 @@ flowRoute.post("/:id/setup", async (c) => {
   const startPage = res.error ? undefined : getStartPage(parseXml(res.body));
   const status = res.error ? undefined : getStatus(parseXml(res.body));
 
-  return c.json({
+  const result: SetupResult = {
     buyerCookie,
     transportError: res.error,
     httpStatus: res.status,
@@ -223,7 +224,8 @@ flowRoute.post("/:id/setup", async (c) => {
     statusCode: status?.code,
     request: reqLog,
     response: respLog,
-  });
+  };
+  return c.json(result);
 });
 
 // --- On-demand validation (validate-before-send) ------------------------------
@@ -402,12 +404,13 @@ flowRoute.post("/:id/order", async (c) => {
   });
 
   const status = res.error ? undefined : getStatus(parseXml(res.body));
-  return c.json({
+  const result: OrderResult = {
     transportError: res.error,
     httpStatus: res.status,
     statusCode: status?.code,
     statusText: status?.text,
     request: reqLog,
     response: respLog,
-  });
+  };
+  return c.json(result);
 });

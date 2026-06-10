@@ -7,6 +7,7 @@ import { bodyLimit } from "hono/body-limit";
 import { getCookie } from "hono/cookie";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { getToken, getPublicUrl } from "./runtime.js";
+import { inboundRateLimit } from "./rate-limit.js";
 import { connectionsRoute } from "./routes/connections.js";
 import { buyersRoute, suppliersRoute } from "./routes/parties.js";
 import { profilePresetsRoute, profilesRoute } from "./routes/profiles.js";
@@ -84,6 +85,12 @@ export function createApp(opts: AppOptions = {}): Hono {
   app.route("/api/connections", flowRoute); // /:id/setup, /:id/order
   app.route("/api", dataRoute);
   app.route("/api", streamRoute);
+  // The inbound buyer surface is intentionally unauthenticated; when exposed,
+  // bound the abuse it can absorb (body size is capped above; this caps volume).
+  // One shared instance so the global bucket spans both prefixes.
+  const inboundLimit = inboundRateLimit();
+  app.use("/punchout/*", inboundLimit);
+  app.use("/sim/*", inboundLimit);
   app.route("/punchout", punchoutReturnRoute); // Mode A callback
   app.route("/sim", simRoute); // Mode B mock supplier
 
@@ -97,27 +104,24 @@ export function createApp(opts: AppOptions = {}): Hono {
     return c.json({ error: "internal server error" }, 500);
   });
 
-  // Serve the built SPA from the same server. serveStatic needs a path relative
-  // to cwd, so we expose it via the `root` option when a build is present.
+  // Serve the built SPA from the same server. @hono/node-server's serveStatic
+  // resolves files via path.join(root, reqPath), so an absolute root is fine —
+  // and unlike a cwd-relative one it survives Windows installs where the npm
+  // prefix and the cwd sit on different drives (path.relative would go absolute
+  // and 404 the UI).
   if (opts.webRoot && existsSync(opts.webRoot)) {
     app.use(
       "/*",
       serveStatic({
-        root: relativeToCwd(opts.webRoot),
+        root: opts.webRoot,
         // SPA fallback: unknown non-API routes return index.html.
         rewriteRequestPath: (path) => path,
       }),
     );
-    app.get("/*", serveStatic({ root: relativeToCwd(opts.webRoot), path: "index.html" }));
+    app.get("/*", serveStatic({ root: opts.webRoot, path: "index.html" }));
   }
 
   return app;
-}
-
-import { relative } from "node:path";
-function relativeToCwd(abs: string): string {
-  const rel = relative(process.cwd(), abs);
-  return rel === "" ? "." : rel;
 }
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Address, Buyer, Contact, Credential, ProductList, Profile, Supplier } from "../types";
 import { AddressFields, ContactFields } from "./AddressFields";
+import { Field } from "./Field";
 
 // Editors for the standalone Buyer and Supplier entities. Each holds only the
 // attributes intrinsic to that party (see the normalized model).
@@ -22,11 +23,13 @@ function CredentialFields({
       <div className="cred-pair">
         <input
           placeholder="domain (e.g. DUNS, NetworkID)"
+          aria-label={`${label} — domain`}
           value={value.domain}
           onChange={(e) => onChange({ ...value, domain: e.target.value })}
         />
         <input
           placeholder="identity"
+          aria-label={`${label} — identity`}
           value={value.identity}
           onChange={(e) => onChange({ ...value, identity: e.target.value })}
         />
@@ -158,20 +161,22 @@ export function BuyerEditor({
   return (
     <div className="editor-form">
       <p className="hint">A buyer holds only its own cXML identity (the <code>From</code> credential it presents). Reuse it across many supplier connections.</p>
-      <div className="form-row">
-        <label>Name</label>
+      <Field label="Name">
         <input value={draft.name ?? ""} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Acme Procurement" />
-      </div>
+      </Field>
       <CredentialFields
         label="Identity (From)"
         value={draft.identity ?? blankCred()}
         onChange={(identity) => setDraft({ ...draft, identity })}
       />
-      <div className="form-row">
-        <label>
-          Buyer profile{" "}
-          <span className="hint">(how this buyer's cXML is emitted — version, UserAgent, transport…)</span>
-        </label>
+      <Field
+        label={
+          <>
+            Buyer profile{" "}
+            <span className="hint">(how this buyer's cXML is emitted — version, UserAgent, transport…)</span>
+          </>
+        }
+      >
         <select
           value={draft.profileId ?? ""}
           onChange={(e) => setDraft({ ...draft, profileId: e.target.value || undefined })}
@@ -183,7 +188,7 @@ export function BuyerEditor({
             </option>
           ))}
         </select>
-      </div>
+      </Field>
 
       <p className="hint">
         These addresses pre-fill and are sent in the <strong>OrderRequest</strong>. They appear in the{" "}
@@ -245,23 +250,20 @@ export function SupplierEditor({
       <p className="hint">
         A supplier holds its cXML identity (<code>To</code>) and its <strong>endpoints</strong>, which are constant for the supplier — set them once here, not per connection.
       </p>
-      <div className="form-row">
-        <label>Name</label>
+      <Field label="Name">
         <input value={draft.name ?? ""} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Office Supplies Inc." />
-      </div>
+      </Field>
       <CredentialFields
         label="Identity (To)"
         value={draft.identity ?? blankCred()}
         onChange={(identity) => setDraft({ ...draft, identity })}
       />
-      <div className="form-row">
-        <label>PunchOut URL <span className="hint">(setup endpoint)</span></label>
+      <Field label={<>PunchOut URL <span className="hint">(setup endpoint)</span></>}>
         <input value={draft.punchoutUrl ?? ""} onChange={(e) => setDraft({ ...draft, punchoutUrl: e.target.value })} placeholder="https://supplier.example.com/punchout" />
-      </div>
-      <div className="form-row">
-        <label>Order URL <span className="hint">(order endpoint)</span></label>
+      </Field>
+      <Field label={<>Order URL <span className="hint">(order endpoint)</span></>}>
         <input value={draft.orderUrl ?? ""} onChange={(e) => setDraft({ ...draft, orderUrl: e.target.value })} placeholder="https://supplier.example.com/order" />
-      </div>
+      </Field>
       <div className="form-row">
         <label className="check-row">
           <input

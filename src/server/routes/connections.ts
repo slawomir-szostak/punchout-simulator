@@ -12,6 +12,7 @@ import {
   type ConnectionInput,
 } from "../store/config.js";
 import type { Credential } from "../cxml/types.js";
+import type { ConnectionWithParties } from "./dto.js";
 
 // CRUD for connection edges. A connection references a Buyer and a Supplier and
 // holds only pair-specific data (mode + credentials). See spec sections 7, 10.
@@ -58,11 +59,13 @@ function maskSecret<T extends { sharedSecret?: string }>(conn: T): T & { hasShar
 // Returns connections enriched with resolved buyer/supplier for convenient display.
 connectionsRoute.get("/", (c) =>
   c.json(
-    listConnections().map((conn) => ({
-      ...maskSecret(conn),
-      buyer: getBuyer(conn.buyerId),
-      supplier: getSupplier(conn.supplierId),
-    })),
+    listConnections().map(
+      (conn): ConnectionWithParties => ({
+        ...maskSecret(conn),
+        buyer: getBuyer(conn.buyerId),
+        supplier: getSupplier(conn.supplierId),
+      }),
+    ),
   ),
 );
 
@@ -75,7 +78,10 @@ connectionsRoute.post("/", async (c) => {
 
 connectionsRoute.get("/:id", (c) => {
   const resolved = resolveConnection(c.req.param("id"));
-  if (resolved) return c.json({ ...maskSecret(resolved.connection), buyer: resolved.buyer, supplier: resolved.supplier });
+  if (resolved) {
+    const dto: ConnectionWithParties = { ...maskSecret(resolved.connection), buyer: resolved.buyer, supplier: resolved.supplier };
+    return c.json(dto);
+  }
   const conn = getConnection(c.req.param("id"));
   return conn ? c.json(maskSecret(conn)) : c.json({ error: "not found" }, 404);
 });

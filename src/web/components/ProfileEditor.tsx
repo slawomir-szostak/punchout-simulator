@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { DtdVersionMap, Profile, ProfileExtrinsic } from "../types";
 import { api } from "../api";
+import { Field } from "./Field";
 import { Actions, useDraft, type SaveProps } from "./PartyEditors";
 
 // Editor for a reusable procurement-platform Profile. A profile holds the
@@ -92,88 +93,78 @@ export function ProfileEditor({ profile, onSave, onDelete }: { profile: Profile 
         Attachment encoding set on a Connection overrides the profile per pair.
       </p>
 
-      <div className="form-row">
-        <label>Load built-in preset <span className="hint">(fills the fields below — then customize)</span></label>
+      <Field label={<>Load built-in preset <span className="hint">(fills the fields below — then customize)</span></>}>
         <select value="" onChange={(e) => e.target.value && loadPreset(e.target.value)}>
           <option value="">— choose a preset —</option>
           {presets.map((p) => (
             <option key={p.id} value={p.id}>{p.name}</option>
           ))}
         </select>
-      </div>
+      </Field>
 
       <div className="form-grid">
-        <div className="form-row">
-          <label>Name</label>
+        <Field label="Name">
           <input value={draft.name ?? ""} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="My Coupa tenant" />
-        </div>
-        <div className="form-row">
-          <label>Platform <span className="hint">(label)</span></label>
+        </Field>
+        <Field label={<>Platform <span className="hint">(label)</span></>}>
           <input value={draft.platform ?? ""} onChange={(e) => setDraft({ ...draft, platform: e.target.value })} placeholder="Coupa" />
-        </div>
+        </Field>
       </div>
 
       <fieldset>
         <legend>cXML DTD versions <span className="hint">(per document type; blank = use default)</span></legend>
-        <div className="form-row">
-          <label>Default</label>
+        <Field label="Default">
           <input value={versions.default} onChange={(e) => setVersion("default", e.target.value)} placeholder="1.2.045" />
-        </div>
+        </Field>
         <div className="form-grid">
           {DOC_TYPES.map((dt) => (
-            <div className="form-row" key={dt}>
-              <label>{dt}</label>
+            <Field label={dt} key={dt}>
               <input
                 value={(versions as unknown as Record<string, string | undefined>)[dt] ?? ""}
                 onChange={(e) => setVersion(dt, e.target.value)}
                 placeholder={`(${versions.default})`}
               />
-            </div>
+            </Field>
           ))}
         </div>
       </fieldset>
 
-      <div className="form-row">
-        <label>UserAgent</label>
+      <Field label="UserAgent">
         <input value={draft.userAgent ?? ""} onChange={(e) => setDraft({ ...draft, userAgent: e.target.value })} placeholder="Coupa Procurement" />
-      </div>
+      </Field>
 
       <div className="form-grid">
-        <div className="form-row">
-          <label>Setup operation</label>
+        <Field label="Setup operation">
           <select value={draft.setupOperation ?? "create"} onChange={(e) => setDraft({ ...draft, setupOperation: e.target.value as any })}>
             <option value="create">create</option>
             <option value="edit">edit</option>
             <option value="inspect">inspect</option>
           </select>
-        </div>
-        <div className="form-row">
-          <label>Attachment encoding <span className="hint">(connection overrides)</span></label>
+        </Field>
+        <Field label={<>Attachment encoding <span className="hint">(connection overrides)</span></>}>
           <select value={draft.attachmentEncoding ?? "binary"} onChange={(e) => setDraft({ ...draft, attachmentEncoding: e.target.value as any })}>
             <option value="binary">binary</option>
             <option value="base64">base64</option>
           </select>
-        </div>
-        <div className="form-row">
-          <label>Cart-return transport</label>
+        </Field>
+        <Field label="Cart-return transport">
           <select value={draft.cartReturnTransport ?? "cxml-urlencoded"} onChange={(e) => setDraft({ ...draft, cartReturnTransport: e.target.value as any })}>
             <option value="cxml-urlencoded">cxml-urlencoded</option>
             <option value="cxml-base64">cxml-base64</option>
             <option value="raw">raw (text/xml body)</option>
           </select>
-        </div>
+        </Field>
       </div>
 
       <fieldset>
         <legend>Addresses <span className="hint">(how ShipTo/BillTo/Contact are emitted)</span></legend>
-        <div className="form-row">
-          <label>Address mode</label>
+        <Field label="Address mode">
           <select value={draft.addressMode ?? "full"} onChange={(e) => setDraft({ ...draft, addressMode: e.target.value as any })}>
             <option value="full">full — emit the PostalAddress</option>
             <option value="id-only">id-only — emit just addressID (reference)</option>
             <option value="both">both — addressID + PostalAddress</option>
           </select>
-        </div>
+        </Field>
         <label className="check-row">
           <input type="checkbox" checked={!!draft.shipToInSetup} onChange={(e) => setDraft({ ...draft, shipToInSetup: e.target.checked })} />
           Send ShipTo in the PunchOutSetupRequest
@@ -190,9 +181,9 @@ export function ProfileEditor({ profile, onSave, onDelete }: { profile: Profile 
         {extrinsics.length === 0 && <p className="hint">No extrinsics.</p>}
         {extrinsics.map((e, i) => (
           <div className="catalog-row" key={i}>
-            <input placeholder="name" value={e.name} onChange={(ev) => setExtrinsic(i, { name: ev.target.value })} />
-            <input placeholder="value" value={e.value} onChange={(ev) => setExtrinsic(i, { value: ev.target.value })} />
-            <select value={e.scope} onChange={(ev) => setExtrinsic(i, { scope: ev.target.value as any })}>
+            <input placeholder="name" aria-label={`Extrinsic ${i + 1} name`} value={e.name} onChange={(ev) => setExtrinsic(i, { name: ev.target.value })} />
+            <input placeholder="value" aria-label={`Extrinsic ${i + 1} value`} value={e.value} onChange={(ev) => setExtrinsic(i, { value: ev.target.value })} />
+            <select aria-label={`Extrinsic ${i + 1} scope`} value={e.scope} onChange={(ev) => setExtrinsic(i, { scope: ev.target.value as any })}>
               <option value="setup">setup</option>
               <option value="order">order</option>
             </select>

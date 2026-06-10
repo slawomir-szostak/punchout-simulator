@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
+import { useModalFocus } from "../hooks/useModalFocus";
+import { Field } from "./Field";
 import type { CartItem, ConnectionWithParties, SessionSummary } from "../types";
 
 export interface NewSessionChoice {
@@ -37,12 +39,9 @@ export function NewSessionDialog({
   const sources = sessions;
   const anySelectable = sources.some(hasCart);
 
-  useEffect(() => { ref.current?.focus(); }, []);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onCancel(); };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onCancel]);
+  // Focus-in on open, restore on close, Esc closes, Tab trapped (same handling
+  // as MessageDetail).
+  useModalFocus(ref, onCancel);
 
   // Load the chosen source session's cart so we can carry / pick its items.
   useEffect(() => {
@@ -73,40 +72,54 @@ export function NewSessionDialog({
         </div>
 
         <div className="editor-form">
-          <div className="form-row">
-            <label>Connection</label>
-            {buyerConns.length === 0 ? (
+          {buyerConns.length === 0 ? (
+            <div className="form-row">
+              <label>Connection</label>
               <p className="form-error">No virtual-buyer connections. Create one in Connections first.</p>
-            ) : (
+            </div>
+          ) : (
+            <Field label="Connection">
               <select value={connectionId} onChange={(e) => setConnectionId(e.target.value)}>
                 {buyerConns.map((c) => (
                   <option key={c.id} value={c.id}>{c.name} ({c.buyer?.name} → {c.supplier?.name})</option>
                 ))}
               </select>
-            )}
-          </div>
+            </Field>
+          )}
 
-          <div className="form-row">
-            <label>Operation</label>
+          <Field
+            label="Operation"
+            after={
+              <span className="hint">
+                {operation === "create" && "A new, empty punchout session."}
+                {operation === "edit" && "Reopens a previous session's cart (sent as ItemOut) for editing."}
+                {operation === "inspect" && "Sends a previously ordered item for a read-only view."}
+              </span>
+            }
+          >
             <select value={operation} onChange={(e) => setOperation(e.target.value as any)}>
               <option value="create">create — start a fresh cart</option>
               <option value="edit">edit — reopen a prior cart to modify</option>
               <option value="inspect">inspect — view a previously ordered item</option>
             </select>
-            <span className="hint">
-              {operation === "create" && "A new, empty punchout session."}
-              {operation === "edit" && "Reopens a previous session's cart (sent as ItemOut) for editing."}
-              {operation === "inspect" && "Sends a previously ordered item for a read-only view."}
-            </span>
-          </div>
+          </Field>
 
           {needsSource && (
             <>
-              <div className="form-row">
-                <label>Source session <span className="hint">(its returned cart supplies the items)</span></label>
-                {sources.length === 0 ? (
+              {sources.length === 0 ? (
+                <div className="form-row">
+                  <label>Source session <span className="hint">(its returned cart supplies the items)</span></label>
                   <p className="hint">No sessions yet — run a create session first.</p>
-                ) : (
+                </div>
+              ) : (
+                <Field
+                  label={<>Source session <span className="hint">(its returned cart supplies the items)</span></>}
+                  after={
+                    !anySelectable && (
+                      <span className="hint">No session has a returned cart yet — finish a create session (shop and return the cart) to use it as a source.</span>
+                    )
+                  }
+                >
                   <select value={sourceId} onChange={(e) => setSourceId(e.target.value)}>
                     <option value="">— choose a session —</option>
                     {sources.map((s) => (
@@ -116,21 +129,17 @@ export function NewSessionDialog({
                       </option>
                     ))}
                   </select>
-                )}
-                {sources.length > 0 && !anySelectable && (
-                  <span className="hint">No session has a returned cart yet — finish a create session (shop and return the cart) to use it as a source.</span>
-                )}
-              </div>
+                </Field>
+              )}
               {operation === "inspect" && sourceCart && sourceCart.length > 0 && (
-                <div className="form-row">
-                  <label>Item to inspect</label>
+                <Field label="Item to inspect">
                   <select value={itemIdx} onChange={(e) => setItemIdx(Number(e.target.value))}>
                     <option value={-1}>All items ({sourceCart.length})</option>
                     {sourceCart.map((it, i) => (
                       <option key={i} value={i}>{it.supplierPartId} — {it.description}</option>
                     ))}
                   </select>
-                </div>
+                </Field>
               )}
               {sourceId && sourceCart != null && sourceCart.length === 0 && (
                 <p className="hint">That session has no cart items to carry.</p>

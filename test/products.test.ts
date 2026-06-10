@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -14,7 +14,7 @@ import {
   listProductLists,
   listSuppliers,
 } from "../src/server/store/config.js";
-import { setDataDir } from "../src/server/store/paths.js";
+import { configPath, setDataDir } from "../src/server/store/paths.js";
 import type { CatalogItem, Supplier } from "../src/server/cxml/types.js";
 
 const item = (over: Partial<CatalogItem> = {}): CatalogItem => ({
@@ -168,11 +168,16 @@ describe("aux ID & multiple classifications (Mode B → punchback)", () => {
 describe("legacy inline-catalog migration", () => {
   it("converts a supplier's inline catalog into a generated list and clears the inline field", async () => {
     // Simulate a hand-edited config.json with a legacy inline catalog by writing
-    // through createSupplier (SupplierInput still accepts `catalog`), then re-init.
+    // through createSupplier (SupplierInput still accepts `catalog`), then strip
+    // the schemaVersion stamp — migrations are version-gated, and a real legacy
+    // file predates the stamp — and re-init.
     const legacy = await createSupplier({
       name: "Legacy Co", identity: { domain: "DUNS", identity: "77" },
       catalog: [item({ supplierPartId: "LEG-1" })],
     } as Supplier);
+    const raw = JSON.parse(readFileSync(configPath(), "utf8"));
+    delete raw.schemaVersion;
+    writeFileSync(configPath(), JSON.stringify(raw), "utf8");
 
     await initConfig(); // migration runs on init
 

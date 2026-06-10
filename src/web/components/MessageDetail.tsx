@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { LogRecord } from "../types";
 import { api, withToken } from "../api";
+import { useModalFocus } from "../hooks/useModalFocus";
 import { CxmlEditor } from "./CxmlEditor";
 import { TabList } from "./TabList";
 import { ValidationPanel } from "./Validation";
@@ -22,39 +23,8 @@ export function MessageDetail({ record, onClose }: { record: LogRecord; onClose:
     setRawError(null);
   }, [record.id]);
 
-  // Accessibility: move focus into the dialog on open, restore it on close,
-  // close on Esc, and trap Tab within the dialog.
-  useEffect(() => {
-    const previouslyFocused = document.activeElement as HTMLElement | null;
-    modalRef.current?.focus();
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-        return;
-      }
-      if (e.key !== "Tab" || !modalRef.current) return;
-      const focusable = modalRef.current.querySelectorAll<HTMLElement>(
-        'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])',
-      );
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      const activeEl = document.activeElement;
-      if (e.shiftKey && activeEl === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && activeEl === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      previouslyFocused?.focus?.();
-    };
-  }, [onClose]);
+  // Accessibility: focus-in on open, restore on close, Esc closes, Tab trapped.
+  useModalFocus(modalRef, onClose);
 
   // Lazily fetch the reconstructed raw wire message the first time it's shown.
   useEffect(() => {

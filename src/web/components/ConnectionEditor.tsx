@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Buyer, Connection, ConnectionMode, Supplier } from "../types";
+import { Field } from "./Field";
 import { ConfirmButton } from "./PartyEditors";
 
 interface Props {
@@ -60,44 +61,39 @@ export function ConnectionEditor({ connection, buyers, suppliers, onSave, onDele
         </div>
       )}
 
-      <div className="form-row">
-        <label>Name <span className="hint">(optional — defaults to "Buyer → Supplier")</span></label>
+      <Field label={<>Name <span className="hint">(optional — defaults to "Buyer → Supplier")</span></>}>
         <input value={form.name ?? ""} onChange={(e) => set({ name: e.target.value })} placeholder="(auto)" />
-      </div>
+      </Field>
 
       <div className="form-grid">
-        <div className="form-row">
-          <label>Buyer</label>
+        <Field label="Buyer">
           <select value={form.buyerId ?? ""} onChange={(e) => set({ buyerId: e.target.value })}>
             <option value="">— select buyer —</option>
             {buyers.map((b) => (
               <option key={b.id} value={b.id}>{b.name} ({b.identity.domain}/{b.identity.identity})</option>
             ))}
           </select>
-        </div>
-        <div className="form-row">
-          <label>Supplier</label>
+        </Field>
+        <Field label="Supplier">
           <select value={form.supplierId ?? ""} onChange={(e) => set({ supplierId: e.target.value })}>
             <option value="">— select supplier —</option>
             {suppliers.map((s) => (
               <option key={s.id} value={s.id}>{s.name} ({s.identity.domain}/{s.identity.identity})</option>
             ))}
           </select>
-        </div>
+        </Field>
       </div>
 
-      <div className="form-row">
-        <label>Mode</label>
+      <Field label="Mode">
         <select value={form.mode} onChange={(e) => set({ mode: e.target.value as ConnectionMode })}>
           <option value="virtual-buyer">Virtual Buyer (tool drives the supplier)</option>
           <option value="virtual-supplier">Virtual Supplier (tool serves the mock catalog)</option>
         </select>
-      </div>
+      </Field>
 
       <fieldset>
         <legend>Credentials for this pair</legend>
-        <div className="form-row">
-          <label>Shared Secret <span className="hint">(the "password" this buyer uses at this supplier)</span></label>
+        <Field label={<>Shared Secret <span className="hint">(the "password" this buyer uses at this supplier)</span></>}>
           <input
             type="password"
             autoComplete="off"
@@ -109,7 +105,7 @@ export function ConnectionEditor({ connection, buyers, suppliers, onSave, onDele
                 : "shared secret"
             }
           />
-        </div>
+        </Field>
 
         <label className="dangling-toggle">
           <input type="checkbox" checked={overrideSender} onChange={(e) => setOverrideSender(e.target.checked)} />
@@ -119,11 +115,13 @@ export function ConnectionEditor({ connection, buyers, suppliers, onSave, onDele
           <div className="cred-pair">
             <input
               placeholder="sender domain"
+              aria-label="Sender domain"
               value={form.senderIdentity?.domain ?? ""}
               onChange={(e) => set({ senderIdentity: { domain: e.target.value, identity: form.senderIdentity?.identity ?? "" } })}
             />
             <input
               placeholder="sender identity"
+              aria-label="Sender identity"
               value={form.senderIdentity?.identity ?? ""}
               onChange={(e) => set({ senderIdentity: { domain: form.senderIdentity?.domain ?? "", identity: e.target.value } })}
             />
@@ -137,20 +135,22 @@ export function ConnectionEditor({ connection, buyers, suppliers, onSave, onDele
       </fieldset>
 
       <div className="form-grid">
-        <div className="form-row">
-          <label>Deployment</label>
+        <Field label="Deployment">
           <select value={form.deploymentMode} onChange={(e) => set({ deploymentMode: e.target.value as any })}>
             <option value="test">test</option>
             <option value="production">production</option>
           </select>
-        </div>
+        </Field>
       </div>
 
-      <div className="form-row">
-        <label>
-          Attachment encoding{" "}
-          <span className="hint">(Content-Transfer-Encoding for OrderRequest attachment parts)</span>
-        </label>
+      <Field
+        label={
+          <>
+            Attachment encoding{" "}
+            <span className="hint">(Content-Transfer-Encoding for OrderRequest attachment parts)</span>
+          </>
+        }
+      >
         <select
           value={form.attachmentEncoding ?? "binary"}
           onChange={(e) => set({ attachmentEncoding: e.target.value as any })}
@@ -158,7 +158,7 @@ export function ConnectionEditor({ connection, buyers, suppliers, onSave, onDele
           <option value="binary">binary — raw bytes (compact; valid over HTTP)</option>
           <option value="base64">base64 — what most Ariba/Coupa receivers expect</option>
         </select>
-      </div>
+      </Field>
 
       {err && <div className="form-error">{err}</div>}
       <div className="form-actions">

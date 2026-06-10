@@ -28,6 +28,8 @@ import { configPath, ensureDirs } from "./paths.js";
 // and Supplier entities, and Connection edges that pair them.
 
 interface Schema {
+  /** Version of the persisted shape; bumped by each entry in MIGRATIONS. */
+  schemaVersion?: number;
   buyers: Buyer[];
   suppliers: Supplier[];
   connections: Connection[];
@@ -35,31 +37,66 @@ interface Schema {
   productLists: ProductList[];
 }
 
+/** The schema version this build reads and writes (== highest MIGRATIONS.to). */
+export const SCHEMA_VERSION = 4;
+
+// Ordered, versioned migrations. A stored file at version N gets every
+// migration with to > N applied, in order, then is stamped SCHEMA_VERSION.
+// Files from before versioning have no schemaVersion and run the full chain
+// (every step is also idempotent, matching the historical always-run behavior).
+// Add new migrations at the END with to = SCHEMA_VERSION + 1, then bump
+// SCHEMA_VERSION — and add a fixture to test/migrations.test.ts.
+const MIGRATIONS: Array<{ to: number; run: (data: Schema) => void }> = [
+  { to: 1, run: migrateLegacy }, // flat from/to connections → Buyer/Supplier/Connection rows
+  { to: 2, run: migrateInlineCatalogs }, // inline Supplier.catalog → standalone ProductList
+  { to: 3, run: migrateProfiles }, // address-emission backfill + Jaggaer preset refresh
+  { to: 4, run: migrateClassifications }, // item.unspsc → classifications[]
+];
+
+const emptySchema = (): Schema => ({ buyers: [], suppliers: [], connections: [], profiles: [], productLists: [] });
+
 let db: Low<Schema> | null = null;
 
 export async function initConfig(): Promise<void> {
   ensureDirs();
   const adapter = new JSONFile<Schema>(configPath());
-  db = new Low<Schema>(adapter, { buyers: [], suppliers: [], connections: [], profiles: [], productLists: [] });
+  db = new Low<Schema>(adapter, emptySchema());
   await db.read();
-  db.data ||= { buyers: [], suppliers: [], connections: [], profiles: [], productLists: [] };
+  db.data ||= emptySchema();
   db.data.buyers ||= [];
   db.data.suppliers ||= [];
   db.data.connections ||= [];
   db.data.profiles ||= [];
   db.data.productLists ||= [];
-  // Ensure the built-in platform presets exist (Generic is the resolution
-  // fallback). Idempotent — only inserts profiles whose id is missing.
+
+  // Refuse to open data written by a newer build: an old binary rewriting a
+  // newer file would silently drop the fields it doesn't know about.
+  const stored = db.data.schemaVersion ?? 0;
+  if (stored > SCHEMA_VERSION) {
+    throw new Error(
+      `config.json uses schema v${stored}, but this punchout-simulator build supports up to v${SCHEMA_VERSION} — ` +
+        `upgrade the tool, or point --data-dir at data written by this version`,
+    );
+  }
+
+  // Ensure the built-in platform presets and the sample product list exist
+  // (Generic is the resolution fallback). Idempotent — inserts missing ids only.
+  // Seeds run before migrations: migrateProfiles refreshes the seeded Jaggaer row.
   seedBuiltinProfiles(db.data, now());
-  // Backfill address-emission fields on profiles persisted before they existed.
-  migrateProfiles(db.data);
-  // Ensure the built-in sample product list exists. Idempotent.
   seedBuiltinProductLists(db.data, now());
-  migrateLegacy(db.data);
-  migrateInlineCatalogs(db.data);
-  migrateClassifications(db.data);
-  await db.write();
-  // config.json holds the plaintext shared secret — keep it owner-only.
+
+  for (const m of MIGRATIONS) {
+    if (stored < m.to) m.run(db.data);
+  }
+  db.data.schemaVersion = SCHEMA_VERSION;
+  await persist(db);
+}
+
+// config.json holds the plaintext shared secret — keep it owner-only. lowdb
+// writes via temp-file + rename, so the mode must be re-applied after every
+// write(), not just once at init.
+async function persist(d: Low<Schema>): Promise<void> {
+  await d.write();
   try {
     chmodSync(configPath(), 0o600);
   } catch {
@@ -87,7 +124,7 @@ export async function createBuyer(input: BuyerInput): Promise<Buyer> {
   const buyer: Buyer = { ...input, id: input.id ?? nanoid(8), createdAt: now(), updatedAt: now() };
   const d = requireDb();
   d.data.buyers.push(buyer);
-  await d.write();
+  await persist(d);
   return buyer;
 }
 
@@ -96,7 +133,7 @@ export async function updateBuyer(id: string, patch: Partial<BuyerInput>): Promi
   const existing = d.data.buyers.find((b) => b.id === id);
   if (!existing) return undefined;
   Object.assign(existing, patch, { id, updatedAt: now() });
-  await d.write();
+  await persist(d);
   return existing;
 }
 
@@ -108,7 +145,7 @@ export async function deleteBuyer(id: string): Promise<boolean> {
   const before = d.data.buyers.length;
   d.data.buyers = d.data.buyers.filter((b) => b.id !== id);
   const removed = d.data.buyers.length < before;
-  if (removed) await d.write();
+  if (removed) await persist(d);
   return removed;
 }
 
@@ -125,7 +162,7 @@ export async function createSupplier(input: SupplierInput): Promise<Supplier> {
   const supplier: Supplier = { ...input, id: input.id ?? nanoid(8), createdAt: now(), updatedAt: now() };
   const d = requireDb();
   d.data.suppliers.push(supplier);
-  await d.write();
+  await persist(d);
   return supplier;
 }
 
@@ -137,7 +174,7 @@ export async function updateSupplier(
   const existing = d.data.suppliers.find((s) => s.id === id);
   if (!existing) return undefined;
   Object.assign(existing, patch, { id, updatedAt: now() });
-  await d.write();
+  await persist(d);
   return existing;
 }
 
@@ -149,7 +186,7 @@ export async function deleteSupplier(id: string): Promise<boolean> {
   const before = d.data.suppliers.length;
   d.data.suppliers = d.data.suppliers.filter((s) => s.id !== id);
   const removed = d.data.suppliers.length < before;
-  if (removed) await d.write();
+  if (removed) await persist(d);
   return removed;
 }
 
@@ -166,7 +203,7 @@ export async function createConnection(input: ConnectionInput): Promise<Connecti
   const conn: Connection = { ...input, id: input.id ?? nanoid(8), createdAt: now(), updatedAt: now() };
   const d = requireDb();
   d.data.connections.push(conn);
-  await d.write();
+  await persist(d);
   return conn;
 }
 
@@ -178,7 +215,7 @@ export async function updateConnection(
   const existing = d.data.connections.find((c) => c.id === id);
   if (!existing) return undefined;
   Object.assign(existing, patch, { id, updatedAt: now() });
-  await d.write();
+  await persist(d);
   return existing;
 }
 
@@ -187,7 +224,7 @@ export async function deleteConnection(id: string): Promise<boolean> {
   const before = d.data.connections.length;
   d.data.connections = d.data.connections.filter((c) => c.id !== id);
   const removed = d.data.connections.length < before;
-  if (removed) await d.write();
+  if (removed) await persist(d);
   return removed;
 }
 
@@ -232,7 +269,7 @@ export async function createProfile(input: ProfileInput): Promise<Profile> {
   const profile: Profile = { ...input, id: input.id ?? nanoid(8), createdAt: now(), updatedAt: now() };
   const d = requireDb();
   d.data.profiles.push(profile);
-  await d.write();
+  await persist(d);
   return profile;
 }
 
@@ -241,7 +278,7 @@ export async function updateProfile(id: string, patch: Partial<ProfileInput>): P
   const existing = d.data.profiles.find((p) => p.id === id);
   if (!existing) return undefined;
   Object.assign(existing, patch, { id, updatedAt: now() });
-  await d.write();
+  await persist(d);
   return existing;
 }
 
@@ -253,7 +290,7 @@ export async function deleteProfile(id: string): Promise<boolean> {
   const before = d.data.profiles.length;
   d.data.profiles = d.data.profiles.filter((p) => p.id !== id);
   const removed = d.data.profiles.length < before;
-  if (removed) await d.write();
+  if (removed) await persist(d);
   return removed;
 }
 
@@ -318,7 +355,7 @@ export async function createProductList(input: ProductListInput): Promise<Produc
   const list: ProductList = { ...input, id: input.id ?? nanoid(8), createdAt: now(), updatedAt: now() };
   const d = requireDb();
   d.data.productLists.push(list);
-  await d.write();
+  await persist(d);
   return list;
 }
 
@@ -330,7 +367,7 @@ export async function updateProductList(
   const existing = d.data.productLists.find((p) => p.id === id);
   if (!existing) return undefined;
   Object.assign(existing, patch, { id, updatedAt: now() });
-  await d.write();
+  await persist(d);
   return existing;
 }
 
@@ -342,7 +379,7 @@ export async function deleteProductList(id: string): Promise<boolean> {
   const before = d.data.productLists.length;
   d.data.productLists = d.data.productLists.filter((p) => p.id !== id);
   const removed = d.data.productLists.length < before;
-  if (removed) await d.write();
+  if (removed) await persist(d);
   return removed;
 }
 

@@ -32,53 +32,11 @@ export type {
   ValidationSeverity,
 } from "../server/cxml/types";
 
-import type { Buyer, Connection, Supplier } from "../server/cxml/types";
+// Response DTOs come from the same module the route handlers are typed with,
+// so a server-side rename breaks this build instead of the UI at runtime.
+export type { ConnectionWithParties, OrderResult, SessionSummary, SetupResult } from "../server/routes/dto";
 
-/** A connection as returned by the list/detail API — enriched with its parties. */
-export interface ConnectionWithParties extends Connection {
-  buyer?: Buyer;
-  supplier?: Supplier;
-  /** Server masks `sharedSecret` to "" on read and reports presence here. */
-  hasSharedSecret?: boolean;
-}
-
-export interface SessionSummary {
-  sessionId: string;
-  connectionId?: string;
-  count: number;
-  firstTs?: string;
-  lastTs?: string;
-  docTypes: string[];
-  hasErrors: boolean;
-  /** PunchOutSetupRequest @operation (create/edit/inspect), if the session has one. */
-  operation?: string;
-  // Enriched server-side from the resolved connection/supplier:
-  connectionName?: string;
-  buyerName?: string;
-  supplierName?: string;
-  mode?: string;
-  /** True when an external buyer initiated this session against our Mode-B endpoint. */
-  inbound?: boolean;
-}
-
-export interface SetupResult {
-  buyerCookie: string;
-  transportError?: string;
-  httpStatus: number;
-  startPage?: string;
-  statusCode?: string;
-  request: import("../server/cxml/types").LogRecord;
-  response: import("../server/cxml/types").LogRecord;
-}
-
-export interface OrderResult {
-  transportError?: string;
-  httpStatus: number;
-  statusCode?: string;
-  statusText?: string;
-  request: import("../server/cxml/types").LogRecord;
-  response: import("../server/cxml/types").LogRecord;
-}
+import type { SetupResult, OrderResult } from "../server/routes/dto";
 
 /** A draft attachment to send with the OrderRequest. scope: "order" or 1-based item index. */
 export interface AttachmentDraft {
