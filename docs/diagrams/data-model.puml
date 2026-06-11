@@ -38,6 +38,7 @@ entity Profile {
   * id
   --
   name
+  platform
   cXML version / quirks
   addressMode
   shipToInSetup / contactInSetup

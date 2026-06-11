@@ -1,7 +1,7 @@
 ---
 title: punchout-simulator — Architecture
 subtitle: Components, data model, and message flows of the cXML PunchOut simulator
-version: v1.0 — June 2026
+version: v1.1 — June 2026
 lang: en
 toc_title: Contents
 footer: "punchout-simulator · architecture reference · June 2026"
@@ -156,6 +156,14 @@ DataR --> Log
 
 *Fig. 2: Route modules sit over a shared cXML core (build / parse / validate / multipart) and a file-backed store.*
 
+Two SPA conveniences worth knowing about architecturally: every cXML field is
+rendered through a shared `CxmlEditor` component that carries a **Copy +
+Prettify** toolbar (prettify is local and display-only on read-only fields),
+and a session's flow can be **exported as a PDF** — `flow-pdf.ts` renders a
+self-contained print-ready HTML report (validation results, HTTP statuses,
+attachments, timestamps) and hands it to the browser's native print-to-PDF, so
+the tool takes no PDF library dependency.
+
 ### The cXML core
 
 The `cxml/` package is protocol logic with no HTTP or storage knowledge:
@@ -166,7 +174,7 @@ The `cxml/` package is protocol logic with no HTTP or storage knowledge:
 | `parse.ts` | Parses inbound cXML with `fast-xml-parser`. XXE is rejected. |
 | `validate.ts` | Bidirectional, field-level validation against expectations: credentials (only on header-bearing docs), single-currency, address completeness, operation/items coherence. Produces typed issues (error / warning). |
 | `multipart.ts` | Hand-assembles and parses `multipart/related` for `OrderRequest` attachments. |
-| `types.ts` + `*-presets.ts` | The shared domain types and the built-in profile / product-list presets. |
+| `types.ts` + `*-presets.ts` | The shared domain types and the built-in presets. Profile presets ship for Generic, SAP Ariba, Coupa, Jaggaer (two `UserAgent` variants: `JAGGAER` and legacy `SciQuest`), Oracle iProcurement, SAP SRM / Business Network, and Workday — one source of truth for both the rows seeded into `config.json` and the in-memory fallback. |
 
 ### The store
 
@@ -174,8 +182,9 @@ State lives in a single `data/` directory:
 
 - **`config.json`** — a normalized lowdb document holding the entity tables
   (`buyers`, `suppliers`, `connections`, `profiles`, `productLists`). Migrations
-  run at boot (inline-catalog → product list, `unspsc` → classifications,
-  profile address-mode backfill).
+  run at boot (legacy flat connections → normalized Buyer/Supplier/Connection
+  rows, inline-catalog → product list, `unspsc` → classifications, profile
+  address-mode backfill).
 - **`data/sessions/<sessionId>.jsonl`** — append-only message logs, one file per
   PunchOut conversation (keyed by `BuyerCookie`). Each line is one record
   (request or response, direction-tagged).
@@ -233,6 +242,7 @@ entity Profile {
   * id
   --
   name
+  platform
   cXML version / quirks
   addressMode
   shipToInSetup / contactInSetup
@@ -423,6 +433,36 @@ The tool is built to be safe to run locally and to expose deliberately:
 - **XXE rejection** in the parser, **SSE connection cap** on the live log, and
   **path sanitization** in the session-file resolver (with a containment
   assertion on delete).
+
+## Outbound networking and corporate proxies
+
+Node's global `fetch` (undici) does **not** honour `HTTP_PROXY` /
+`HTTPS_PROXY` / `NO_PROXY` on its own — unlike curl or most CLIs. On a
+locked-down corporate network a direct connection to an external supplier is
+silently black-holed, so a Mode-A send would hang into the abort timeout. The
+proxy subsystem closes that gap in two layers:
+
+- **`proxy.ts` — wiring.** When a proxy env var is present at boot, undici's
+  `EnvHttpProxyAgent` is installed as the global dispatcher, making every
+  outbound `fetch` respect the standard variables (upper- and lower-case).
+  `NO_PROXY` is merged with the loopback hosts (`localhost`, `127.0.0.1`,
+  `::1`) so the tool's own `/sim` self-calls and localhost suppliers always
+  bypass the proxy. Credentials embedded in a proxy URL are redacted before the
+  URL appears in any log or API response.
+- **`proxy-detect.ts` — diagnosis.** When *no* env vars are set, the boot
+  sequence additionally reads the OS-level proxy configuration (best-effort,
+  read-only): the Windows registry, macOS `scutil --proxy`, GNOME `gsettings`,
+  and KDE's `kioslaverc`, including PAC scripts and WPAD auto-detect. The
+  per-platform parsers are pure functions, unit-tested on captured fixtures.
+
+The combined result is a three-state `ProxyStatus` — `env` (a proxy is in
+effect), `none` (direct), or `system-ignored` (the OS has a proxy this tool
+will *not* use, with a ready-to-paste `HTTPS_PROXY=` suggestion when the
+concrete host is known). It is printed as the startup banner's `proxy:` lines
+and served over `/api/runtime`, where the SPA header renders it as a
+**proxy badge** — visible even when the banner has scrolled away or the tool
+runs as a service. The operational guidance lives in the Operations & usage
+guide.
 
 ## Build and distribution
 

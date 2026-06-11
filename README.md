@@ -242,7 +242,9 @@ Mode B sequence diagrams — see the
 Alongside it: a [**PunchOut business primer**](https://slawomir-szostak.github.io/punchout-simulator/punchout-business-primer_en.html)
 (the business process and where this tool fits) and an
 [**Operations & usage guide**](https://slawomir-szostak.github.io/punchout-simulator/operations-guide_en.html)
-(sessions, operations, profiles, product lists, validation). These render at
+(sessions, operations, profiles, product lists, validation), plus a
+[**Test strategy**](https://slawomir-szostak.github.io/punchout-simulator/test-strategy_en.html)
+(the test pyramid, techniques, and CI gates). These render at
 [slawomir-szostak.github.io/punchout-simulator](https://slawomir-szostak.github.io/punchout-simulator/);
 their canonical Markdown sources live in [`docs/`](docs/).
 

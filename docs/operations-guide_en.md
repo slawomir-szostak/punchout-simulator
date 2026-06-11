@@ -1,7 +1,7 @@
 ---
 title: punchout-simulator — Operations & Usage Guide
 subtitle: Sessions, operations, profiles, product lists, addresses, attachments, and validation
-version: v1.0 — June 2026
+version: v1.1 — June 2026
 lang: en
 toc_title: Contents
 footer: "punchout-simulator · operations guide · June 2026"
@@ -32,6 +32,17 @@ product list on first run, and opens the browser. Useful flags:
 > When you expose the tool (`--public-url` or a non-loopback `--host`), `/api` is
 > gated behind a token, but `/sim` and `/punchout` stay open so a real buyer
 > system can reach the Mode-B catalog and the Mode-A callback.
+
+### Environment variables
+
+Every flag default can also come from the environment, which is convenient for
+services and CI:
+
+| Variable | Purpose |
+|---|---|
+| `PORT`, `DATA_DIR`, `HOST` | Defaults for `--port` / `--data-dir` / `--host`. |
+| `POS_TOKEN` | Sets the `/api` token (same as `--token`). |
+| `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` | Outbound proxy for server-to-server cXML — see [Corporate proxies](#corporate-proxies). Lower-case variants are accepted too. |
 
 ## The workspace
 
@@ -74,8 +85,18 @@ against. It fixes:
 A **Buyer profile** captures procurement-platform quirks so a buyer emits
 platform-shaped documents: cXML version, **address mode** (`id-only` / `full` /
 `both`), whether ship-to and contact appear in the setup request
-(`shipToInSetup` / `contactInSetup`), and extrinsics. Built-in presets exist for
-Ariba, Coupa, SAP and a generic default; you can clone and customize them.
+(`shipToInSetup` / `contactInSetup`), and extrinsics. Built-in presets ship for
+the major platforms — you can clone and customize any of them:
+
+| Preset | Notable behaviour |
+|---|---|
+| **Generic cXML** | The tool's historical default (DTD `1.2.045`, binary attachments, full addresses). |
+| **SAP Ariba** | `base64` attachments; sends ShipTo already in the SetupRequest (`shipToInSetup`). |
+| **Coupa** | Per-document DTD versions (default `1.2.014`, `PunchOutOrderMessage` `1.2.023`); `base64` attachments. |
+| **Jaggaer** / **Jaggaer (SciQuest)** | Two variants for the two `UserAgent` strings observed in the wild (`JAGGAER` and legacy `SciQuest`); DTD `1.2.011` confirmed on real OrderRequests. |
+| **Oracle iProcurement** | DTD `1.2.008`, binary attachments. |
+| **SAP SRM / Business Network** | Models the cXML/Business-Network side (real SAP SRM speaks OCI); `base64` attachments, base64 cart return, `id-only` addresses. |
+| **Workday** | DTD `1.2.045`, `base64` attachments. |
 
 ### Product lists
 
@@ -131,6 +152,11 @@ stop
 Each session has its **own message log** — every request and response in that
 conversation, viewable as raw cXML. This replaced the old global firehose, so
 parallel sessions no longer interleave.
+
+Every cXML editor and viewer field carries a small **Copy + Prettify** toolbar:
+**Copy** puts the field's content on the clipboard, and **Prettify** re-indents
+the XML locally — on read-only fields the formatting is display-only and never
+mutates the logged document.
 
 ### Mode A walk-through (virtual buyer)
 
@@ -243,6 +269,11 @@ referenced from the session log rather than inlined.
 - **Per-session log** — select a session to see only its messages.
 - **Resume** — a historical Mode-A session can be resumed; the tool reconstructs
   the flow state (StartPage, last status) from the session's records.
+- **Export PDF** — capture the whole flow as test evidence: every exchanged
+  message with its validation result, HTTP status, timestamps, and attachment
+  list. The export opens a print-ready report and hands it to the browser's
+  native "Save as PDF" (no PDF library involved); the paper size follows your
+  locale (Letter in the US/CA region, A4 elsewhere).
 - **Delete** — remove a session and its log. Deletion is path-guarded so only
   files inside the sessions directory can be removed.
 
@@ -262,3 +293,52 @@ Everything lives under the data directory:
 
 To start clean, stop the tool and delete the data directory (or point
 `--data-dir` somewhere fresh). To archive a conversation, copy its `.jsonl` file.
+
+## Corporate proxies
+
+On a locked-down corporate network (commonly Windows), direct outbound
+connections are often black-holed: every browser works (it uses the OS proxy),
+but a server-to-server `PunchOutSetupRequest` hangs and dies as
+"HTTP 0 / operation aborted". Node's `fetch` does **not** honour proxy
+environment variables on its own — unlike curl or Postman — so the tool wires
+them in explicitly.
+
+### Routing outbound cXML through a proxy
+
+Set the standard variables before starting the tool:
+
+```bash
+HTTPS_PROXY=http://proxy.corp.example:8080 npx punchout-simulator
+```
+
+- `HTTP_PROXY` / `HTTPS_PROXY` (upper- or lower-case) route the outbound
+  Mode-A traffic (SetupRequest, OrderRequest).
+- `NO_PROXY` lists hosts that bypass the proxy. Loopback
+  (`localhost`, `127.0.0.1`, `::1`) is **always added automatically**, so the
+  tool's own self-calls and any localhost supplier never go through the proxy.
+- Credentials in a proxy URL (`http://user:pass@host:port`) are **redacted**
+  everywhere the URL is displayed or logged.
+
+### Knowing what is in effect
+
+The startup banner always prints a `proxy:` line with one of three findings:
+
+| Banner | Meaning |
+|---|---|
+| `proxy: outbound cXML via …` | A proxy env var is set and in effect (with the merged `NO_PROXY`). |
+| `proxy: none — … connects directly` | No env vars **and** no OS-level proxy detected. |
+| `⚠ proxy: … <source> has a proxy configured` | No env vars, but the OS **does** have a proxy that outbound cXML will **not** use — with a ready-to-paste `HTTPS_PROXY=` suggestion when the concrete host is known. |
+
+For the third case the tool reads the OS-level configuration (best-effort,
+read-only): the Windows registry, macOS network settings (`scutil`), GNOME
+settings, and KDE's `kioslaverc` — including PAC scripts and WPAD auto-detect.
+A PAC/WPAD setup hides the concrete proxy host inside the script, so the banner
+points you at the PAC URL (or IT) to find the value for `HTTPS_PROXY`.
+
+The same status appears as a **proxy badge in the app header**, so it stays
+visible when the banner has scrolled away or the tool runs as a service.
+
+> [!TIP]
+> If Mode-A sends time out on a corporate machine while the browser reaches the
+> supplier fine, check the proxy badge first — "system-ignored" means the fix is
+> one `HTTPS_PROXY` env var away.

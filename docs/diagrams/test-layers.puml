@@ -1,0 +1,13 @@
+@startuml test-layers
+!theme plain
+title Test layers (bottom = most tests, fastest)
+
+rectangle "Integration over real HTTP\nintegration.test.ts — full Mode-A roundtrip,\nephemeral port, seeded demo data" as L4
+rectangle "HTTP app-level (no sockets)\nsecurity / rate-limit / static —\nHono app.request() against the real app" as L3
+rectangle "Store & persistence\nmigrations / products / profiles /\nlog-dedup / log-summary / cart-store" as L2
+rectangle "Pure units\ncXML core: build / parse / validate / multipart / xml-format\nhelpers: csv / geo · proxy: proxy / proxy-detect (fixtures)" as L1
+
+L4 -[hidden]down- L3
+L3 -[hidden]down- L2
+L2 -[hidden]down- L1
+@enduml
