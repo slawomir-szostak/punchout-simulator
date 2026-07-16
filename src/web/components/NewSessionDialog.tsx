@@ -33,15 +33,22 @@ export function NewSessionDialog({
   const [itemIdx, setItemIdx] = useState<number>(-1); // -1 = all items
   const ref = useRef<HTMLDivElement>(null);
 
-  // Every session is listed so none silently disappears; only those that
-  // actually returned a cart can supply items, so the rest are shown disabled.
+  // Only sessions from the chosen connection can supply a source cart, so the
+  // list is scoped to it. Within that scope every session is listed so none
+  // silently disappears; those that never returned a cart are shown disabled.
   const hasCart = (s: SessionSummary) => s.docTypes.includes("PunchOutOrderMessage");
-  const sources = sessions;
+  const sources = sessions.filter((s) => s.connectionId === connectionId);
   const anySelectable = sources.some(hasCart);
 
   // Focus-in on open, restore on close, Esc closes, Tab trapped (same handling
   // as MessageDetail).
   useModalFocus(ref, onCancel);
+
+  // Switching connection changes which sessions are eligible, so drop any
+  // source selection that belonged to the previous connection.
+  useEffect(() => {
+    setSourceId("");
+  }, [connectionId]);
 
   // Load the chosen source session's cart so we can carry / pick its items.
   useEffect(() => {
