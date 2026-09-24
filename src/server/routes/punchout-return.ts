@@ -48,9 +48,18 @@ function htmlReceipt(ok: boolean, itemCount: number): string {
   <div class="icon ${ok ? "ok" : "bad"}">${ok ? "✓" : "⚠"}</div>
   <h1>Cart returned to punchout-simulator</h1>
   <p>${ok ? `Received ${itemCount} item(s).` : "The punchback had validation issues."}
-     Switch back to the punchout-simulator tab to inspect the cart and build the OrderRequest.
-     You can close this tab.</p>
-</div><script>setTimeout(()=>{try{window.close()}catch(e){}},1500)</script></body></html>`;
+     <span id="next">Switch back to the punchout-simulator tab to inspect the cart and build the OrderRequest.
+     You can close this tab.</span></p>
+</div><script>
+  // In a new tab: close it. Inside the app's catalog iframe: the overlay closes
+  // itself once the cart lands over SSE, so just fix the wording (window.close
+  // is a no-op for a framed page anyway).
+  if (window.self !== window.top) {
+    document.getElementById("next").textContent = "The embedded catalog closes in a moment.";
+  } else {
+    setTimeout(()=>{try{window.close()}catch(e){}},1500);
+  }
+</script></body></html>`;
 }
 
 punchoutReturnRoute.post("/return", async (c) => {

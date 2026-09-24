@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import type { AttachmentDraft, Cart, CartItem, Connection, FlowSession, ValidationResult } from "../types";
 import { CxmlEditor } from "./CxmlEditor";
 import { CartView } from "./CartView";
+import { CatalogFrame } from "./CatalogFrame";
 import { ValidationPanel } from "./Validation";
 import { useTheme } from "../hooks/useTheme";
 
@@ -44,6 +45,9 @@ export function BuyerFlow({ connection, session, cart, operation, sourceItems, o
   // On-demand "validate before send" results (cleared when the document is edited).
   const [setupCheck, setSetupCheck] = useState<ValidationResult | null>(null);
   const [orderCheck, setOrderCheck] = useState<ValidationResult | null>(null);
+  // Catalog embedded in an iframe overlay (vs. the default new tab). Holds the
+  // cart seen when opened so the overlay can tell when a new one has landed.
+  const [embedded, setEmbedded] = useState<{ cartAtOpen: Cart | null } | null>(null);
 
   const validate = async (docType: "SetupRequest" | "OrderRequest", xml: string, set: (v: ValidationResult) => void) => {
     setError(null);
@@ -63,6 +67,8 @@ export function BuyerFlow({ connection, session, cart, operation, sourceItems, o
       .then((p) => onChange({ buyerCookie: p.buyerCookie, setupXml: p.xml }))
       .catch((e) => setError(String(e)));
   }, [connection.id, session.buyerCookie, session.setupXml, operation, sourceItems]);
+
+  const closeEmbedded = useCallback(() => setEmbedded(null), []);
 
   const sendSetup = async () => {
     setBusy(true);
@@ -196,9 +202,14 @@ export function BuyerFlow({ connection, session, cart, operation, sourceItems, o
               <div className="result-line">
                 StartPage:{" "}
                 {isHttpUrl(session.setupResult.startPage) ? (
-                  <a href={withTheme(session.setupResult.startPage, theme)} target="_blank" rel="noreferrer">
-                    open catalog in new tab ↗
-                  </a>
+                  <>
+                    <a href={withTheme(session.setupResult.startPage, theme)} target="_blank" rel="noreferrer">
+                      open catalog in new tab ↗
+                    </a>
+                    <button className="btn-link" onClick={() => setEmbedded({ cartAtOpen: cart })} title="Embed the catalog in an iframe, as some procurement systems do">
+                      open embedded (iframe)
+                    </button>
+                  </>
                 ) : (
                   <code title="not an http(s) URL — not linked">{session.setupResult.startPage}</code>
                 )}
@@ -209,6 +220,15 @@ export function BuyerFlow({ connection, session, cart, operation, sourceItems, o
           </div>
         )}
       </section>
+
+      {embedded && session.setupResult?.startPage && isHttpUrl(session.setupResult.startPage) && (
+        <CatalogFrame
+          src={withTheme(session.setupResult.startPage, theme)}
+          cartAtOpen={embedded.cartAtOpen}
+          cart={cart}
+          onClose={closeEmbedded}
+        />
+      )}
 
       <section className="step">
         <h3>
