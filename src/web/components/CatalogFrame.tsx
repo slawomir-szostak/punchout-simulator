@@ -40,18 +40,27 @@ export function CatalogFrame({ src, cartAtOpen, cart, onClose }: Props) {
     <div className="modal-backdrop">
       <div className="modal catalog-frame" role="dialog" aria-modal="true" aria-label="Embedded catalog" tabIndex={-1} ref={ref}>
         <div className="modal-head">
-          <div>
-            <strong>Embedded catalog</strong> <code className="catalog-frame-url">{src}</code>
+          <div className="catalog-frame-title">
+            <strong>Embedded catalog</strong>
+            <code className="catalog-frame-url" title={src}>{src}</code>
           </div>
-          <button className="btn-link" onClick={onClose}>close ✕</button>
+          <button className="btn-link catalog-frame-close" onClick={onClose}>close ✕</button>
         </div>
         <iframe className="catalog-frame-body" src={src} title="Supplier catalog" />
-        <p className="hint">
-          Blank frame → the supplier most likely sends <code>X-Frame-Options</code> or CSP{" "}
-          <code>frame-ancestors</code> (see the Network tab). Logged out / cart lost inside the frame → its session
-          cookie lacks <code>SameSite=None; Secure</code> or the browser blocks third-party cookies. Whole page
-          navigated away → the punchback form targets <code>_top</code>. The overlay closes itself once the cart lands.
-        </p>
+        <ul className="frame-hints">
+          <li>
+            <strong>Blank frame?</strong> The supplier sends <code>X-Frame-Options</code> or CSP{" "}
+            <code>frame-ancestors</code> — check the Network tab.
+          </li>
+          <li>
+            <strong>Logged out / cart lost?</strong> Its session cookie lacks <code>SameSite=None; Secure</code>, or the
+            browser blocks third-party cookies.
+          </li>
+          <li>
+            <strong>Whole page navigated away?</strong> The punchback form targets <code>_top</code>.
+          </li>
+        </ul>
+        <p className="hint frame-hints-foot">The overlay closes itself once the cart lands.</p>
       </div>
     </div>
   );

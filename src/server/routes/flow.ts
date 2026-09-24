@@ -224,6 +224,7 @@ flowRoute.post("/:id/setup", async (c) => {
     httpStatus: res.status,
     startPage,
     statusCode: status?.code,
+    statusMessage: status?.message,
     request: reqLog,
     response: respLog,
   };
@@ -413,6 +414,7 @@ flowRoute.post("/:id/order", async (c) => {
     httpStatus: res.status,
     statusCode: status?.code,
     statusText: status?.text,
+    statusMessage: status?.message,
     request: reqLog,
     response: respLog,
   };

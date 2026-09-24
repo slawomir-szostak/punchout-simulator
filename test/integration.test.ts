@@ -105,6 +105,12 @@ describe("Mode A loopback", () => {
     }).then((r) => r.json());
     expect(order.statusCode).toBe("200");
     expect(order.request.validation.ok).toBe(true);
+    // The mock supplier acknowledges like a real order desk: its own order
+    // number plus the buyer's PO, in the Status body.
+    const po = /orderID="([^"]+)"/.exec(order.request.body)![1];
+    expect(order.statusMessage).toMatch(/^OK\. Order number SO-[A-Z0-9]{8} received for PO /);
+    expect(order.statusMessage).toContain(po);
+    expect(order.response.body).toContain(`<Status code="200" text="OK">${order.statusMessage}</Status>`);
 
     // Every record carries the endpoint of its exchange: Mode A logs where it
     // POSTed, Mode B logs the URL the buyer hit, the punchback logs its target.

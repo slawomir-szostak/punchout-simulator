@@ -4,6 +4,7 @@ import {
   getDocType,
   getHeaderCredentials,
   getStartPage,
+  getStatus,
   parseCart,
   parseSetupItems,
   parseXml,
@@ -71,6 +72,11 @@ describe("getDocType", () => {
     expect(getDocType(parseXml(setupResp))).toBe("SetupResponse");
     expect(getDocType(parseXml(orderResp))).toBe("OrderResponse");
     expect(getStartPage(parseXml(setupResp))).toBe("http://x");
+  });
+  it("reads the Status body as the human-readable message", () => {
+    const withBody = `<cXML><Response><Status code="200" text="OK">OK. Order number SO-1 received for PO 42.</Status></Response></cXML>`;
+    expect(getStatus(parseXml(withBody))).toEqual({ code: "200", text: "OK", message: "OK. Order number SO-1 received for PO 42." });
+    expect(getStatus(parseXml(`<cXML><Response><Status code="200" text="OK"/></Response></cXML>`)).message).toBeUndefined();
   });
 });
 

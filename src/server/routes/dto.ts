@@ -41,6 +41,8 @@ export interface SetupResult {
   httpStatus: number;
   startPage?: string;
   statusCode?: string;
+  /** Human-readable Status body from the supplier, if any. */
+  statusMessage?: string;
   request: LogRecord;
   response: LogRecord;
 }
@@ -51,6 +53,8 @@ export interface OrderResult {
   httpStatus: number;
   statusCode?: string;
   statusText?: string;
+  /** Human-readable Status body from the supplier (order number, rejection reason). */
+  statusMessage?: string;
   request: LogRecord;
   response: LogRecord;
 }

@@ -413,6 +413,8 @@ export function buildResponseStatus(o: {
   timestamp: string;
   statusCode?: string;
   statusText?: string;
+  /** Human-readable Status body (order number, rejection reason). Defaults to the text for non-OK statuses. */
+  message?: string;
   lang?: string;
   from?: Credential;
   to?: Credential;
@@ -423,10 +425,11 @@ export function buildResponseStatus(o: {
     o.from && o.to && o.sender
       ? optionalHeader({ from: o.from, to: o.to, sender: o.sender })
       : "";
+  const message = o.message ?? (o.statusText === "OK" || !o.statusText ? "" : o.statusText);
   const inner = `${head}  <Response>
     <Status code="${escapeXml(o.statusCode ?? "200")}" text="${escapeXml(
       o.statusText ?? "OK",
-    )}">${escapeXml(o.statusText === "OK" || !o.statusText ? "" : o.statusText)}</Status>
+    )}">${escapeXml(message)}</Status>
   </Response>`;
   return envelope(o.payloadId, o.timestamp, o.lang ?? "en-US", inner, o.dtdVersion);
 }

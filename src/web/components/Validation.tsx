@@ -10,6 +10,32 @@ export function ValidationBadge({ validation }: { validation?: ValidationResult 
   return <span className="badge badge-ok">valid</span>;
 }
 
+/**
+ * One line of chips for a whole exchange (request + response). Full panels
+ * only appear for documents that actually have something to say — two
+ * full-width green bars per exchange were pushing the real content down.
+ */
+export function ValidationSummary({ validations }: { validations: (ValidationResult | undefined)[] }) {
+  const present = validations.filter((v): v is ValidationResult => !!v);
+  if (present.length === 0) return null;
+  const noisy = present.filter((v) => !v.wellFormed || v.issues.length > 0);
+  return (
+    <>
+      <div className="validation-summary">
+        <span className="validation-summary-label">Validation</span>
+        {present.map((v) => (
+          <span key={v.docType} className="vchip">
+            <ValidationBadge validation={v} /> {v.docType}
+          </span>
+        ))}
+      </div>
+      {noisy.map((v) => (
+        <ValidationPanel key={v.docType} validation={v} />
+      ))}
+    </>
+  );
+}
+
 export function ValidationPanel({ validation }: { validation?: ValidationResult }) {
   if (!validation) return null;
   if (validation.issues.length === 0) {

@@ -541,11 +541,20 @@ simRoute.post("/:id/order", async (c) => {
 
   const ok = validation.ok;
   const eff = effFor(supplier.id, from);
+  // Real suppliers acknowledge with their own order number and echo the PO in
+  // the Status body — that is the line a buyer's integrator looks for, so the
+  // mock does the same (and names the first error when it rejects).
+  const poNumber = orderIdOf(doc);
+  const firstError = validation.issues.find((i) => i.severity === "error")?.message;
+  const message = ok
+    ? `OK. Order number ${supplierOrderNumber()} received${poNumber ? ` for PO ${poNumber}` : ""}.`
+    : `Bad Request. Order rejected${poNumber ? ` (PO ${poNumber})` : ""}${firstError ? `: ${firstError}` : "."}`;
   const respXml = buildResponseStatus({
     payloadId: makePayloadId(host(), new Date().toISOString()),
     timestamp: new Date().toISOString(),
     statusCode: ok ? "200" : "400",
     statusText: ok ? "OK" : "Bad Request",
+    message,
     from: supplier.identity,
     to: from ?? { domain: "", identity: "" },
     sender: supplier.identity,
@@ -566,9 +575,16 @@ simRoute.post("/:id/order", async (c) => {
   return c.body(respXml, ok ? 200 : 400);
 });
 
+function orderIdOf(doc: ReturnType<typeof parseXml>): string | undefined {
+  const orderId = root(doc)?.Request?.OrderRequest?.OrderRequestHeader?.["@_orderID"];
+  return orderId == null ? undefined : String(orderId);
+}
+
 // cXML OrderRequest has no BuyerCookie, so group it under its orderID.
 function findSessionForOrder(doc: ReturnType<typeof parseXml>): string | undefined {
-  const header = root(doc)?.Request?.OrderRequest?.OrderRequestHeader;
-  const orderId = header?.["@_orderID"];
-  return orderId ? `order-${String(orderId)}` : undefined;
+  const orderId = orderIdOf(doc);
+  return orderId ? `order-${orderId}` : undefined;
 }
+
+// A supplier-side sales-order number, distinct from the buyer's PO on purpose.
+const supplierOrderNumber = () => `SO-${nanoid(8).toUpperCase().replace(/[^A-Z0-9]/g, "X")}`;

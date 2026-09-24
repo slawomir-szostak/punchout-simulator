@@ -154,13 +154,20 @@ export function getTimestamp(doc: ParsedDoc): string | undefined {
 
 export interface StatusInfo {
   code?: string;
+  /** The short `text` attribute ("OK", "Bad Request"). */
   text?: string;
+  /**
+   * The element body — cXML's human-readable explanation, where suppliers put
+   * things like "Order number 12345 received" or the reason for a rejection.
+   */
+  message?: string;
 }
 
 export function getStatus(doc: ParsedDoc): StatusInfo {
   const status = root(doc)?.Response?.Status;
   if (!status) return {};
-  return { code: attr(status, "code"), text: attr(status, "text") };
+  const message = text(status)?.trim();
+  return { code: attr(status, "code"), text: attr(status, "text"), message: message || undefined };
 }
 
 export function getStartPage(doc: ParsedDoc): string | undefined {
