@@ -48,8 +48,8 @@ const TAB_LABEL: Record<View, string> = {
   connections: "Connections",
   buyers: "Buyers",
   suppliers: "Suppliers",
-  products: "Products",
-  profiles: "Buyer Profiles",
+  products: "Product lists",
+  profiles: "Buyer profiles",
 };
 
 export function App() {
@@ -71,7 +71,8 @@ export function App() {
   const [flows, setFlows] = useState<Record<string, Flow>>({});
   const [sessionSummaries, setSessionSummaries] = useState<SessionSummary[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
-  const [showNewSession, setShowNewSession] = useState(false);
+  // Truthy = dialog open; may carry the connection to pre-select.
+  const [showNewSession, setShowNewSession] = useState<false | { connectionId?: string }>(false);
   const flowSeq = useRef(0);
   const [loadedSessions, setLoadedSessions] = useState<Set<string>>(new Set());
 
@@ -348,6 +349,7 @@ export function App() {
 
   // --- session list rows: active client flows first, then server-only sessions ---
   const flowCookies = new Set(Object.values(flows).map((f) => f.session.buyerCookie).filter(Boolean));
+  const fmtTime = (iso?: string) => (iso ? new Date(iso).toLocaleTimeString([], { hour12: false }) : undefined);
   const sessionRows: SessionRow[] = [
     ...Object.entries(flows).map(([key, f]): SessionRow => {
       const conn = connections.find((c) => c.id === f.connectionId);
@@ -356,8 +358,10 @@ export function App() {
       return {
         id: key,
         title: conn?.name ?? f.connectionId,
-        subtitle: `${conn?.buyer?.name ?? "?"} → ${conn?.supplier?.name ?? "?"}${cookie ? ` · ${cookie.slice(0, 16)}…` : ""}`,
         operation: f.operation,
+        phase: phaseOfFlow(f.session, cookie ? carts[cookie] ?? null : null),
+        time: fmtTime(summary?.lastTs),
+        sessionId: cookie || undefined,
         hasErrors: summary?.hasErrors,
         draft: !cookie,
         count: summary?.count,
@@ -367,15 +371,11 @@ export function App() {
       .filter((s) => !flowCookies.has(s.sessionId))
       .map((s): SessionRow => ({
         id: s.sessionId,
-        title: s.connectionName ?? (s.inbound ? `${s.supplierName ?? "Supplier"} · inbound` : s.sessionId),
-        subtitle: [
-          s.buyerName && s.supplierName ? `${s.buyerName} → ${s.supplierName}` : null,
-          s.lastTs ? new Date(s.lastTs).toLocaleTimeString([], { hour12: false }) : null,
-          s.sessionId,
-        ]
-          .filter(Boolean)
-          .join(" · "),
+        title: s.connectionName ?? (s.inbound ? s.supplierName ?? "Supplier" : s.sessionId),
         operation: s.operation,
+        phase: phaseOfSummary(s),
+        time: fmtTime(s.lastTs),
+        sessionId: s.sessionId,
         hasErrors: s.hasErrors,
         inbound: s.inbound,
         count: s.count,
@@ -419,7 +419,7 @@ export function App() {
           </nav>
 
           {view === "sessions" && (
-            <SessionList rows={sessionRows} selectedId={selectedSessionId} onSelect={setSelectedSessionId} onNew={() => setShowNewSession(true)} />
+            <SessionList rows={sessionRows} selectedId={selectedSessionId} onSelect={setSelectedSessionId} onNew={() => setShowNewSession({})} />
           )}
 
           {view === "connections" && (
@@ -498,22 +498,24 @@ export function App() {
                       <ConfirmButton onConfirm={() => deleteSession(selectedSessionId!)} label="Delete session" confirmLabel="Confirm delete?" />
                     </div>
                   </div>
-                  <BuyerFlow
-                    connection={flowConn}
-                    session={activeFlow.session}
-                    cart={activeFlow.session.buyerCookie ? carts[activeFlow.session.buyerCookie] ?? null : null}
-                    operation={activeFlow.operation}
-                    sourceItems={activeFlow.sourceItems}
-                    onChange={(patch) => patchFlowSession(selectedSessionId!, patch)}
-                  />
-                  <SessionLog records={sessionRecords} connections={connections} onSelect={setDetail} />
+                  <div className="session-layout">
+                    <BuyerFlow
+                      connection={flowConn}
+                      session={activeFlow.session}
+                      cart={activeFlow.session.buyerCookie ? carts[activeFlow.session.buyerCookie] ?? null : null}
+                      operation={activeFlow.operation}
+                      sourceItems={activeFlow.sourceItems}
+                      onChange={(patch) => patchFlowSession(selectedSessionId!, patch)}
+                    />
+                    <SessionLog records={sessionRecords} connections={connections} suppliers={suppliers} onSelect={setDetail} />
+                  </div>
                 </>
               )}
               {serverSel && (
                 <>
                   <div className="main-head">
                     <h2>
-                      {serverSel.connectionName ?? (serverSel.inbound ? `${serverSel.supplierName ?? "Supplier"} · inbound` : "Session")}
+                      {serverSel.connectionName ?? (serverSel.inbound ? `${serverSel.supplierName ?? "Supplier"} (inbound)` : "Session")}
                       {serverSel.operation && serverSel.operation !== "create" && <span className="badge badge-warn" style={{ marginLeft: ".5rem" }}>{serverSel.operation}</span>}
                     </h2>
                     <div className="head-actions">
@@ -564,11 +566,11 @@ export function App() {
                       </>
                     );
                   })()}
-                  <SessionLog records={sessionRecords} connections={connections} onSelect={setDetail} />
+                  <SessionLog records={sessionRecords} connections={connections} suppliers={suppliers} onSelect={setDetail} />
                 </>
               )}
               {!selectedSessionId && (
-                <SessionsEmpty hasBuyerConn={hasBuyerConn} onNew={() => setShowNewSession(true)} onConfigure={() => setView("connections")} />
+                <SessionsEmpty hasBuyerConn={hasBuyerConn} onNew={() => setShowNewSession({})} onConfigure={() => setView("connections")} />
               )}
             </>
           )}
@@ -580,7 +582,16 @@ export function App() {
 
               {panel !== "new" && selectedConn && (
                 <>
-                  <div className="main-head"><h2>{selectedConn.name}</h2></div>
+                  <div className="main-head">
+                    <h2>{selectedConn.name}</h2>
+                    {selectedConn.mode === "virtual-buyer" && (
+                      <div className="head-actions">
+                        <button className="btn-primary" onClick={() => setShowNewSession({ connectionId: selectedConn.id })}>
+                          ▶ New session
+                        </button>
+                      </div>
+                    )}
+                  </div>
                   <ConnectionEditor connection={selectedConn} buyers={buyers} suppliers={suppliers}
                     onSave={saveConnection} onDelete={deleteConnection} />
                   {selectedConn.mode === "virtual-supplier" && <SupplierPanel supplier={selectedConn.supplier} publicUrl={publicUrl} />}
@@ -640,18 +651,48 @@ export function App() {
       </div>
 
       {showNewSession && (
-        <NewSessionDialog connections={connections} sessions={sessionSummaries} onCancel={() => setShowNewSession(false)} onCreate={startSession} />
+        <NewSessionDialog connections={connections} sessions={sessionSummaries} initialConnectionId={showNewSession.connectionId} onCancel={() => setShowNewSession(false)} onCreate={startSession} />
       )}
       {detail && <MessageDetail record={detail} onClose={() => setDetail(null)} />}
     </div>
   );
 }
 
-function SessionLog({ records, connections, onSelect }: { records: LogRecord[]; connections: Connection[]; onSelect: (r: LogRecord) => void }) {
+// Where a session got to, in the words of the side that drove it.
+function phaseOfFlow(session: FlowSession, cart: Cart | null): string {
+  if (session.orderResult) {
+    if (session.orderResult.transportError) return "order failed";
+    return session.orderResult.statusCode === "200" ? "order accepted" : `order rejected (${session.orderResult.statusCode ?? "?"})`;
+  }
+  if (cart) return "cart received";
+  if (session.setupResult) {
+    if (session.setupResult.transportError) return "setup failed";
+    return session.setupResult.statusCode === "200" ? "catalog open" : `setup rejected (${session.setupResult.statusCode ?? "?"})`;
+  }
+  return "not sent yet";
+}
+
+function phaseOfSummary(s: SessionSummary): string {
+  const has = (t: string) => s.docTypes.includes(t);
+  if (s.inbound) {
+    if (has("OrderRequest")) return "order received";
+    if (has("PunchOutOrderMessage")) return "cart returned";
+    if (has("SetupRequest")) return "setup received";
+    return "inbound";
+  }
+  if (has("OrderResponse")) return s.hasErrors ? "order sent (errors)" : "order accepted";
+  if (has("OrderRequest")) return "order sent";
+  if (has("PunchOutOrderMessage")) return "cart received";
+  if (has("SetupResponse")) return "catalog open";
+  if (has("SetupRequest")) return "setup sent";
+  return "empty";
+}
+
+function SessionLog({ records, connections, suppliers, onSelect }: { records: LogRecord[]; connections: Connection[]; suppliers: Supplier[]; onSelect: (r: LogRecord) => void }) {
   return (
     <section className="session-log">
       <div className="logpane-head">Messages ({records.length})</div>
-      <LiveLog records={records} connections={connections} onSelect={onSelect} />
+      <LiveLog records={records} connections={connections} suppliers={suppliers} onSelect={onSelect} />
     </section>
   );
 }

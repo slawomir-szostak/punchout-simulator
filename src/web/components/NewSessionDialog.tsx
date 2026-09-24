@@ -17,16 +17,21 @@ export interface NewSessionChoice {
 export function NewSessionDialog({
   connections,
   sessions,
+  initialConnectionId,
   onCancel,
   onCreate,
 }: {
   connections: ConnectionWithParties[];
   sessions: SessionSummary[];
+  /** Pre-select this connection (e.g. opened from its editor). */
+  initialConnectionId?: string;
   onCancel: () => void;
   onCreate: (choice: NewSessionChoice) => void;
 }) {
   const buyerConns = connections.filter((c) => c.mode === "virtual-buyer");
-  const [connectionId, setConnectionId] = useState(buyerConns[0]?.id ?? "");
+  const [connectionId, setConnectionId] = useState(
+    initialConnectionId && buyerConns.some((c) => c.id === initialConnectionId) ? initialConnectionId : buyerConns[0]?.id ?? "",
+  );
   const [operation, setOperation] = useState<"create" | "edit" | "inspect">("create");
   const [sourceId, setSourceId] = useState("");
   const [sourceCart, setSourceCart] = useState<CartItem[] | null>(null);

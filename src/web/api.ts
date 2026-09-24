@@ -147,7 +147,7 @@ export const api = {
 
   getCart: (sessionId: string) =>
     authFetch(`/api/cart/${encodeURIComponent(sessionId)}`).then((r) =>
-      r.ok ? (r.json() as Promise<Cart>) : null,
+      r.ok ? (r.json() as Promise<Cart | null>) : null,
     ),
 
   listSessions: () => authFetch("/api/sessions").then((r) => jsonOrThrow<SessionSummary[]>(r)),

@@ -266,7 +266,7 @@ At send time: `From` = buyer identity, `To` = supplier identity, `Sender` = the 
 ### Product lists (Mode-B catalogs)
 
 A **Product List** is a named set of catalog items, edited on its own and assigned to one or
-more Suppliers from the **Products** tab. In Mode B a supplier serves the union of its assigned
+more Suppliers from the **Product lists** tab. In Mode B a supplier serves the union of its assigned
 lists; a supplier with no lists falls back to a small built-in demo catalog. A built-in
 **Sample assortment** (~20 office/industrial items) ships out of the box and can be **loaded
 into the editor** as a starting point. You can also **import a CSV** (a header row, any column

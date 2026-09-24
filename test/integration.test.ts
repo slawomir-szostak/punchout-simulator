@@ -123,12 +123,17 @@ describe("Mode A loopback", () => {
     expect(urlOf("in", "SetupRequest")).toBe(`${base}/sim/demo-supplier/punchout`);
     expect(urlOf("out", "PunchOutOrderMessage")).toBe(formpost);
     expect(urlOf("in", "PunchOutOrderMessage")).toBe(`${base}/punchout/return`);
-    // The supplier files the inbound OrderRequest under its own session id, so
-    // look it up across sessions.
-    const recent = await fetch(`${base}/api/recent`).then((r) => r.json());
-    expect(recent.find((r: any) => r.direction === "in" && r.docType === "OrderRequest")?.url).toBe(
-      `${base}/sim/demo-supplier/order`,
-    );
+    // Loopback: the mock supplier files the inbound OrderRequest under the
+    // buyer's own session (correlated by orderID), not a second "inbound" one.
+    expect(urlOf("in", "OrderRequest")).toBe(`${base}/sim/demo-supplier/order`);
+    const sessions = await fetch(`${base}/api/sessions`).then((r) => r.json());
+    expect(sessions.some((s: any) => s.sessionId === `order-${po}`)).toBe(false);
+  });
+
+  it("answers null (not 404) for a session without a cart", async () => {
+    const r = await fetch(`${base}/api/cart/nope-${Date.now()}`);
+    expect(r.status).toBe(200);
+    expect(await r.json()).toBeNull();
   });
 
   it("happy-path attachment resolves its cid", async () => {

@@ -49,8 +49,8 @@ services and CI:
 The SPA is split into two areas in the left navigation:
 
 - **Run** — the **Sessions** tab, where you do PunchOut work.
-- **Configure** — **Connections**, **Buyers**, **Suppliers**, **Products**, and
-  **Buyer Profiles**, where you set up the entities a session uses.
+- **Configure** — **Connections**, **Buyers**, **Suppliers**, **Product lists**, and
+  **Buyer profiles**, where you set up the entities a session uses.
 
 Configure the entities once; spend your time in **Sessions**.
 

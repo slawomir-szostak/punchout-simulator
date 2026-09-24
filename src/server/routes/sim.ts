@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { sessionForOrder } from "../cart-store.js";
 import { nanoid } from "nanoid";
 import {
   catalogForSupplier,
@@ -580,10 +581,12 @@ function orderIdOf(doc: ReturnType<typeof parseXml>): string | undefined {
   return orderId == null ? undefined : String(orderId);
 }
 
-// cXML OrderRequest has no BuyerCookie, so group it under its orderID.
+// cXML OrderRequest has no BuyerCookie: when this tool sent the order itself
+// (loopback demo) file it under that buyer session, otherwise group by orderID.
 function findSessionForOrder(doc: ReturnType<typeof parseXml>): string | undefined {
   const orderId = orderIdOf(doc);
-  return orderId ? `order-${orderId}` : undefined;
+  if (!orderId) return undefined;
+  return sessionForOrder(orderId) ?? `order-${orderId}`;
 }
 
 // A supplier-side sales-order number, distinct from the buyer's PO on purpose.

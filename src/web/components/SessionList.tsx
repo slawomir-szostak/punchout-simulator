@@ -2,7 +2,12 @@ export interface SessionRow {
   /** Selection key: a client-flow key (active/draft) or a server sessionId. */
   id: string;
   title: string;
-  subtitle: string;
+  /** Where the session got to: "catalog open", "cart received", "order accepted"… */
+  phase?: string;
+  /** Local time of the last message. */
+  time?: string;
+  /** The BuyerCookie / server session id (shown truncated, full on hover). */
+  sessionId?: string;
   /** create / edit / inspect, if known. */
   operation?: string;
   hasErrors?: boolean;
@@ -49,7 +54,8 @@ export function SessionList({
               {r.inbound && <span className="badge badge-muted session-op">inbound</span>}
               {r.draft && <span className="badge badge-muted session-op">draft</span>}
             </div>
-            <div className="conn-mode">{r.subtitle}</div>
+            <div className="conn-mode">{[r.operation ?? "create", r.phase, r.time].filter(Boolean).join(" · ")}</div>
+            {r.sessionId && <code className="session-id" title={r.sessionId}>{r.sessionId}</code>}
           </li>
         ))}
       </ul>

@@ -5,6 +5,8 @@ import { ValidationBadge } from "./Validation";
 interface Props {
   records: LogRecord[];
   connections: Connection[];
+  /** Mode-B records carry a Supplier id as their connectionId; resolve its name. */
+  suppliers?: { id: string; name: string }[];
   onSelect: (record: LogRecord) => void;
 }
 
@@ -26,9 +28,10 @@ function hostOf(url: string | undefined): string | null {
   }
 }
 
-export function LiveLog({ records, connections, onSelect }: Props) {
+export function LiveLog({ records, connections, suppliers = [], onSelect }: Props) {
   const known = new Set(connections.map((c) => c.id));
-  const nameOf = (id: string) => connections.find((c) => c.id === id)?.name ?? id ?? "—";
+  const nameOf = (id: string) =>
+    connections.find((c) => c.id === id)?.name ?? suppliers.find((s) => s.id === id)?.name ?? id ?? "—";
 
   const deduped = collapseExchanges(records, known);
 

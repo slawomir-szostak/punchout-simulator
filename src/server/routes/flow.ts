@@ -9,7 +9,7 @@ import {
 } from "../store/config.js";
 import { appendLog } from "../store/log.js";
 import { saveAttachment } from "../store/attachments.js";
-import { rememberSessionConnection } from "../cart-store.js";
+import { rememberOrderSession, rememberSessionConnection } from "../cart-store.js";
 import { sendCxml } from "../http.js";
 import { browserFormPostUrl, getPublicUrl } from "../runtime.js";
 import {
@@ -335,6 +335,9 @@ flowRoute.post("/:id/order", async (c) => {
 
   // Use the (possibly edited) XML the client sent, otherwise build it fresh.
   const xml = body.xml || buildOrderXml(ctx, body).xml;
+  // Let a loopback mock supplier correlate the inbound order to this session.
+  const sentOrderId = /<OrderRequestHeader[^>]*\borderID="([^"]*)"/.exec(xml)?.[1];
+  if (sentOrderId) rememberOrderSession(sentOrderId, sessionId);
 
   // Assemble the wire body: multipart/related when there are attachments. In
   // dangling-cid test mode the part carries a DIFFERENT Content-ID than the XML

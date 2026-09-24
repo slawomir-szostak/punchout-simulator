@@ -10,6 +10,11 @@ import { parseCart, parseXml } from "./cxml/parse.js";
 
 const carts = new Map<string, Cart>();
 const connectionBySession = new Map<string, string>();
+// orderID → BuyerCookie for OrderRequests this tool sent. A cXML OrderRequest
+// carries no BuyerCookie, so when the tool is both ends (loopback demo) the
+// mock supplier uses this to file the inbound order under the buyer's session
+// instead of minting a second "inbound" session for the same flow.
+const sessionByOrder = new Map<string, string>();
 
 export function setCart(cart: Cart): void {
   carts.set(cart.sessionId, cart);
@@ -52,8 +57,18 @@ export function connectionForSession(sessionId: string): string | undefined {
   return id || undefined;
 }
 
+export function rememberOrderSession(orderId: string, sessionId: string): void {
+  sessionByOrder.set(orderId, sessionId);
+}
+
+/** The buyer session that sent this orderID, if it was sent from this tool. */
+export function sessionForOrder(orderId: string): string | undefined {
+  return sessionByOrder.get(orderId);
+}
+
 /** Drop the in-memory cart + connection mapping for a session (on delete). */
 export function forgetSession(sessionId: string): void {
   carts.delete(sessionId);
   connectionBySession.delete(sessionId);
+  for (const [orderId, sid] of sessionByOrder) if (sid === sessionId) sessionByOrder.delete(orderId);
 }

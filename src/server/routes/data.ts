@@ -110,8 +110,9 @@ dataRoute.get("/recent", (c) => {
 });
 
 dataRoute.get("/cart/:sessionId", (c) => {
-  const cart = getCart(c.req.param("sessionId"));
-  return cart ? c.json(cart) : c.json({ error: "no cart for session" }, 404);
+  // "No cart yet" is the normal state of a fresh session, so answer 200/null
+  // rather than a 404 that the browser console reports on every session open.
+  return c.json(getCart(c.req.param("sessionId")) ?? null);
 });
 
 dataRoute.get("/attachments/:hash", (c) => {
