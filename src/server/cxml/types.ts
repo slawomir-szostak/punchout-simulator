@@ -290,6 +290,12 @@ export interface LogRecord {
   ts: string;
   /** HTTP status of the exchange when applicable. */
   status?: number;
+  /**
+   * Endpoint of the exchange: for outbound requests the URL we POSTed to, for
+   * inbound ones the URL the counterparty hit; the matching response record
+   * carries the same URL. Absent on records logged before this field existed.
+   */
+  url?: string;
   headers: Record<string, string>;
   body: string;
   contentType?: string;

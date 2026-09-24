@@ -105,6 +105,24 @@ describe("Mode A loopback", () => {
     }).then((r) => r.json());
     expect(order.statusCode).toBe("200");
     expect(order.request.validation.ok).toBe(true);
+
+    // Every record carries the endpoint of its exchange: Mode A logs where it
+    // POSTed, Mode B logs the URL the buyer hit, the punchback logs its target.
+    expect(setup.request.url).toBe(`${base}/sim/demo-supplier/punchout`);
+    expect(setup.response.url).toBe(setup.request.url);
+    expect(order.request.url).toBe(`${base}/sim/demo-supplier/order`);
+    const log = await fetch(`${base}/api/sessions/${encodeURIComponent(cookie)}`).then((r) => r.json());
+    const urlOf = (dir: string, docType: string) =>
+      log.find((r: any) => r.direction === dir && r.docType === docType)?.url;
+    expect(urlOf("in", "SetupRequest")).toBe(`${base}/sim/demo-supplier/punchout`);
+    expect(urlOf("out", "PunchOutOrderMessage")).toBe(formpost);
+    expect(urlOf("in", "PunchOutOrderMessage")).toBe(`${base}/punchout/return`);
+    // The supplier files the inbound OrderRequest under its own session id, so
+    // look it up across sessions.
+    const recent = await fetch(`${base}/api/recent`).then((r) => r.json());
+    expect(recent.find((r: any) => r.direction === "in" && r.docType === "OrderRequest")?.url).toBe(
+      `${base}/sim/demo-supplier/order`,
+    );
   });
 
   it("happy-path attachment resolves its cid", async () => {

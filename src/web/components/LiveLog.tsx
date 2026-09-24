@@ -15,6 +15,17 @@ function fmtTime(iso: string): string {
   return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
+// Just the host of the exchange's endpoint — enough to tell suppliers apart
+// in the list; the detail modal shows the full URL.
+function hostOf(url: string | undefined): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).host;
+  } catch {
+    return null;
+  }
+}
+
 export function LiveLog({ records, connections, onSelect }: Props) {
   const known = new Set(connections.map((c) => c.id));
   const nameOf = (id: string) => connections.find((c) => c.id === id)?.name ?? id ?? "—";
@@ -31,7 +42,10 @@ export function LiveLog({ records, connections, onSelect }: Props) {
             <span className={`dir dir-${r.direction}`}>{r.direction === "out" ? "↑" : "↓"}</span>
             <span className="log-doctype">{r.docType}</span>
             <ValidationBadge validation={r.validation} />
-            <span className="log-meta">{nameOf(r.connectionId)} · {fmtTime(r.ts)}</span>
+            <span className="log-meta">
+              {nameOf(r.connectionId)}
+              {hostOf(r.url) && <> · {hostOf(r.url)}</>} · {fmtTime(r.ts)}
+            </span>
           </button>
         ))}
     </div>

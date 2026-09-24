@@ -60,6 +60,11 @@ export function MessageDetail({ record, onClose }: { record: LogRecord; onClose:
           {record.status != null && <span>HTTP {record.status}</span>}
           {record.contentType && <span>{record.contentType}</span>}
         </div>
+        {record.url && (
+          <div className="modal-url" title={record.direction === "out" ? "sent to" : "received at"}>
+            {record.direction === "out" ? "→" : "←"} <code>{record.url}</code>
+          </div>
+        )}
 
         {record.attachments && record.attachments.length > 0 && (
           <div className="att-summary">

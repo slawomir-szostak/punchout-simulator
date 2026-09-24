@@ -94,6 +94,7 @@ punchoutReturnRoute.post("/return", async (c) => {
     connectionId: connectionId ?? "",
     direction: "in",
     docType: "PunchOutOrderMessage",
+    url: c.req.url,
     headers: { "Content-Type": c.req.header("content-type") ?? "" },
     body: xml,
     contentType: c.req.header("content-type") ?? undefined,
