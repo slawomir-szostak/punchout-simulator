@@ -16,6 +16,13 @@ interface Props {
 // the punchback has landed, before the overlay closes itself.
 const CLOSE_DELAY_MS = 1500;
 
+// Chrome's Local Network Access blocks a public page from reaching loopback /
+// private addresses unless the permission is delegated to the frame. With the
+// simulator on localhost, the supplier's punchback POST to BrowserFormPost is
+// exactly that, so the frame delegates it. Chrome has shipped this under
+// several names; unknown ones are ignored.
+const LOCAL_NETWORK_ALLOW = "local-network-access; local-network; loopback-network";
+
 /**
  * Embeds the supplier's catalog in an iframe overlay instead of a new tab, the
  * way some procurement systems (Coupa, Ariba Guided Buying) present punchout.
@@ -46,7 +53,7 @@ export function CatalogFrame({ src, cartAtOpen, cart, onClose }: Props) {
           </div>
           <button className="btn-link catalog-frame-close" onClick={onClose}>close ✕</button>
         </div>
-        <iframe className="catalog-frame-body" src={src} title="Supplier catalog" />
+        <iframe className="catalog-frame-body" src={src} title="Supplier catalog" allow={LOCAL_NETWORK_ALLOW} />
         <ul className="frame-hints">
           <li>
             <strong>Blank frame?</strong> The supplier sends <code>X-Frame-Options</code> or CSP{" "}
@@ -58,6 +65,11 @@ export function CatalogFrame({ src, cartAtOpen, cart, onClose }: Props) {
           </li>
           <li>
             <strong>Whole page navigated away?</strong> The punchback form targets <code>_top</code>.
+          </li>
+          <li>
+            <strong>Submit blocked "to connect to devices on your local network"?</strong> Chrome's Local Network
+            Access — allow the prompt, or set <em>Local network access</em> to Allow in the supplier site's settings
+            (managed browsers may block it by policy).
           </li>
         </ul>
         <p className="hint frame-hints-foot">The overlay closes itself once the cart lands.</p>
