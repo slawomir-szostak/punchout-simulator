@@ -523,14 +523,22 @@ export async function importConfig(raw: unknown, mode: ImportMode): Promise<Impo
 
   // A blank secret means "unchanged", as on PUT /connections/:id: a secret-less
   // export round-trips without wiping the secrets already stored here. Only
-  // while the connection still pairs the same parties, though — otherwise a
-  // file could re-point a connection at another supplier and inherit its secret.
+  // while the secret would still go where it went before, though — same parties,
+  // same identities, same supplier endpoints — otherwise a file could re-point a
+  // connection (or its supplier's URLs) elsewhere and inherit the secret.
+  const sameEndpoint = (a?: Supplier, b?: Supplier) =>
+    !!a && !!b && JSON.stringify([a.identity, a.punchoutUrl, a.orderUrl]) === JSON.stringify([b.identity, b.punchoutUrl, b.orderUrl]);
+  const sameIdentity = (a?: Buyer, b?: Buyer) => !!a && !!b && JSON.stringify(a.identity) === JSON.stringify(b.identity);
   next.connections = next.connections.map((c) => {
     if (c.sharedSecret) return c;
     const stored = d.data.connections.find((x) => x.id === c.id);
-    return stored?.sharedSecret && stored.buyerId === c.buyerId && stored.supplierId === c.supplierId
-      ? { ...c, sharedSecret: stored.sharedSecret }
-      : c;
+    const keep =
+      !!stored?.sharedSecret &&
+      stored.buyerId === c.buyerId &&
+      stored.supplierId === c.supplierId &&
+      sameIdentity(d.data.buyers.find((x) => x.id === c.buyerId), next.buyers.find((x) => x.id === c.buyerId)) &&
+      sameEndpoint(d.data.suppliers.find((x) => x.id === c.supplierId), next.suppliers.find((x) => x.id === c.supplierId));
+    return keep ? { ...c, sharedSecret: stored!.sharedSecret } : c;
   });
 
   // Referential integrity of the result. A dangling profileId / productListId

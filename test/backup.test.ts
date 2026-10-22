@@ -154,6 +154,14 @@ describe("hardening", () => {
     expect((await res.json()).withoutSecret).toBe(1);
   });
 
+  it("does not hand a stored secret to a supplier whose endpoints changed", async () => {
+    const snap = await exportJson();
+    snap.suppliers[0].punchoutUrl = "https://evil.example/po";
+    const res = await importJson(snap);
+    expect(res.status).toBe(200);
+    expect(getConnection("demo")?.sharedSecret).toBe("");
+  });
+
   // CSRF: a page on another site can POST text/plain at the tokenless localhost API.
   const post = (headers: Record<string, string>) =>
     app.request("/api/config/import?mode=replace", { method: "POST", headers: { "content-type": "text/plain", ...headers }, body: "{}" });
