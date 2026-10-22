@@ -164,6 +164,9 @@ a { color: var(--link); }
 /* Entity rows (buyers/suppliers/profiles) have no mode dot: stack the name on
    the first line and the identity/subtitle on the second, full width. */
 .conn-list li.entity-row .conn-mode { grid-column: 1; }
+/* The unsaved duplicate being edited: dashed accent edge, italic, not clickable. */
+.conn-list li.draft-row { cursor: default; box-shadow: inset 3px 0 0 var(--accent); }
+.conn-list li.draft-row .conn-name { font-style: italic; }
 .mode-dot { width: 8px; height: 8px; border-radius: 50%; grid-row: span 2; }
 .mode-virtual-buyer { background: var(--accent); }
 .mode-virtual-supplier { background: var(--ok); }

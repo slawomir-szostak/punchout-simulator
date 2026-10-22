@@ -47,6 +47,18 @@ export function useDraft<T>(initial: T, depsKey: string) {
 export interface SaveProps {
   onSave: (data: any) => Promise<void>;
   onDelete?: (id: string) => Promise<void>;
+  /** Copy the entity being edited into a new, unsaved draft. */
+  onDuplicate?: () => void;
+  /** Set on a duplicate draft: drop it and return to the source. */
+  onDiscard?: () => void;
+}
+
+/** Props for a draft's Name input: focused with the text selected, so a
+ *  duplicate's "(copy)" name can be overwritten straight away. */
+export function draftNameProps(isDraft: boolean) {
+  return isDraft
+    ? { autoFocus: true, onFocus: (e: { currentTarget: HTMLInputElement }) => e.currentTarget.select() }
+    : {};
 }
 
 /** Two-step delete button: first click arms it, second click confirms.
@@ -108,6 +120,8 @@ export function Actions({
   noun,
   onSave,
   onDelete,
+  onDuplicate,
+  onDiscard,
   onError,
 }: {
   saving: boolean;
@@ -116,6 +130,8 @@ export function Actions({
   noun: string;
   onSave: () => void;
   onDelete?: () => void | Promise<void>;
+  onDuplicate?: () => void;
+  onDiscard?: () => void;
   onError?: (msg: string) => void;
 }) {
   return (
@@ -125,6 +141,16 @@ export function Actions({
         <button className="btn-primary" onClick={onSave} disabled={saving}>
           {saving ? "Saving…" : isNew ? `Create ${noun}` : "Save changes"}
         </button>
+        {!isNew && onDuplicate && (
+          <button type="button" className="btn-secondary" onClick={onDuplicate} title={`Copy this ${noun} into a new, unsaved draft`}>
+            Duplicate
+          </button>
+        )}
+        {isNew && onDiscard && (
+          <button type="button" className="btn-secondary" onClick={onDiscard} disabled={saving}>
+            Discard
+          </button>
+        )}
         {!isNew && onDelete && <ConfirmButton onConfirm={onDelete} onError={onError} />}
       </div>
     </>
@@ -135,14 +161,29 @@ const blankCred = (): Credential => ({ domain: "DUNS", identity: "" });
 
 export function BuyerEditor({
   buyer,
+  seed,
+  buyers,
   profiles,
   onSave,
   onDelete,
-}: { buyer: Buyer | null; profiles: Profile[] } & SaveProps) {
+  onDuplicate,
+  onDiscard,
+}: { buyer: Buyer | null; seed?: Partial<Buyer>; buyers: Buyer[]; profiles: Profile[] } & SaveProps) {
   const [draft, setDraft] = useDraft<Partial<Buyer>>(
-    buyer ?? { name: "", identity: blankCred() },
+    buyer ?? seed ?? { name: "", identity: blankCred() },
     buyer?.id ?? "new",
   );
+  // Mode B tells buyers apart by their From identity: with two buyers sharing
+  // one and connected to the same supplier, inbound requests match whichever
+  // connection comes first. A duplicate starts out exactly like that.
+  const twin = draft.identity?.identity
+    ? buyers.find(
+        (b) =>
+          b.id !== buyer?.id &&
+          b.identity.domain === draft.identity?.domain &&
+          b.identity.identity === draft.identity?.identity,
+      )
+    : undefined;
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -162,13 +203,19 @@ export function BuyerEditor({
     <div className="editor-form">
       <p className="hint">A buyer holds only its own cXML identity (the <code>From</code> credential it presents). Reuse it across many supplier connections.</p>
       <Field label="Name">
-        <input value={draft.name ?? ""} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Acme Procurement" />
+        <input value={draft.name ?? ""} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Acme Procurement" {...draftNameProps(!!seed)} />
       </Field>
       <CredentialFields
         label="Identity (From)"
         value={draft.identity ?? blankCred()}
         onChange={(identity) => setDraft({ ...draft, identity })}
       />
+      {twin && (
+        <p className="hint warn-hint" role="status">
+          Same identity as “{twin.name}”. If both are connected to the same supplier, the mock supplier (Mode B) can't tell
+          them apart — inbound requests match the first connection. Change the identity to keep them separate.
+        </p>
+      )}
       <Field
         label={
           <>
@@ -208,19 +255,22 @@ export function BuyerEditor({
         <ContactFields value={(draft.contact ?? { role: "endUser" }) as Contact} onChange={(contact: Contact) => setDraft({ ...draft, contact })} />
       </fieldset>
 
-      <Actions saving={saving} err={err} isNew={!buyer} noun="buyer" onSave={save} onError={setErr} onDelete={buyer && onDelete ? () => onDelete(buyer.id) : undefined} />
+      <Actions saving={saving} err={err} isNew={!buyer} noun="buyer" onSave={save} onError={setErr} onDelete={buyer && onDelete ? () => onDelete(buyer.id) : undefined} onDuplicate={onDuplicate} onDiscard={onDiscard} />
     </div>
   );
 }
 
 export function SupplierEditor({
   supplier,
+  seed,
   productLists,
   onSave,
   onDelete,
-}: { supplier: Supplier | null; productLists: ProductList[] } & SaveProps) {
+  onDuplicate,
+  onDiscard,
+}: { supplier: Supplier | null; seed?: Partial<Supplier>; productLists: ProductList[] } & SaveProps) {
   const [draft, setDraft] = useDraft<Partial<Supplier>>(
-    supplier ?? { name: "", identity: blankCred(), punchoutUrl: "", orderUrl: "", productListIds: [] },
+    supplier ?? seed ?? { name: "", identity: blankCred(), punchoutUrl: "", orderUrl: "", productListIds: [] },
     supplier?.id ?? "new",
   );
   const [saving, setSaving] = useState(false);
@@ -251,7 +301,7 @@ export function SupplierEditor({
         A supplier holds its cXML identity (<code>To</code>) and its <strong>endpoints</strong>, which are constant for the supplier — set them once here, not per connection.
       </p>
       <Field label="Name">
-        <input value={draft.name ?? ""} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Office Supplies Inc." />
+        <input value={draft.name ?? ""} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Office Supplies Inc." {...draftNameProps(!!seed)} />
       </Field>
       <CredentialFields
         label="Identity (To)"
@@ -301,7 +351,7 @@ export function SupplierEditor({
         )}
       </fieldset>
 
-      <Actions saving={saving} err={err} isNew={!supplier} noun="supplier" onSave={save} onError={setErr} onDelete={supplier && onDelete ? () => onDelete(supplier.id) : undefined} />
+      <Actions saving={saving} err={err} isNew={!supplier} noun="supplier" onSave={save} onError={setErr} onDelete={supplier && onDelete ? () => onDelete(supplier.id) : undefined} onDuplicate={onDuplicate} onDiscard={onDiscard} />
     </div>
   );
 }

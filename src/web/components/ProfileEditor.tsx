@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { DtdVersionMap, Profile, ProfileExtrinsic } from "../types";
 import { api } from "../api";
 import { Field } from "./Field";
-import { Actions, useDraft, type SaveProps } from "./PartyEditors";
+import { Actions, draftNameProps, useDraft, type SaveProps } from "./PartyEditors";
 
 // Editor for a reusable procurement-platform Profile. A profile holds the
 // platform-intrinsic defaults for the cXML a buyer running that platform emits
@@ -32,8 +32,15 @@ const DOC_TYPES: Array<keyof DtdVersionMap> = [
   "OrderResponse",
 ];
 
-export function ProfileEditor({ profile, onSave, onDelete }: { profile: Profile | null } & SaveProps) {
-  const [draft, setDraft] = useDraft<Partial<Profile>>(profile ?? blankProfile(), profile?.id ?? "new");
+export function ProfileEditor({
+  profile,
+  seed,
+  onSave,
+  onDelete,
+  onDuplicate,
+  onDiscard,
+}: { profile: Profile | null; seed?: Partial<Profile> } & SaveProps) {
+  const [draft, setDraft] = useDraft<Partial<Profile>>(profile ?? seed ?? blankProfile(), profile?.id ?? "new");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [presets, setPresets] = useState<Profile[]>([]);
@@ -104,7 +111,7 @@ export function ProfileEditor({ profile, onSave, onDelete }: { profile: Profile 
 
       <div className="form-grid">
         <Field label="Name">
-          <input value={draft.name ?? ""} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="My Coupa tenant" />
+          <input value={draft.name ?? ""} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="My Coupa tenant" {...draftNameProps(!!seed)} />
         </Field>
         <Field label={<>Platform <span className="hint">(label)</span></>}>
           <input value={draft.platform ?? ""} onChange={(e) => setDraft({ ...draft, platform: e.target.value })} placeholder="Coupa" />
@@ -194,10 +201,10 @@ export function ProfileEditor({ profile, onSave, onDelete }: { profile: Profile 
       </fieldset>
 
       {profile?.builtin && (
-        <p className="hint">This is a built-in preset. Saving edits it in place; deleting removes it, but it will be re-created on the next start.</p>
+        <p className="hint">This is a built-in preset. To tailor it for a client, <strong>Duplicate</strong> it and edit the copy. Saving here edits the preset in place; deleting removes it, but it will be re-created on the next start.</p>
       )}
 
-      <Actions saving={saving} err={err} isNew={!profile} noun="profile" onSave={save} onError={setErr} onDelete={profile && onDelete ? () => onDelete(profile.id) : undefined} />
+      <Actions saving={saving} err={err} isNew={!profile} noun="profile" onSave={save} onError={setErr} onDelete={profile && onDelete ? () => onDelete(profile.id) : undefined} onDuplicate={onDuplicate} onDiscard={onDiscard} />
     </div>
   );
 }

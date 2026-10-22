@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import type { CatalogItem, Classification, ProductList } from "../types";
 import { api } from "../api";
 import { CSV_TEMPLATE, csvToCatalogItems } from "../csv";
-import { Actions, useDraft, type SaveProps } from "./PartyEditors";
+import { Actions, draftNameProps, useDraft, type SaveProps } from "./PartyEditors";
 
 // Editor for a reusable Product List — a named set of catalog products that one
 // or more Suppliers serve as their Mode-B catalog. Mirrors ProfileEditor: a
@@ -22,8 +22,15 @@ const blankItem = (): CatalogItem => ({
   allowFractional: false,
 });
 
-export function ProductListEditor({ list, onSave, onDelete }: { list: ProductList | null } & SaveProps) {
-  const [draft, setDraft] = useDraft<Partial<ProductList>>(list ?? blankList(), list?.id ?? "new");
+export function ProductListEditor({
+  list,
+  seed,
+  onSave,
+  onDelete,
+  onDuplicate,
+  onDiscard,
+}: { list: ProductList | null; seed?: Partial<ProductList> } & SaveProps) {
+  const [draft, setDraft] = useDraft<Partial<ProductList>>(list ?? seed ?? blankList(), list?.id ?? "new");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [presets, setPresets] = useState<ProductList[]>([]);
@@ -161,7 +168,7 @@ export function ProductListEditor({ list, onSave, onDelete }: { list: ProductLis
 
       <div className="form-row">
         <label>Name</label>
-        <input value={draft.name ?? ""} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="My assortment" />
+        <input value={draft.name ?? ""} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="My assortment" {...draftNameProps(!!seed)} />
       </div>
       <div className="form-row">
         <label>Description <span className="hint">(optional)</span></label>
@@ -231,10 +238,10 @@ export function ProductListEditor({ list, onSave, onDelete }: { list: ProductLis
       </fieldset>
 
       {list?.builtin && (
-        <p className="hint">This is a built-in sample list. Saving edits it in place; deleting removes it, but it will be re-created on the next start.</p>
+        <p className="hint">This is a built-in sample list. To build your own assortment from it, <strong>Duplicate</strong> it and edit the copy. Saving here edits it in place; deleting removes it, but it will be re-created on the next start.</p>
       )}
 
-      <Actions saving={saving} err={err} isNew={!list} noun="product list" onSave={save} onError={setErr} onDelete={list && onDelete ? () => onDelete(list.id) : undefined} />
+      <Actions saving={saving} err={err} isNew={!list} noun="product list" onSave={save} onError={setErr} onDelete={list && onDelete ? () => onDelete(list.id) : undefined} onDuplicate={onDuplicate} onDiscard={onDiscard} />
     </div>
   );
 }

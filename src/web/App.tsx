@@ -19,7 +19,7 @@ import {
   type SessionSummary,
   type Supplier,
 } from "./types";
-import { ConnectionEditor } from "./components/ConnectionEditor";
+import { ConnectionEditor, type ConnectionPayload, type SecretSource } from "./components/ConnectionEditor";
 import { BuyerEditor, ConfirmButton, SupplierEditor } from "./components/PartyEditors";
 import { ProfileEditor } from "./components/ProfileEditor";
 import { ProductListEditor } from "./components/ProductListEditor";
@@ -33,6 +33,29 @@ import { BackupDialog } from "./components/BackupDialog";
 type View = "sessions" | "connections" | "buyers" | "suppliers" | "products" | "profiles";
 type Panel = "edit" | "new";
 const NEW = "__new__";
+
+type ConfigView = Exclude<View, "sessions">;
+
+/** An unsaved copy of an entity, shown in its editor until Created or Discarded. */
+interface Duplicate {
+  view: ConfigView;
+  sourceId: string;
+  sourceName: string;
+  seed: Record<string, unknown>;
+  /** Remount key, so duplicating again re-seeds the editor. */
+  key: number;
+  /** Connections only, when the source has a secret to carry over. */
+  secretSource?: SecretSource;
+}
+
+/** "Name (copy)", or "(copy 2)", "(copy 3)" … when that name is already taken. */
+function copyName(name: string, taken: string[]): string {
+  const base = name.replace(/ \(copy(?: \d+)?\)$/, "");
+  for (let n = 1; ; n++) {
+    const candidate = n === 1 ? `${base} (copy)` : `${base} (copy ${n})`;
+    if (!taken.includes(candidate)) return candidate;
+  }
+}
 
 /** A Mode-A session the user is actively driving (client-side flow state). */
 interface Flow {
@@ -88,6 +111,7 @@ export function App() {
   const [proxy, setProxy] = useState<ProxyStatus | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
   const [showBackup, setShowBackup] = useState(false);
+  const [dup, setDup] = useState<Duplicate | null>(null);
 
   const selectedConn = useMemo(
     () => connections.find((c) => c.id === selectedConnId) ?? null,
@@ -258,11 +282,12 @@ export function App() {
   };
 
   // --- connection handlers ---
-  const saveConnection = async (data: Partial<Connection>) => {
+  const saveConnection = async (data: ConnectionPayload) => {
     if (panel === "new" || !selectedConn) {
       const created = await api.createConnection(data);
       await reloadConnections();
       setSelectedConnId(created.id);
+      setDup(null);
     } else {
       await api.updateConnection(selectedConn.id, data);
       await reloadConnections();
@@ -282,6 +307,7 @@ export function App() {
       const created = await api.buyers.create(data);
       await reloadBuyers();
       setSelectedBuyerId(created.id);
+      setDup(null);
     } else {
       await api.buyers.update(selectedBuyerId, data);
       await reloadBuyers();
@@ -299,6 +325,7 @@ export function App() {
       const created = await api.suppliers.create(data);
       await reloadSuppliers();
       setSelectedSupplierId(created.id);
+      setDup(null);
     } else {
       await api.suppliers.update(selectedSupplierId, data);
       await reloadSuppliers();
@@ -316,6 +343,7 @@ export function App() {
       const created = await api.productLists.create(data);
       await reloadProductLists();
       setSelectedProductListId(created.id);
+      setDup(null);
     } else {
       await api.productLists.update(selectedProductListId, data);
       await reloadProductLists();
@@ -333,6 +361,7 @@ export function App() {
       const created = await api.profiles.create(data);
       await reloadProfiles();
       setSelectedProfileId(created.id);
+      setDup(null);
     } else {
       await api.profiles.update(selectedProfileId, data);
       await reloadProfiles();
@@ -343,6 +372,46 @@ export function App() {
     await reloadProfiles();
     setSelectedProfileId(null);
   };
+
+  // --- duplicate (unsaved draft) ---
+  // Selecting the view's "new" slot with a seed reuses each editor's create
+  // path, so a duplicate is saved exactly like a hand-made entity.
+  const selectNew: Record<ConfigView, () => void> = {
+    connections: () => { setPanel("new"); setSelectedConnId(null); },
+    buyers: () => setSelectedBuyerId(NEW),
+    suppliers: () => setSelectedSupplierId(NEW),
+    products: () => setSelectedProductListId(NEW),
+    profiles: () => setSelectedProfileId(NEW),
+  };
+  const selectExisting: Record<ConfigView, (id: string) => void> = {
+    connections: (id) => { setSelectedConnId(id); setPanel("edit"); },
+    buyers: setSelectedBuyerId,
+    suppliers: setSelectedSupplierId,
+    products: setSelectedProductListId,
+    profiles: setSelectedProfileId,
+  };
+  const duplicate = (view: ConfigView, source: { id: string; name: string }, taken: { name: string }[]) => {
+    // Drop identity/bookkeeping (and, for connections, the masked secret and
+    // the resolved parties); the server mints a new id on create and never
+    // takes `builtin` from the wire, so a copy of a preset is an ordinary row.
+    const { id, createdAt, updatedAt, builtin, hasSharedSecret, sharedSecret, buyer, supplier, ...fields } =
+      source as unknown as Record<string, unknown>;
+    const seed = { ...fields, name: copyName(source.name, taken.map((t) => t.name)) };
+    const secretSource =
+      view === "connections" && hasSharedSecret
+        ? { id: source.id, name: source.name, supplierId: String(fields.supplierId) }
+        : undefined;
+    setDup({ view, sourceId: source.id, sourceName: source.name, seed, key: Date.now(), secretSource });
+    selectNew[view]();
+  };
+  const discardDuplicate = () => {
+    if (!dup) return;
+    setDup(null);
+    selectExisting[dup.view](dup.sourceId);
+  };
+  // Picking anything in a list (or "+ New") abandons the draft.
+  const leaveDraft = <A extends unknown[]>(fn: (...a: A) => void) => (...a: A) => { setDup(null); fn(...a); };
+  const dupFor = (view: ConfigView) => (dup?.view === view ? dup : null);
 
   const selectedBuyer = buyers.find((b) => b.id === selectedBuyerId) ?? null;
   const selectedSupplier = suppliers.find((s) => s.id === selectedSupplierId) ?? null;
@@ -429,11 +498,11 @@ export function App() {
             <>
               <div className="sidebar-head">
                 <span>Connections</span>
-                <button className="btn-secondary" onClick={() => { setPanel("new"); setSelectedConnId(null); }}>+ New</button>
+                <button className="btn-secondary" onClick={leaveDraft(() => { setPanel("new"); setSelectedConnId(null); })}>+ New</button>
               </div>
               <ul className="conn-list">
                 {connections.map((c) => {
-                  const select = () => { setSelectedConnId(c.id); setPanel("edit"); };
+                  const select = leaveDraft(() => { setSelectedConnId(c.id); setPanel("edit"); });
                   const active = c.id === selectedConnId && panel !== "new";
                   return (
                     <li key={c.id} className={active ? "active" : ""} role="button" tabIndex={0}
@@ -446,28 +515,29 @@ export function App() {
                     </li>
                   );
                 })}
+                {panel === "new" && dupFor("connections") && <DraftRow name={String(dupFor("connections")!.seed.name)} />}
               </ul>
             </>
           )}
 
           {view === "buyers" && (
-            <EntityList title="Buyers" items={buyers} selectedId={selectedBuyerId}
-              onSelect={setSelectedBuyerId} onNew={() => setSelectedBuyerId(NEW)}
+            <EntityList title="Buyers" items={buyers} selectedId={selectedBuyerId} draft={dupFor("buyers")}
+              onSelect={leaveDraft(setSelectedBuyerId)} onNew={leaveDraft(() => setSelectedBuyerId(NEW))}
               subtitle={(b) => `${b.identity.domain}/${b.identity.identity}`} />
           )}
           {view === "suppliers" && (
-            <EntityList title="Suppliers" items={suppliers} selectedId={selectedSupplierId}
-              onSelect={setSelectedSupplierId} onNew={() => setSelectedSupplierId(NEW)}
+            <EntityList title="Suppliers" items={suppliers} selectedId={selectedSupplierId} draft={dupFor("suppliers")}
+              onSelect={leaveDraft(setSelectedSupplierId)} onNew={leaveDraft(() => setSelectedSupplierId(NEW))}
               subtitle={(s) => `${s.identity.domain}/${s.identity.identity}`} />
           )}
           {view === "products" && (
-            <EntityList title="Product lists" items={productLists} selectedId={selectedProductListId}
-              onSelect={setSelectedProductListId} onNew={() => setSelectedProductListId(NEW)}
+            <EntityList title="Product lists" items={productLists} selectedId={selectedProductListId} draft={dupFor("products")}
+              onSelect={leaveDraft(setSelectedProductListId)} onNew={leaveDraft(() => setSelectedProductListId(NEW))}
               subtitle={(p) => `${p.items.length} items`} />
           )}
           {view === "profiles" && (
-            <EntityList title="Buyer profiles" items={profiles} selectedId={selectedProfileId}
-              onSelect={setSelectedProfileId} onNew={() => setSelectedProfileId(NEW)}
+            <EntityList title="Buyer profiles" items={profiles} selectedId={selectedProfileId} draft={dupFor("profiles")}
+              onSelect={leaveDraft(setSelectedProfileId)} onNew={leaveDraft(() => setSelectedProfileId(NEW))}
               subtitle={(p) => p.platform ?? "custom"} />
           )}
         </aside>
@@ -580,8 +650,10 @@ export function App() {
 
           {view === "connections" && (
             <>
-              {panel === "new" && (<><h2>New connection</h2>
-                <ConnectionEditor connection={null} buyers={buyers} suppliers={suppliers} onSave={saveConnection} /></>)}
+              {panel === "new" && (<><h2>{dupFor("connections") ? `Copy of ${dupFor("connections")!.sourceName}` : "New connection"}</h2>
+                <ConnectionEditor key={dupFor("connections")?.key ?? "new"} connection={null} seed={dupFor("connections")?.seed}
+                  secretSource={dupFor("connections")?.secretSource} buyers={buyers} suppliers={suppliers}
+                  onSave={saveConnection} onDiscard={dupFor("connections") ? discardDuplicate : undefined} /></>)}
 
               {panel !== "new" && selectedConn && (
                 <>
@@ -596,7 +668,8 @@ export function App() {
                     )}
                   </div>
                   <ConnectionEditor connection={selectedConn} buyers={buyers} suppliers={suppliers}
-                    onSave={saveConnection} onDelete={deleteConnection} />
+                    onSave={saveConnection} onDelete={deleteConnection}
+                    onDuplicate={() => duplicate("connections", selectedConn, connections)} />
                   {selectedConn.mode === "virtual-supplier" && <SupplierPanel supplier={selectedConn.supplier} publicUrl={publicUrl} />}
                 </>
               )}
@@ -617,36 +690,52 @@ export function App() {
 
           {view === "buyers" && (
             <>
-              <h2>{selectedBuyerId === NEW ? "New buyer" : selectedBuyer?.name ?? "Buyers"}</h2>
+              <h2>{selectedBuyerId === NEW ? (dupFor("buyers") ? `Copy of ${dupFor("buyers")!.sourceName}` : "New buyer") : selectedBuyer?.name ?? "Buyers"}</h2>
               {selectedBuyerId ? (
-                <BuyerEditor buyer={selectedBuyerId === NEW ? null : selectedBuyer} profiles={profiles} onSave={saveBuyer} onDelete={deleteBuyer} />
+                <BuyerEditor key={dupFor("buyers")?.key ?? "buyer"} buyer={selectedBuyerId === NEW ? null : selectedBuyer}
+                  seed={selectedBuyerId === NEW ? dupFor("buyers")?.seed : undefined} buyers={buyers} profiles={profiles}
+                  onSave={saveBuyer} onDelete={deleteBuyer}
+                  onDuplicate={selectedBuyer ? () => duplicate("buyers", selectedBuyer, buyers) : undefined}
+                  onDiscard={dupFor("buyers") ? discardDuplicate : undefined} />
               ) : <p className="hint">Select a buyer or create one.</p>}
             </>
           )}
 
           {view === "suppliers" && (
             <>
-              <h2>{selectedSupplierId === NEW ? "New supplier" : selectedSupplier?.name ?? "Suppliers"}</h2>
+              <h2>{selectedSupplierId === NEW ? (dupFor("suppliers") ? `Copy of ${dupFor("suppliers")!.sourceName}` : "New supplier") : selectedSupplier?.name ?? "Suppliers"}</h2>
               {selectedSupplierId ? (
-                <SupplierEditor supplier={selectedSupplierId === NEW ? null : selectedSupplier} productLists={productLists} onSave={saveSupplier} onDelete={deleteSupplier} />
+                <SupplierEditor key={dupFor("suppliers")?.key ?? "supplier"} supplier={selectedSupplierId === NEW ? null : selectedSupplier}
+                  seed={selectedSupplierId === NEW ? dupFor("suppliers")?.seed : undefined} productLists={productLists}
+                  onSave={saveSupplier} onDelete={deleteSupplier}
+                  onDuplicate={selectedSupplier ? () => duplicate("suppliers", selectedSupplier, suppliers) : undefined}
+                  onDiscard={dupFor("suppliers") ? discardDuplicate : undefined} />
               ) : <p className="hint">Select a supplier or create one.</p>}
             </>
           )}
 
           {view === "products" && (
             <>
-              <h2>{selectedProductListId === NEW ? "New product list" : selectedProductList?.name ?? "Product lists"}</h2>
+              <h2>{selectedProductListId === NEW ? (dupFor("products") ? `Copy of ${dupFor("products")!.sourceName}` : "New product list") : selectedProductList?.name ?? "Product lists"}</h2>
               {selectedProductListId ? (
-                <ProductListEditor list={selectedProductListId === NEW ? null : selectedProductList} onSave={saveProductList} onDelete={deleteProductList} />
+                <ProductListEditor key={dupFor("products")?.key ?? "list"} list={selectedProductListId === NEW ? null : selectedProductList}
+                  seed={selectedProductListId === NEW ? dupFor("products")?.seed : undefined}
+                  onSave={saveProductList} onDelete={deleteProductList}
+                  onDuplicate={selectedProductList ? () => duplicate("products", selectedProductList, productLists) : undefined}
+                  onDiscard={dupFor("products") ? discardDuplicate : undefined} />
               ) : <p className="hint">Select a product list or create one. A built-in sample list is included; assign lists to a Supplier to serve them as its catalog.</p>}
             </>
           )}
 
           {view === "profiles" && (
             <>
-              <h2>{selectedProfileId === NEW ? "New buyer profile" : selectedProfile?.name ?? "Buyer profiles"}</h2>
+              <h2>{selectedProfileId === NEW ? (dupFor("profiles") ? `Copy of ${dupFor("profiles")!.sourceName}` : "New buyer profile") : selectedProfile?.name ?? "Buyer profiles"}</h2>
               {selectedProfileId ? (
-                <ProfileEditor profile={selectedProfileId === NEW ? null : selectedProfile} onSave={saveProfile} onDelete={deleteProfile} />
+                <ProfileEditor key={dupFor("profiles")?.key ?? "profile"} profile={selectedProfileId === NEW ? null : selectedProfile}
+                  seed={selectedProfileId === NEW ? dupFor("profiles")?.seed : undefined}
+                  onSave={saveProfile} onDelete={deleteProfile}
+                  onDuplicate={selectedProfile ? () => duplicate("profiles", selectedProfile, profiles) : undefined}
+                  onDiscard={dupFor("profiles") ? discardDuplicate : undefined} />
               ) : <p className="hint">Select a buyer profile or create one. Built-in presets (Ariba, Coupa, …) are listed here. Assign a profile to a Buyer to control how its cXML is emitted.</p>}
             </>
           )}
@@ -805,9 +894,11 @@ function ThemeToggle() {
 }
 
 function EntityList<T extends { id: string; name: string }>({
-  title, items, selectedId, onSelect, onNew, subtitle,
+  title, items, selectedId, draft, onSelect, onNew, subtitle,
 }: {
   title: string; items: T[]; selectedId: string | null;
+  /** An unsaved duplicate, listed (selected) until it is created or discarded. */
+  draft?: Duplicate | null;
   onSelect: (id: string) => void; onNew: () => void; subtitle: (it: T) => string;
 }) {
   return (
@@ -831,8 +922,19 @@ function EntityList<T extends { id: string; name: string }>({
             <div className="conn-mode">{subtitle(it)}</div>
           </li>
         ))}
+        {draft && selectedId === NEW && <DraftRow name={String(draft.seed.name)} />}
       </ul>
     </>
+  );
+}
+
+/** Sidebar placeholder for the draft being edited (not clickable — it's open). */
+function DraftRow({ name }: { name: string }) {
+  return (
+    <li className="entity-row active draft-row" aria-current="true">
+      <div className="conn-name">{name}</div>
+      <div className="conn-mode">unsaved draft</div>
+    </li>
   );
 }
 

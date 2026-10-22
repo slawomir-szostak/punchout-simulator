@@ -70,8 +70,20 @@ connectionsRoute.get("/", (c) =>
 );
 
 connectionsRoute.post("/", async (c) => {
-  const input = normalize(await readJsonBody(c));
+  const body = await readJsonBody(c);
+  const input = normalize(body);
   const errors = validate(input);
+  // Duplicating a connection: the client never sees the stored secret, so it
+  // names the source and the secret is copied here — only while the supplier is
+  // unchanged, since the secret belongs to that supplier's endpoint (the same
+  // rule the config import applies).
+  if (!errors.length && !input.sharedSecret && body?.copySecretFrom) {
+    const source = getConnection(String(body.copySecretFrom));
+    if (!source) errors.push("the connection to copy the shared secret from no longer exists");
+    else if (source.supplierId !== input.supplierId) {
+      errors.push("the shared secret can only be copied to a connection with the same supplier");
+    } else input.sharedSecret = source.sharedSecret;
+  }
   if (errors.length) return c.json({ errors }, 400);
   return c.json(maskSecret(await createConnection(withLabel(input))), 201);
 });

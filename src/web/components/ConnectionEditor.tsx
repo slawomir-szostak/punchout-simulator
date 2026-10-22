@@ -1,14 +1,30 @@
 import { useEffect, useState } from "react";
 import type { Buyer, Connection, ConnectionMode, Supplier } from "../types";
 import { Field } from "./Field";
-import { ConfirmButton } from "./PartyEditors";
+import { ConfirmButton, draftNameProps } from "./PartyEditors";
+
+/** The connection a duplicate draft was copied from, when it has a secret. */
+export interface SecretSource {
+  id: string;
+  name: string;
+  supplierId: string;
+}
+
+/** What onSave receives: the form, plus the source to copy the secret from. */
+export type ConnectionPayload = Partial<Connection> & { copySecretFrom?: string };
 
 interface Props {
   connection: Connection | null; // null => new connection draft
+  /** Prefill for a new draft (duplicate). */
+  seed?: Partial<Connection>;
+  /** Duplicate draft: the source whose stored secret can be copied server-side. */
+  secretSource?: SecretSource;
   buyers: Buyer[];
   suppliers: Supplier[];
-  onSave: (data: Partial<Connection>) => Promise<void>;
+  onSave: (data: ConnectionPayload) => Promise<void>;
   onDelete?: (id: string) => Promise<void>;
+  onDuplicate?: () => void;
+  onDiscard?: () => void;
 }
 
 const blank = (): Partial<Connection> => ({
@@ -22,17 +38,25 @@ const blank = (): Partial<Connection> => ({
 
 // A connection pairs a Buyer and a Supplier and holds only pair-specific data
 // (mode + credentials). The endpoints and identities come from the parties.
-export function ConnectionEditor({ connection, buyers, suppliers, onSave, onDelete }: Props) {
-  const [form, setForm] = useState<Partial<Connection>>(connection ?? blank());
-  const [overrideSender, setOverrideSender] = useState<boolean>(!!connection?.senderIdentity);
+export function ConnectionEditor({ connection, seed, secretSource, buyers, suppliers, onSave, onDelete, onDuplicate, onDiscard }: Props) {
+  const initial = connection ?? seed ?? blank();
+  const [form, setForm] = useState<Partial<Connection>>(initial);
+  const [overrideSender, setOverrideSender] = useState<boolean>(!!initial.senderIdentity);
+  const [copySecret, setCopySecret] = useState(true);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    setForm(connection ?? blank());
-    setOverrideSender(!!connection?.senderIdentity);
+    setForm(initial);
+    setOverrideSender(!!initial.senderIdentity);
     setErr(null);
   }, [connection?.id]);
+
+  // The stored secret belongs to the source supplier's endpoint, so it can only
+  // be carried over while the draft still points at that supplier (the server
+  // enforces the same rule).
+  const canCopySecret = !!secretSource && form.supplierId === secretSource.supplierId;
+  const willCopySecret = canCopySecret && copySecret && !form.sharedSecret;
 
   const set = (patch: Partial<Connection>) => setForm((f) => ({ ...f, ...patch }));
   const buyer = buyers.find((b) => b.id === form.buyerId);
@@ -41,8 +65,9 @@ export function ConnectionEditor({ connection, buyers, suppliers, onSave, onDele
     setSaving(true);
     setErr(null);
     try {
-      const payload = { ...form };
+      const payload: ConnectionPayload = { ...form };
       if (!overrideSender) payload.senderIdentity = undefined;
+      if (willCopySecret) payload.copySecretFrom = secretSource!.id;
       await onSave(payload);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -62,7 +87,7 @@ export function ConnectionEditor({ connection, buyers, suppliers, onSave, onDele
       )}
 
       <Field label={<>Name <span className="hint">(optional — defaults to "Buyer → Supplier")</span></>}>
-        <input value={form.name ?? ""} onChange={(e) => set({ name: e.target.value })} placeholder="(auto)" />
+        <input value={form.name ?? ""} onChange={(e) => set({ name: e.target.value })} placeholder="(auto)" {...draftNameProps(!!seed)} />
       </Field>
 
       <div className="form-grid">
@@ -106,6 +131,19 @@ export function ConnectionEditor({ connection, buyers, suppliers, onSave, onDele
             }
           />
         </Field>
+        {secretSource && !form.sharedSecret && (
+          <label className="check-row">
+            <input type="checkbox" checked={copySecret && canCopySecret} disabled={!canCopySecret} onChange={(e) => setCopySecret(e.target.checked)} />
+            <span>
+              Copy the shared secret from “{secretSource.name}”
+              <span className="hint">
+                {canCopySecret
+                  ? " — or type a new one above"
+                  : " — only possible while the supplier is the same; the secret belongs to that supplier"}
+              </span>
+            </span>
+          </label>
+        )}
 
         <label className="dangling-toggle">
           <input type="checkbox" checked={overrideSender} onChange={(e) => setOverrideSender(e.target.checked)} />
@@ -165,6 +203,16 @@ export function ConnectionEditor({ connection, buyers, suppliers, onSave, onDele
         <button className="btn-primary" onClick={save} disabled={saving || noParties}>
           {saving ? "Saving…" : connection ? "Save changes" : "Create connection"}
         </button>
+        {connection && onDuplicate && (
+          <button type="button" className="btn-secondary" onClick={onDuplicate} title="Copy this connection into a new, unsaved draft">
+            Duplicate
+          </button>
+        )}
+        {!connection && onDiscard && (
+          <button type="button" className="btn-secondary" onClick={onDiscard} disabled={saving}>
+            Discard
+          </button>
+        )}
         {connection && onDelete && <ConfirmButton onConfirm={() => onDelete(connection.id)} onError={setErr} />}
       </div>
     </div>
