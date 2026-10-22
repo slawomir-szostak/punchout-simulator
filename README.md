@@ -272,6 +272,8 @@ The config is normalized into five entities:
 
 At send time: `From` = buyer identity, `To` = supplier identity, `Sender` = the connection's override (or the buyer), and the request targets the supplier's endpoints. The mock-supplier endpoints are keyed by supplier id (`/sim/<supplierId>/…`).
 
+**Duplicate.** Every editor has a *Duplicate* button that opens an unsaved copy of the entity (`X (copy)`) — the quick way to build a variant for one client without re-typing it. A connection copy can keep the original's shared secret (copied server-side, never sent to the browser; same supplier only), and a buyer copy warns while it still shares the original's identity.
+
 **Export / import.** *Configure → Export / import…* saves all five collections to one JSON file and loads one back — to back up a setup, move it to another machine, or share it with a colleague. Sessions and logs are not included. Shared secrets are left out of the export unless you tick *Include shared secrets* (they'd be plain text in the file); on import a blank secret keeps the one already stored for that connection. Import either **merges** (upsert by id; everything else is kept) or **replaces** the whole configuration. Files from older versions are migrated on import; a file whose connections point at missing buyers/suppliers, or that uses ids outside letters, digits, `.`, `_`, `-` (max 64), is rejected without changing anything.
 
 ### Product lists (Mode-B catalogs)

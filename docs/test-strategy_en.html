@@ -431,6 +431,9 @@ routing, no network:</p>
   shared ones kept), anti-framing headers on the app but not on <code>/sim</code>, and the
   25 MB cap on supplier responses — the last one against a real local HTTP
   server streaming past the limit, since the cap lives in the fetch path.</li>
+<li><code>duplicate.test.ts</code> — duplicating a connection with <code>copySecretFrom</code>: the
+  secret is copied server-side yet stays masked in the response, a typed secret
+  wins, and a different supplier or a deleted source is rejected with <code>400</code>.</li>
 </ul>
 <h3 id="layer-4-integration-over-real-http">Layer 4 — integration over real HTTP</h3>
 <p><code>integration.test.ts</code> boots the real server on an ephemeral port (<code>port: 0</code>)

@@ -98,6 +98,9 @@ routing, no network:
   shared ones kept), anti-framing headers on the app but not on `/sim`, and the
   25 MB cap on supplier responses — the last one against a real local HTTP
   server streaming past the limit, since the cap lives in the fetch path.
+- `duplicate.test.ts` — duplicating a connection with `copySecretFrom`: the
+  secret is copied server-side yet stays masked in the response, a typed secret
+  wins, and a different supplier or a deleted source is rejected with `400`.
 
 ### Layer 4 — integration over real HTTP
 

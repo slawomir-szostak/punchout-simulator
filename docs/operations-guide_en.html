@@ -329,6 +329,7 @@ figure.diagram figcaption {
 <li><a href="#connections">Connections</a></li>
 <li><a href="#buyer-profiles">Buyer profiles</a></li>
 <li><a href="#product-lists">Product lists</a></li>
+<li><a href="#duplicating-an-entity">Duplicating an entity</a></li>
 </ul>
 </li>
 <li><a href="#running-a-session">Running a session</a><ul>
@@ -475,7 +476,8 @@ against. It fixes:</p>
 platform-shaped documents: cXML version, <strong>address mode</strong> (<code>id-only</code> / <code>full</code> /
 <code>both</code>), whether ship-to and contact appear in the setup request
 (<code>shipToInSetup</code> / <code>contactInSetup</code>), and extrinsics. Built-in presets ship for
-the major platforms — you can clone and customize any of them:</p>
+the major platforms — <strong>Duplicate</strong> one to tailor it (see
+<a href="#duplicating-an-entity">Duplicating an entity</a>):</p>
 <table>
 <thead>
 <tr>
@@ -528,6 +530,28 @@ Items carry rich fields:</p>
 <p>You can load the built-in sample assortment as a preset, or import items from
 CSV (header aliases, decimal-comma tolerant). A list that is referenced by a
 supplier cannot be deleted (the API returns <code>409</code>).</p>
+<h3 id="duplicating-an-entity">Duplicating an entity</h3>
+<p>To try a variant — say, the same buyer on a different platform profile, or a
+second connection for a client — you don't have to type the setup again. Open
+the buyer, supplier, connection, product list or buyer profile and click
+<strong>Duplicate</strong>:</p>
+<ul>
+<li>The editor opens an <strong>unsaved draft</strong> with every field copied, named
+  <code>X (copy)</code> (then <code>X (copy 2)</code>, …) with the name pre-selected. The draft also
+  shows in the sidebar list.</li>
+<li>Nothing is saved until you click <strong>Create</strong>. <strong>Discard</strong> returns to the
+  original; picking another row or <strong>+ New</strong> drops the draft.</li>
+<li>Built-in profiles and the sample product list duplicate into ordinary,
+  editable copies — that is the way to tailor them.</li>
+<li>A <strong>connection</strong> copy can keep the original's <strong>shared secret</strong>: the
+  <em>Copy the shared secret from …</em> box is ticked by default and the server copies
+  the secret itself, so it never travels to the browser. This only works while
+  the supplier is unchanged — the secret belongs to that supplier — so picking
+  another supplier disables the box. A secret you type in yourself wins.</li>
+<li>A <strong>buyer</strong> copy warns while it still has the original's identity: if both
+  are connected to the same supplier, the mock supplier (Mode B) can't tell
+  them apart. Give the copy its own identity, or point it at another supplier.</li>
+</ul>
 <h2 id="running-a-session">Running a session</h2>
 <p>A <strong>session</strong> is one PunchOut conversation. Start one from the <strong>Sessions</strong> tab
 with <strong>New session</strong>, which asks for:</p>

@@ -91,7 +91,8 @@ A **Buyer profile** captures procurement-platform quirks so a buyer emits
 platform-shaped documents: cXML version, **address mode** (`id-only` / `full` /
 `both`), whether ship-to and contact appear in the setup request
 (`shipToInSetup` / `contactInSetup`), and extrinsics. Built-in presets ship for
-the major platforms — you can clone and customize any of them:
+the major platforms — **Duplicate** one to tailor it (see
+[Duplicating an entity](#duplicating-an-entity)):
 
 | Preset | Notable behaviour |
 |---|---|
@@ -118,6 +119,29 @@ Items carry rich fields:
 You can load the built-in sample assortment as a preset, or import items from
 CSV (header aliases, decimal-comma tolerant). A list that is referenced by a
 supplier cannot be deleted (the API returns `409`).
+
+### Duplicating an entity
+
+To try a variant — say, the same buyer on a different platform profile, or a
+second connection for a client — you don't have to type the setup again. Open
+the buyer, supplier, connection, product list or buyer profile and click
+**Duplicate**:
+
+- The editor opens an **unsaved draft** with every field copied, named
+  `X (copy)` (then `X (copy 2)`, …) with the name pre-selected. The draft also
+  shows in the sidebar list.
+- Nothing is saved until you click **Create**. **Discard** returns to the
+  original; picking another row or **+ New** drops the draft.
+- Built-in profiles and the sample product list duplicate into ordinary,
+  editable copies — that is the way to tailor them.
+- A **connection** copy can keep the original's **shared secret**: the
+  *Copy the shared secret from …* box is ticked by default and the server copies
+  the secret itself, so it never travels to the browser. This only works while
+  the supplier is unchanged — the secret belongs to that supplier — so picking
+  another supplier disables the box. A secret you type in yourself wins.
+- A **buyer** copy warns while it still has the original's identity: if both
+  are connected to the same supplier, the mock supplier (Mode B) can't tell
+  them apart. Give the copy its own identity, or point it at another supplier.
 
 ## Running a session
 
