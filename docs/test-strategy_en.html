@@ -312,8 +312,8 @@ figure.diagram figcaption {
 <header class="header">
   <div class="brand"></div>
   <h1>punchout-simulator — Test Strategy</h1>
-  <p class="subtitle">What is tested, at which layer, with which techniques — and what is deliberately left out · 2026-06-11</p>
-  <span class="version">v1.0 — June 2026</span>
+  <p class="subtitle">What is tested, at which layer, with which techniques — and what is deliberately left out · 2026-10-22</p>
+  <span class="version">v1.1 — October 2026</span>
 </header>
 
 <div class="layout">
@@ -359,7 +359,7 @@ call the real implementations on temporary data directories.</p>
 node</code>, 20-second timeout, one process-isolated environment per file). The suite
 is currently 19 files across four layers:</p>
 <figure class="diagram">
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" contentStyleType="text/css" data-diagram-type="DESCRIPTION" preserveAspectRatio="xMidYMid meet" version="1.1" viewBox="0 0 480 565" zoomAndPan="magnify" width="480" height="565"><?plantuml $version$?><defs/><g><g class="title" data-source-line="2"><text fill="#000000" font-family="Verdana" font-size="22" font-weight="700" lengthAdjust="spacing" textLength="448.8895" x="15" y="38.5181">Test layers (bottom = most tests, fastest)</text></g><!--entity L4--><g class="entity" data-qualified-name="L4" data-source-line="4" id="ent0001"><rect fill="#FFFFFF" height="77.2038" rx="2.5" ry="2.5" style="stroke:#000000;stroke-width:1;" width="304.5769" x="87.1555" y="62.9641"/><text fill="#000000" font-family="Verdana" font-size="14" lengthAdjust="spacing" textLength="174.1173" x="97.1555" y="87.93">Integration over real HTTP</text><text fill="#000000" font-family="Verdana" font-size="14" lengthAdjust="spacing" textLength="284.5769" x="97.1555" y="106.998">integration.test.ts &#8212; full Mode-A roundtrip,</text><text fill="#000000" font-family="Verdana" font-size="14" lengthAdjust="spacing" textLength="232.5671" x="97.1555" y="126.0659">ephemeral port, seeded demo data</text></g><!--entity L3--><g class="entity" data-qualified-name="L3" data-source-line="5" id="ent0002"><rect fill="#FFFFFF" height="77.2038" rx="2.5" ry="2.5" style="stroke:#000000;stroke-width:1;" width="282.149" x="98.3655" y="200.1641"/><text fill="#000000" font-family="Verdana" font-size="14" lengthAdjust="spacing" textLength="179.5913" x="108.3655" y="225.13">HTTP app-level (no sockets)</text><text fill="#000000" font-family="Verdana" font-size="14" lengthAdjust="spacing" textLength="189.2513" x="108.3655" y="244.198">security / rate-limit / static &#8212;</text><text fill="#000000" font-family="Verdana" font-size="14" lengthAdjust="spacing" textLength="262.149" x="108.3655" y="263.2659">Hono app.request() against the real app</text></g><!--entity L2--><g class="entity" data-qualified-name="L2" data-source-line="6" id="ent0003"><rect fill="#FFFFFF" height="77.2038" rx="2.5" ry="2.5" style="stroke:#000000;stroke-width:1;" width="263.8931" x="107.4955" y="337.3641"/><text fill="#000000" font-family="Verdana" font-size="14" lengthAdjust="spacing" textLength="127.9455" x="117.4955" y="362.33">Store &amp; persistence</text><text fill="#000000" font-family="Verdana" font-size="14" lengthAdjust="spacing" textLength="213.3732" x="117.4955" y="381.398">migrations / products / profiles /</text><text fill="#000000" font-family="Verdana" font-size="14" lengthAdjust="spacing" textLength="243.8931" x="117.4955" y="400.4659">log-dedup / log-summary / cart-store</text></g><!--entity L1--><g class="entity" data-qualified-name="L1" data-source-line="7" id="ent0004"><rect fill="#FFFFFF" height="77.2038" rx="2.5" ry="2.5" style="stroke:#000000;stroke-width:1;" width="401.3586" x="38.7655" y="474.5741"/><text fill="#000000" font-family="Verdana" font-size="14" lengthAdjust="spacing" textLength="67.1157" x="48.7655" y="499.54">Pure units</text><text fill="#000000" font-family="Verdana" font-size="14" lengthAdjust="spacing" textLength="381.3586" x="48.7655" y="518.608">cXML core: build / parse / validate / multipart / xml-format</text><text fill="#000000" font-family="Verdana" font-size="14" lengthAdjust="spacing" textLength="365.3846" x="48.7655" y="537.6759">helpers: csv / geo &#183; proxy: proxy / proxy-detect (fixtures)</text></g><!--link L4 to L3--><!--link L3 to L2--><!--link L2 to L1--><?plantuml-src PP2nRXin38RtUmesGs43FXTnCXdeq2q5Ba20UYZGww18lBDGYLGbohMtFaJVfNiVfKzI2XUW1ZA9-Ydg__Y_aID6X1ICfqwy18G35e5WBfWBh9vPX2EyXyYgYhRA1YPJMhNkkenM3CqwTVEH1ETin3C1dp13HXFWuN1u6id_xstRv5OA_Ftv2wOQ0Zoom_u3PAxa9Fkq6GbJeyewdpZB1WgYGmSE8uCpOcx051Zkh-sR4PYK-e0d3B0YXiBs6qfPZrJGrkpb0kz0AR0FFdhHIn5biWrbf0VM4VrWc_5xLSRL6ioigRIrZxXie-t5-kxQ-fDmHdWBIHFpcWnP72dwbuMB-gJChbfvAISVKCkH0i-zxbMJwgqkDKQJ6wKrMVhI_btyTjT-JrNjAdaf8zdFZmDOVRU7v-g3Qmuc5zJpP8BNi5ePQn2lUjlv74C_SOv6HZfYQD1xiEMahHaP_lnkYEVBVZaMulD5EKK9O3NviwX_MIzWjrqtt4F_vUYTG_hg-0VrBPxXxfMuwuRTA_7s7m00?></g></svg>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" data-diagram-type="DESCRIPTION" viewBox="0 0 480 565" zoomAndPan="magnify" preserveAspectRatio="xMidYMid meet" contentStyleType="text/css" width="480" height="565"><?plantuml 1.2026.8?><defs/><g font-family="sans-serif" lengthAdjust="spacing"><g class="title" data-source-line="2"><text x="15" y="38.518" fill="#000" font-size="22" textLength="448.89" font-weight="700" font-family="Verdana">Test layers (bottom = most tests, fastest)</text></g><!--entity L4--><g class="entity" data-qualified-name="L4" id="ent0001" data-source-line="4"><rect x="87.155" y="62.964" width="304.577" height="77.204" fill="#FFF" style="stroke:#000;stroke-width:1;" rx="2.5" ry="2.5"/><text x="97.155" y="87.93" fill="#000" font-size="14" textLength="174.117" font-family="Verdana">Integration over real HTTP</text><text x="97.155" y="106.998" fill="#000" font-size="14" textLength="284.577" font-family="Verdana">integration.test.ts — full Mode-A roundtrip,</text><text x="97.155" y="126.066" fill="#000" font-size="14" textLength="232.567" font-family="Verdana">ephemeral port, seeded demo data</text></g><!--entity L3--><g class="entity" data-qualified-name="L3" id="ent0002" data-source-line="5"><rect x="64.205" y="200.164" width="350.469" height="77.204" fill="#FFF" style="stroke:#000;stroke-width:1;" rx="2.5" ry="2.5"/><text x="74.205" y="225.13" fill="#000" font-size="14" textLength="179.591" font-family="Verdana">HTTP app-level (no sockets)</text><text x="74.205" y="244.198" fill="#000" font-size="14" textLength="330.469" font-family="Verdana">security / rate-limit / static / backup / hardening —</text><text x="74.205" y="263.266" fill="#000" font-size="14" textLength="262.149" font-family="Verdana">Hono app.request() against the real app</text></g><!--entity L2--><g class="entity" data-qualified-name="L2" id="ent0003" data-source-line="6"><rect x="107.495" y="337.364" width="263.893" height="77.204" fill="#FFF" style="stroke:#000;stroke-width:1;" rx="2.5" ry="2.5"/><text x="117.495" y="362.33" fill="#000" font-size="14" textLength="127.946" font-family="Verdana">Store &amp; persistence</text><text x="117.495" y="381.398" fill="#000" font-size="14" textLength="213.373" font-family="Verdana">migrations / products / profiles /</text><text x="117.495" y="400.466" fill="#000" font-size="14" textLength="243.893" font-family="Verdana">log-dedup / log-summary / cart-store</text></g><!--entity L1--><g class="entity" data-qualified-name="L1" id="ent0004" data-source-line="7"><rect x="38.765" y="474.574" width="401.359" height="77.204" fill="#FFF" style="stroke:#000;stroke-width:1;" rx="2.5" ry="2.5"/><text x="48.765" y="499.54" fill="#000" font-size="14" textLength="67.116" font-family="Verdana">Pure units</text><text x="48.765" y="518.608" fill="#000" font-size="14" textLength="381.359" font-family="Verdana">cXML core: build / parse / validate / multipart / xml-format</text><text x="48.765" y="537.676" fill="#000" font-size="14" textLength="365.385" font-family="Verdana">helpers: csv / geo · proxy: proxy / proxy-detect (fixtures)</text></g><!--link L4 to L3--><!--link L3 to L2--><!--link L2 to L1--><?plantuml-src PP1DRXin38NtSmesYy86F2xYP6MWY-vIO084g1S5Ebt84cT6Y7wc9ENQknwYT-c-H-b9IdK2r41MUY95la_lZKmO4UPWV6h4Iq0u80i4Sq5YM1spI8xm7cBMgcYBDp0OhchTD8HMJ1frwkPZ4Xp9YCy9yWa924s0XyFXgK_-VszR9xV2yEV7JnXA2F2O7ROVW799JiZFcpxXNAb8v-TCiW56TEZ0OSpWZ9WRC0pT_RLzDG8ppst04mPOfGoSxJCAh_l4Q0jvkS0xK0fiWuzUzCAYJ5R5qTZdCgkO33bKth7ozUaXwnxTkYNyLXHyjGOpQbGrYmcNBsfxuRcxvlaacH3UmgmnUeqhMUnJz2yfi5hDb5snyY877r1bdq8UM_tiFvggkSHegA9RGz9otRluxQxzdehQbUI5-sG_FtPWzTqUZiK7LnqCCUfvCi5hWbN64iHhlGPnZg4TCaKZVPemLEWzM3vfQyGCltzLnFDblnmByVcYdA84i1hyMTIVrmlORTDqzz1-cRpJCB-w_3srDPxkxbLnrtIxLyNRlm00?></g></svg>
 
 </figure>
 
@@ -412,11 +412,25 @@ session-log and in-memory-cart behaviour.</p>
 routing, no network:</p>
 <ul>
 <li><code>security.test.ts</code> — the token gate of an exposed deployment: <code>401</code> without
-  the token, all four accepted token carriers, the open <code>/api/health</code> probe and
+  the token, the accepted token carriers (Bearer, <code>x-pos-token</code>, <code>?token=</code>), the
+  open <code>/api/health</code> probe and
   the deliberately open <code>/sim</code> + <code>/punchout</code> surfaces. It runs in <strong>its own
   file</strong> so the global runtime token cannot leak into other suites (Vitest
   isolates files).</li>
-<li><code>rate-limit.test.ts</code> and <code>static.test.ts</code> — abuse limits and SPA serving.</li>
+<li><code>rate-limit.test.ts</code> and <code>static.test.ts</code> — abuse limits (per-client and
+  global when exposed, the looser global cap on localhost) and SPA serving.</li>
+<li><code>backup.test.ts</code> — configuration export/import: secrets blanked unless asked
+  for, merge vs replace, migration of older files, rejection of malformed files
+  and dangling references <em>without writing anything</em>, a stored secret never
+  following a connection or supplier re-pointed elsewhere, and the CSRF guard
+  (cross-site <code>Sec-Fetch-Site</code> / <code>Origin</code> rejected, same-origin and header-less
+  clients allowed).</li>
+<li><code>hardening.test.ts</code> — the security fixes as regression tests: unsafe ids
+  rejected on import and escaped in the mock catalog page, the disk budget's
+  <code>507</code> and its recovery by deleting a session (orphaned attachments pruned,
+  shared ones kept), anti-framing headers on the app but not on <code>/sim</code>, and the
+  25 MB cap on supplier responses — the last one against a real local HTTP
+  server streaming past the limit, since the cap lives in the fetch path.</li>
 </ul>
 <h3 id="layer-4-integration-over-real-http">Layer 4 — integration over real HTTP</h3>
 <p><code>integration.test.ts</code> boots the real server on an ephemeral port (<code>port: 0</code>)
@@ -500,7 +514,7 @@ between layers is the thing that changed.</p>
 </main>
 </div>
 
-<footer class="footer">punchout-simulator · test strategy · June 2026</footer>
+<footer class="footer">punchout-simulator · test strategy · October 2026</footer>
 
 <script>// Pan/zoom modal for inline SVG diagrams.
 // Click any <figure class="diagram"> -> opens overlay with the SVG.

@@ -1,10 +1,10 @@
 ---
 title: punchout-simulator — Operations & Usage Guide
 subtitle: Sessions, operations, profiles, product lists, addresses, attachments, and validation
-version: v1.1 — June 2026
+version: v1.2 — October 2026
 lang: en
 toc_title: Contents
-footer: "punchout-simulator · operations guide · June 2026"
+footer: "punchout-simulator · operations guide · October 2026"
 ---
 
 ## Getting started
@@ -25,13 +25,16 @@ product list on first run, and opens the browser. Useful flags:
 | `--public-url` | Expose on a non-loopback URL; this **enables token auth** on `/api`. |
 | `--host` | Bind host (also enables token auth when non-loopback). |
 | `--token` | Set the API token explicitly (otherwise generated when exposed). |
+| `--max-data-mb` | Disk budget for session logs + attachments (default `2048`). See [Data and storage](#data-and-storage). |
 | `--no-open` | Don't open the browser. |
 | `--no-seed` | Don't seed demo data. |
 
 > [!NOTE]
 > When you expose the tool (`--public-url` or a non-loopback `--host`), `/api` is
 > gated behind a token, but `/sim` and `/punchout` stay open so a real buyer
-> system can reach the Mode-B catalog and the Mode-A callback.
+> system can reach the Mode-B catalog and the Mode-A callback. That open surface
+> is rate-limited and bounded by the disk budget — on localhost too, because any
+> web page open in your browser can post to `localhost`.
 
 ### Environment variables
 
@@ -50,7 +53,9 @@ The SPA is split into two areas in the left navigation:
 
 - **Run** — the **Sessions** tab, where you do PunchOut work.
 - **Configure** — **Connections**, **Buyers**, **Suppliers**, **Product lists**, and
-  **Buyer profiles**, where you set up the entities a session uses.
+  **Buyer profiles**, where you set up the entities a session uses, plus
+  **Export / import…** to save or load the whole configuration (see
+  [Exporting and importing configuration](#exporting-and-importing-configuration)).
 
 Configure the entities once; spend your time in **Sessions**.
 
@@ -274,8 +279,10 @@ referenced from the session log rather than inlined.
   list. The export opens a print-ready report and hands it to the browser's
   native "Save as PDF" (no PDF library involved); the paper size follows your
   locale (Letter in the US/CA region, A4 elsewhere).
-- **Delete** — remove a session and its log. Deletion is path-guarded so only
-  files inside the sessions directory can be removed.
+- **Delete** — remove a session and its log. Attachments that no remaining
+  session references are deleted with it (attachments are stored once per
+  content and can be shared, so ones still in use stay). Deletion is
+  path-guarded so only files inside the data directory can be removed.
 
 > [!NOTE]
 > If a flood of empty sessions ever appears, the cause is almost always
@@ -289,10 +296,60 @@ Everything lives under the data directory:
 - `config.json` — the normalized entities (buyers, suppliers, connections,
   profiles, product lists). Migrations run automatically at boot.
 - `sessions/<sessionId>.jsonl` — one append-only log per conversation.
-- attachment blobs — content-addressed, referenced from records.
+- `attachments/<sha256>` — attachment blobs, content-addressed and referenced
+  from records; removed once no session references them.
+
+**Disk budget.** Session logs and attachments together are capped by
+`--max-data-mb` (default 2048 MB). Once the cap is reached, inbound writes on
+`/sim` and `/punchout` answer `507 Insufficient Storage`. Catalog pages still
+load and requests you send from the UI still go out, but a Mode-A cart return
+arrives on `/punchout/return`, so it is refused too. Delete old sessions in the
+UI to free space (their attachments go with them), or raise the cap.
 
 To start clean, stop the tool and delete the data directory (or point
-`--data-dir` somewhere fresh). To archive a conversation, copy its `.jsonl` file.
+`--data-dir` somewhere fresh). To archive a conversation, copy its `.jsonl` file;
+to back up or move the configuration, use
+[export](#exporting-and-importing-configuration).
+
+## Exporting and importing configuration
+
+**Configure → Export / import…** saves the whole configuration — buyers,
+suppliers, connections, buyer profiles, and product lists — as one JSON file, and
+loads such a file back. Use it to back up a setup before experimenting, move it to
+another machine, or hand it to a colleague. Sessions and logs are not included.
+
+**Export.** *Download config* saves `punchout-simulator-config-<date>.json`.
+Shared secrets are **left out** (blank) unless you tick *Include shared secrets*
+— they would sit in the file as plain text, so leave it off for a file you share.
+
+**Import.** Choose the mode, then the file. The dialog first shows what the file
+contains (counts per entity, export date); nothing is written until you confirm.
+
+| Mode | Effect |
+|---|---|
+| **Merge** (default) | Entries in the file are added; ones with the same id overwrite the current ones; everything else is kept. Built-in profiles you edited are not reset by a file that doesn't include them. |
+| **Replace** | The current configuration is discarded and replaced by the file's (a second click confirms). Built-in profiles and the sample product list are re-added if the file lacks them. |
+
+A **blank shared secret** in the file keeps the secret already stored for that
+connection — but only while the connection still pairs the same buyer and
+supplier, with unchanged identities and supplier URLs. Otherwise it stays blank,
+so a file can't redirect a stored secret to a different endpoint. After the
+import, the dialog says how many connections have no secret; set those in
+**Connections**.
+
+Files from **older versions** are migrated on import. The import is rejected,
+with nothing changed, when the file:
+
+- is not valid JSON, or not a punchout-simulator configuration;
+- comes from a **newer** version of the tool;
+- has rows without an id, duplicate ids, or ids outside letters, digits, `.`,
+  `_`, `-` (max 64 characters);
+- has connections pointing at buyers or suppliers that don't exist.
+
+> [!TIP]
+> The same operations are available over the API for scripting:
+> `GET /api/config/export[?secrets=1]` and
+> `POST /api/config/import?mode=merge|replace` with the file as the JSON body.
 
 ## Corporate proxies
 

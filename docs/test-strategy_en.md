@@ -1,10 +1,10 @@
 ---
 title: punchout-simulator — Test Strategy
 subtitle: What is tested, at which layer, with which techniques — and what is deliberately left out
-version: v1.0 — June 2026
+version: v1.1 — October 2026
 lang: en
 toc_title: Contents
-footer: "punchout-simulator · test strategy · June 2026"
+footer: "punchout-simulator · test strategy · October 2026"
 ---
 
 ## Goals and philosophy
@@ -40,7 +40,7 @@ is currently 19 files across four layers:
 title Test layers (bottom = most tests, fastest)
 
 rectangle "Integration over real HTTP\nintegration.test.ts — full Mode-A roundtrip,\nephemeral port, seeded demo data" as L4
-rectangle "HTTP app-level (no sockets)\nsecurity / rate-limit / static —\nHono app.request() against the real app" as L3
+rectangle "HTTP app-level (no sockets)\nsecurity / rate-limit / static / backup / hardening —\nHono app.request() against the real app" as L3
 rectangle "Store & persistence\nmigrations / products / profiles /\nlog-dedup / log-summary / cart-store" as L2
 rectangle "Pure units\ncXML core: build / parse / validate / multipart / xml-format\nhelpers: csv / geo · proxy: proxy / proxy-detect (fixtures)" as L1
 
@@ -79,11 +79,25 @@ These suites call `app.request()` on the real Hono app — full middleware and
 routing, no network:
 
 - `security.test.ts` — the token gate of an exposed deployment: `401` without
-  the token, all four accepted token carriers, the open `/api/health` probe and
+  the token, the accepted token carriers (Bearer, `x-pos-token`, `?token=`), the
+  open `/api/health` probe and
   the deliberately open `/sim` + `/punchout` surfaces. It runs in **its own
   file** so the global runtime token cannot leak into other suites (Vitest
   isolates files).
-- `rate-limit.test.ts` and `static.test.ts` — abuse limits and SPA serving.
+- `rate-limit.test.ts` and `static.test.ts` — abuse limits (per-client and
+  global when exposed, the looser global cap on localhost) and SPA serving.
+- `backup.test.ts` — configuration export/import: secrets blanked unless asked
+  for, merge vs replace, migration of older files, rejection of malformed files
+  and dangling references *without writing anything*, a stored secret never
+  following a connection or supplier re-pointed elsewhere, and the CSRF guard
+  (cross-site `Sec-Fetch-Site` / `Origin` rejected, same-origin and header-less
+  clients allowed).
+- `hardening.test.ts` — the security fixes as regression tests: unsafe ids
+  rejected on import and escaped in the mock catalog page, the disk budget's
+  `507` and its recovery by deleting a session (orphaned attachments pruned,
+  shared ones kept), anti-framing headers on the app but not on `/sim`, and the
+  25 MB cap on supplier responses — the last one against a real local HTTP
+  server streaming past the limit, since the cap lives in the fetch path.
 
 ### Layer 4 — integration over real HTTP
 

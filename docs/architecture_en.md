@@ -1,10 +1,10 @@
 ---
 title: punchout-simulator — Architecture
 subtitle: Components, data model, and message flows of the cXML PunchOut simulator
-version: v1.1 — June 2026
+version: v1.2 — October 2026
 lang: en
 toc_title: Contents
-footer: "punchout-simulator · architecture reference · June 2026"
+footer: "punchout-simulator · architecture reference · October 2026"
 ---
 
 ## Overview
@@ -111,6 +111,7 @@ package "Server (src/server)" {
     [sim.ts\nMode B mock supplier] as Sim
     [punchout-return.ts\nMode A cart callback] as Return
     [data.ts / stream.ts\nsessions + SSE] as DataR
+    [backup.ts\nconfig export / import] as Backup
   }
   package "cXML core (cxml/)" {
     [build.ts\ntemplate emit] as Build
@@ -124,6 +125,7 @@ package "Server (src/server)" {
     [log.ts\nJSONL sessions] as Log
     [attachments.ts] as Att
     [cart-store.ts\nin-memory carts] as CartStore
+    [usage.ts\ndisk budget] as Usage
   }
 }
 
@@ -132,6 +134,8 @@ Comp --> ApiClient
 ApiClient --> CfgRoutes
 ApiClient --> Flow
 ApiClient --> DataR
+ApiClient --> Backup
+Backup --> Config
 
 Flow --> Build
 Flow --> Validate
@@ -151,6 +155,9 @@ Parse --> Types
 Validate --> Types
 Flow --> Multi
 DataR --> Log
+DataR --> Att
+Log --> Usage
+Att --> Usage
 @enduml
 ```
 
@@ -181,15 +188,29 @@ The `cxml/` package is protocol logic with no HTTP or storage knowledge:
 State lives in a single `data/` directory:
 
 - **`config.json`** — a normalized lowdb document holding the entity tables
-  (`buyers`, `suppliers`, `connections`, `profiles`, `productLists`). Migrations
-  run at boot (legacy flat connections → normalized Buyer/Supplier/Connection
-  rows, inline-catalog → product list, `unspsc` → classifications, profile
-  address-mode backfill).
+  (`buyers`, `suppliers`, `connections`, `profiles`, `productLists`), stamped
+  with a `schemaVersion`. Versioned migrations run at boot (legacy flat
+  connections → normalized Buyer/Supplier/Connection rows, inline-catalog →
+  product list, `unspsc` → classifications, profile address-mode backfill), and
+  a file written by a newer build is refused rather than downgraded.
+- **Export / import** (`routes/backup.ts` over `exportConfig` / `importConfig`)
+  snapshots those five tables as one JSON file with a small envelope (`format`,
+  `schemaVersion`, `exportedAt`, `appVersion`). Import runs the *same* migration
+  chain (`upgradeSchema`) on the incoming document, so files from older versions
+  load; it validates the whole result — id format, duplicates, connections'
+  buyer/supplier references — before touching the live store, and either merges
+  by id or replaces. Built-ins the file omits are re-seeded but never overwrite
+  the store's edited copies on merge.
 - **`data/sessions/<sessionId>.jsonl`** — append-only message logs, one file per
   PunchOut conversation (keyed by `BuyerCookie`). Each line is one record
   (request or response, direction-tagged).
-- **Attachments** — stored as separate content-addressed files, referenced from
-  records rather than inlined.
+- **Attachments** — stored as separate content-addressed files
+  (`attachments/<sha256>`), referenced from records rather than inlined. Because
+  they're shared, deleting a session prunes only attachments no remaining
+  session references.
+- **Disk budget** — `usage.ts` measures `sessions/` + `attachments/` once and
+  then tracks every write and delete incrementally; over `--max-data-mb`, the
+  open inbound routes stop writing (see [Security posture](#security-posture)).
 - **Carts** — held in an in-memory `cart-store` keyed by `sessionId`; the
   durable record of a returned cart is the JSONL log.
 
@@ -418,21 +439,64 @@ each.
 
 ## Security posture
 
-The tool is built to be safe to run locally and to expose deliberately:
+The tool is built to be safe to run locally and to expose deliberately. It has
+two surfaces with different rules: the **control plane** (`/api/*`, the SPA)
+and the **inbound surface** (`/sim/*`, `/punchout/*`), which must stay open
+because real buyer systems and supplier pages post to it.
+
+**Control plane**
 
 - **Exposure gating.** `/api/*` (except `/api/health`) requires the token
   whenever one is configured — which happens automatically on a non-loopback
-  `--public-url` or `--host`. The token is accepted as a Bearer header,
-  `x-pos-token` header, `?token=` query, or `pos-api-token` cookie.
-- **Inbound surface stays open.** `/sim` and `/punchout` are not token-gated, so
-  a real buyer system can reach the Mode-B supplier and the Mode-A callback.
-- **Secrets are write-only.** Shared secrets are accepted on write and redacted
-  from every log and API read-back.
-- **Body-size limit.** Requests are capped (24 MB, generous for attachments) so
-  an oversized unauthenticated POST cannot exhaust memory.
-- **XXE rejection** in the parser, **SSE connection cap** on the live log, and
-  **path sanitization** in the session-file resolver (with a containment
-  assertion on delete).
+  `--public-url` or `--host`. The token is accepted as a Bearer header, an
+  `x-pos-token` header, or a `?token=` query (for EventSource and download links,
+  which can't set headers). It is deliberately **not** accepted from a cookie,
+  which would travel with cross-site requests.
+- **DNS-rebinding guard.** `/api/*` only answers when the `Host` header names
+  loopback or the configured public URL's host.
+- **CSRF guard.** State-changing `/api/*` requests that the browser marks as
+  cross-site (`Sec-Fetch-Site`, or a foreign `Origin` from older browsers) are
+  rejected with `403`. On a plain localhost run there is no token, and the API
+  reads JSON regardless of `Content-Type`, so without this any web page could
+  drive it with a "simple" `text/plain` POST. Same-origin SPA calls and
+  non-browser clients (no such headers) pass.
+- **No framing.** The SPA and API send `X-Frame-Options: DENY` and CSP
+  `frame-ancestors 'none'` (against clickjacking), plus `Referrer-Policy:
+  no-referrer` so a `?token=` URL can't leak; `/sim` and `/punchout` are exempt
+  because buyer platforms embed the catalog in an iframe.
+- **Shared secrets.** Masked on connection reads and redacted from every log,
+  stream and PDF export. They are *not* unreachable: the SetupRequest preview
+  returns the real document (the cXML editor must show what will be sent), and
+  an export can include them on request. Treat API access as secret access.
+- **Import is untrusted input.** Imported ids must match
+  `[A-Za-z0-9._-]{1,64}` (not dot-only), because ids end up in URL paths and in
+  server-rendered HTML — an unchecked id was a stored-XSS vector on the app's own
+  origin in 0.11.1–0.11.2. A blank secret in a file only keeps a stored secret
+  while the connection's parties, their identities and the supplier's URLs are
+  unchanged, so a file can't redirect a secret to a new endpoint.
+
+**Inbound surface**
+
+- **Bounded, not authenticated.** A request body-size cap (24 MB, generous for
+  attachments); a fixed-window rate limit — per client and global when exposed,
+  a looser global cap on localhost (any page in the user's browser can post to
+  `localhost`); and a **disk budget** (`--max-data-mb`, default 2048) over
+  session logs + attachments, past which inbound writes answer `507`.
+- **Output encoding.** Everything the mock catalog, checkout and receipt pages
+  render from requests or config is HTML-escaped; `BrowserFormPost` URLs are
+  restricted to http(s) and normalized before use; JSON embedded in scripts is
+  escaped for `</script>` and line separators.
+- **Parsing.** `fast-xml-parser` does not expand nested entities, so
+  entity-expansion ("billion laughs") documents stay small; XXE is not possible.
+- **Files.** Session ids and attachment hashes are sanitized before they become
+  paths, with a containment assertion before any delete.
+
+**Outbound calls** (Mode A to a supplier) allow only `http(s)`, reject
+credentials embedded in the URL, don't follow redirects to other hosts, time out
+after 30 s, and stop reading a response past 25 MB. Private and loopback targets
+are deliberately allowed — pointing at a supplier on localhost or staging is the
+main use case; who may configure those URLs is controlled by the API rules
+above.
 
 ## Outbound networking and corporate proxies
 

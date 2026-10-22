@@ -15,6 +15,7 @@ package "Server (src/server)" {
     [sim.ts\nMode B mock supplier] as Sim
     [punchout-return.ts\nMode A cart callback] as Return
     [data.ts / stream.ts\nsessions + SSE] as DataR
+    [backup.ts\nconfig export / import] as Backup
   }
   package "cXML core (cxml/)" {
     [build.ts\ntemplate emit] as Build
@@ -28,6 +29,7 @@ package "Server (src/server)" {
     [log.ts\nJSONL sessions] as Log
     [attachments.ts] as Att
     [cart-store.ts\nin-memory carts] as CartStore
+    [usage.ts\ndisk budget] as Usage
   }
 }
 
@@ -36,6 +38,8 @@ Comp --> ApiClient
 ApiClient --> CfgRoutes
 ApiClient --> Flow
 ApiClient --> DataR
+ApiClient --> Backup
+Backup --> Config
 
 Flow --> Build
 Flow --> Validate
@@ -55,4 +59,7 @@ Parse --> Types
 Validate --> Types
 Flow --> Multi
 DataR --> Log
+DataR --> Att
+Log --> Usage
+Att --> Usage
 @enduml
