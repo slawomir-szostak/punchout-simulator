@@ -33,6 +33,33 @@ function assertSafeOutboundUrl(url: string): void {
   }
 }
 
+/** A supplier response larger than this is cut off (a broken or hostile
+ *  endpoint must not be able to stream us out of memory). cXML responses are
+ *  small; 25 MB leaves room for one with attachments. */
+export const MAX_RESPONSE_BYTES = 25 * 1024 * 1024;
+
+class ResponseTooLarge extends Error {}
+
+async function readCapped(res: Response, max: number, controller: AbortController): Promise<Buffer> {
+  const declared = Number(res.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > max) {
+    controller.abort();
+    throw new ResponseTooLarge();
+  }
+  if (!res.body) return Buffer.alloc(0);
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+    total += chunk.byteLength;
+    if (total > max) {
+      controller.abort();
+      throw new ResponseTooLarge();
+    }
+    chunks.push(Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+}
+
 export async function sendCxml(
   url: string,
   body: string | Buffer,
@@ -54,7 +81,7 @@ export async function sendCxml(
     });
     const headers: Record<string, string> = {};
     res.headers.forEach((v, k) => (headers[k] = v));
-    const buf = Buffer.from(await res.arrayBuffer());
+    const buf = await readCapped(res, MAX_RESPONSE_BYTES, controller);
     return {
       status: res.status,
       headers,
@@ -83,6 +110,9 @@ export async function sendCxml(
  * corporate proxy swallowing the connection) actually needs.
  */
 function describeFetchError(e: unknown, timeoutMs: number): string {
+  if (e instanceof ResponseTooLarge) {
+    return `response larger than ${MAX_RESPONSE_BYTES / (1024 * 1024)} MB — not read`;
+  }
   if (!(e instanceof Error)) return String(e);
   if (e.name === "AbortError") {
     const secs = Math.round(timeoutMs / 1000);

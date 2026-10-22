@@ -8,8 +8,11 @@ import { getToken } from "./runtime.js";
 // fixed one-minute windows, counted per client and globally. The limits sit far
 // above any legitimate punchout flow but stop a dumb flood from filling the disk
 // with session logs and attachments. Plain localhost runs (no token configured)
-// are exempt so local development stays friction-free. For anything serious,
-// front the tool with a rate-limiting reverse proxy instead (see README).
+// get a looser, global-only cap: every client is 127.0.0.1 there, but any web
+// page open in the user's browser can still blind-POST at localhost. The disk
+// budget (store/usage.ts) bounds the bytes; this bounds the request rate. For
+// anything serious, front the tool with a rate-limiting reverse proxy instead
+// (see README).
 
 export interface RateLimitOptions {
   windowMs?: number;
@@ -17,6 +20,8 @@ export interface RateLimitOptions {
   perClient?: number;
   /** Max requests across all clients per window. */
   globalMax?: number;
+  /** Max requests per window on a plain localhost run (no token). */
+  localMax?: number;
 }
 
 // The client key prefers X-Forwarded-For because exposure happens behind a
@@ -37,12 +42,13 @@ export function inboundRateLimit(opts: RateLimitOptions = {}): MiddlewareHandler
   const windowMs = opts.windowMs ?? 60_000;
   const perClient = opts.perClient ?? 120;
   const globalMax = opts.globalMax ?? 1200;
+  const localMax = opts.localMax ?? 600;
   let windowStart = 0;
   let globalCount = 0;
   let counts = new Map<string, number>();
 
   return async (c, next) => {
-    if (!getToken()) return next(); // not exposed → no limiting
+    const exposed = !!getToken();
     const nowMs = Date.now();
     if (nowMs - windowStart >= windowMs) {
       windowStart = nowMs;
@@ -55,7 +61,7 @@ export function inboundRateLimit(opts: RateLimitOptions = {}): MiddlewareHandler
     // Memory bound: a spoofed-XFF flood could otherwise grow the map without limit.
     if (counts.size >= 10_000) counts.clear();
     counts.set(key, n);
-    if (n > perClient || globalCount > globalMax) {
+    if (exposed ? n > perClient || globalCount > globalMax : globalCount > localMax) {
       c.header("Retry-After", String(Math.max(1, Math.ceil((windowStart + windowMs - nowMs) / 1000))));
       return c.json({ error: "rate limit exceeded" }, 429);
     }

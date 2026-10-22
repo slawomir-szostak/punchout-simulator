@@ -6,6 +6,7 @@ import { nanoid } from "nanoid";
 import { createApp } from "./app.js";
 import { initConfig } from "./store/config.js";
 import { setDataDir } from "./store/paths.js";
+import { setMaxDataMb } from "./store/usage.js";
 import { setRuntime, getPublicUrl } from "./runtime.js";
 import { seedDemoIfEmpty } from "./seed.js";
 import { setupProxy } from "./proxy.js";
@@ -22,6 +23,7 @@ interface Flags {
   publicUrl?: string;
   host?: string;
   token?: string;
+  maxDataMb?: number;
   open: boolean;
   dev: boolean;
   seed: boolean;
@@ -57,6 +59,9 @@ function parseFlags(argv: string[]): Flags {
         break;
       case "--token":
         flags.token = requireValue(a, next());
+        break;
+      case "--max-data-mb":
+        flags.maxDataMb = parseMaxDataMb(next());
         break;
       case "--no-open":
         flags.open = false;
@@ -104,6 +109,14 @@ function parsePort(value: string | undefined): number {
   return n;
 }
 
+function parseMaxDataMb(value: string | undefined): number {
+  const n = Number(requireValue("--max-data-mb", value));
+  if (!Number.isInteger(n) || n < 1) {
+    fail(`--max-data-mb expects a positive integer (megabytes), got "${value}"`);
+  }
+  return n;
+}
+
 const LOOPBACK = new Set(["localhost", "127.0.0.1", "::1", "[::1]", ""]);
 function hostnameOf(url: string): string {
   try {
@@ -136,6 +149,8 @@ Options:
       --host <addr>      Bind address (default 127.0.0.1; use 0.0.0.0 for LAN)
       --token <secret>   Require this token on /api (auto-generated when exposed
                          and not provided; or set POS_TOKEN)
+      --max-data-mb <n>  Disk budget for session logs + attachments (default 2048);
+                         when reached, inbound /sim and /punchout writes get 507
       --no-open          Do not open a browser on start
       --no-seed          Do not seed the built-in demo connections on first run
       --dev              Dev mode (do not serve SPA, do not open browser)
@@ -176,6 +191,7 @@ async function main() {
   const token = flags.token || (exposed ? nanoid(24) : undefined);
 
   setDataDir(flags.dataDir);
+  if (flags.maxDataMb) setMaxDataMb(flags.maxDataMb);
   setRuntime({ port: flags.port, publicUrl, token, version: readVersion(), proxy: proxyStatus(proxySettings, systemProxy) });
   await initConfig();
   if (flags.seed) await seedDemoIfEmpty();

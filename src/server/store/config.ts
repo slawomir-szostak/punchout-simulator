@@ -411,6 +411,13 @@ export function catalogForSupplier(supplier: Supplier): CatalogItem[] {
 export const SNAPSHOT_FORMAT = "punchout-simulator-config";
 
 const COLLECTIONS = ["buyers", "suppliers", "connections", "profiles", "productLists"] as const;
+
+// Ids end up in URL paths (/sim/<supplierId>/…, /api/<collection>/<id>) and in
+// server-rendered HTML. The API only ever mints nanoid/preset ids, but an
+// imported file could carry anything — e.g. markup that becomes stored XSS on
+// the app's own origin — so imports are held to the same safe alphabet (and no
+// "." / ".." path segments).
+const SAFE_ID = /^(?!\.+$)[A-Za-z0-9._-]{1,64}$/;
 type CollectionName = (typeof COLLECTIONS)[number];
 
 export interface ConfigSnapshot extends Schema {
@@ -482,6 +489,8 @@ export async function importConfig(raw: unknown, mode: ImportMode): Promise<Impo
       const id = (row as { id?: unknown } | null)?.id;
       if (row == null || typeof row !== "object" || typeof id !== "string" || id === "") {
         errors.push(`${k}[${i}] has no id`);
+      } else if (!SAFE_ID.test(id)) {
+        errors.push(`${k}[${i}] has an invalid id (allowed: letters, digits, ".", "_", "-"; up to 64 characters)`);
       } else if (seen.has(id)) {
         errors.push(`${k} has duplicate id "${id}"`);
       } else {

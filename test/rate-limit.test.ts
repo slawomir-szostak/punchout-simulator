@@ -3,8 +3,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { inboundRateLimit } from "../src/server/rate-limit.js";
 import { setRuntime } from "../src/server/runtime.js";
 
-// The open inbound surface (/sim, /punchout) is rate-limited only when the tool
-// is exposed (a token is configured). Localhost runs are exempt.
+// The open inbound surface (/sim, /punchout) is rate-limited per client and
+// globally when the tool is exposed (a token is configured); localhost runs get
+// a looser global-only cap.
 
 afterEach(() => setRuntime({ token: undefined }));
 
@@ -19,10 +20,12 @@ const post = (app: Hono, headers: Record<string, string> = {}) =>
   app.request("/sim/x/punchout", { method: "POST", headers });
 
 describe("inbound rate limit", () => {
-  it("does nothing on plain localhost runs (no token)", async () => {
-    const app = appWith(inboundRateLimit({ perClient: 1, globalMax: 1 }));
+  it("applies only the local cap on plain localhost runs (no token)", async () => {
+    const app = appWith(inboundRateLimit({ perClient: 1, globalMax: 1, localMax: 3 }));
     expect((await post(app)).status).toBe(200);
     expect((await post(app)).status).toBe(200);
+    expect((await post(app)).status).toBe(200);
+    expect((await post(app)).status).toBe(429);
   });
 
   it("caps per-client requests per window when exposed", async () => {

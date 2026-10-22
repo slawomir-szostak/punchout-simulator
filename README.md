@@ -76,6 +76,7 @@ docker run -p 127.0.0.1:8080:8080 -e POS_TOKEN=mysecret -v "$PWD/data:/data" pun
                        Set this when fronting the tool with ngrok/cloudflared.
     --host <addr>      Bind address (default 127.0.0.1; use 0.0.0.0 to expose on the LAN)
     --token <secret>   Require this token on /api (auto-generated when exposed; or set POS_TOKEN)
+    --max-data-mb <n>  Disk budget for session logs + attachments (default 2048)
     --no-open          Do not open a browser on start
     --no-seed          Do not seed the built-in demo buyer/supplier/connection on first run
     --dev              Dev mode (do not serve the SPA, do not open a browser)
@@ -90,12 +91,20 @@ moment the tool is **exposed** — a non-loopback `--public-url` (ngrok/cloudfla
 or `--host 0.0.0.0` — it **requires a token** on `/api/*`: one is auto-generated
 (or pass `--token`/`POS_TOKEN`) and printed as a `…/?token=…` URL to open the UI
 with. The **inbound buyer surface stays open** (`/sim/*`, `/punchout/return`) so a
-real buyer system can still reach Mode B. When exposed, that open surface gets a
-built-in rate limit (per-client and global, per minute) on top of the request
-body-size cap — enough to stop a dumb flood, but for anything internet-facing
-and long-lived you should still front the tool with a rate-limiting reverse
-proxy (or your tunnel provider's protection). Shared secrets are **write-only**
-over the API (masked on read) and **redacted from all logs**.
+real buyer system can still reach Mode B. That open surface is bounded three
+ways: a request body-size cap, a built-in rate limit (per-client and global per
+minute when exposed; a looser global cap on localhost, since any web page open
+in your browser can post to `localhost`), and a **disk budget** — once session
+logs + attachments reach `--max-data-mb` (default 2048), inbound writes get
+`507` until you delete old sessions. That's enough to stop a dumb flood, but for
+anything internet-facing and long-lived you should still front the tool with a
+rate-limiting reverse proxy (or your tunnel provider's protection).
+
+The API also rejects **cross-site** state-changing requests (by `Sec-Fetch-Site`
+/ `Origin`), so another website open in your browser can't drive it, and the UI
+can't be framed by other sites. Shared secrets are **redacted from all logs** and
+masked when reading connections — but note that anyone with API access can still
+see them in the SetupRequest preview, so treat API access as secret access.
 
 ---
 
@@ -263,7 +272,7 @@ The config is normalized into five entities:
 
 At send time: `From` = buyer identity, `To` = supplier identity, `Sender` = the connection's override (or the buyer), and the request targets the supplier's endpoints. The mock-supplier endpoints are keyed by supplier id (`/sim/<supplierId>/…`).
 
-**Export / import.** *Configure → Export / import…* saves all five collections to one JSON file and loads one back — to back up a setup, move it to another machine, or share it with a colleague. Sessions and logs are not included. Shared secrets are left out of the export unless you tick *Include shared secrets* (they'd be plain text in the file); on import a blank secret keeps the one already stored for that connection. Import either **merges** (upsert by id; everything else is kept) or **replaces** the whole configuration. Files from older versions are migrated on import; a file whose connections point at missing buyers/suppliers is rejected without changing anything.
+**Export / import.** *Configure → Export / import…* saves all five collections to one JSON file and loads one back — to back up a setup, move it to another machine, or share it with a colleague. Sessions and logs are not included. Shared secrets are left out of the export unless you tick *Include shared secrets* (they'd be plain text in the file); on import a blank secret keeps the one already stored for that connection. Import either **merges** (upsert by id; everything else is kept) or **replaces** the whole configuration. Files from older versions are migrated on import; a file whose connections point at missing buyers/suppliers, or that uses ids outside letters, digits, `.`, `_`, `-` (max 64), is rejected without changing anything.
 
 ### Product lists (Mode-B catalogs)
 

@@ -1,5 +1,6 @@
 import { chmodSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
+import { resetUsage } from "./usage.js";
 
 // Resolves and owns the data directory layout. The CLI sets this once at boot
 // (--data-dir, default ./data). See spec section 7.
@@ -8,6 +9,7 @@ let dataDir = resolve(process.cwd(), "data");
 
 export function setDataDir(dir: string): void {
   dataDir = resolve(dir);
+  resetUsage();
   ensureDirs();
 }
 

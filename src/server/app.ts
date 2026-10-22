@@ -1,13 +1,13 @@
 import { existsSync } from "node:fs";
 import { timingSafeEqual } from "node:crypto";
-import { Hono } from "hono";
+import { Hono, type MiddlewareHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { logger } from "hono/logger";
 import { bodyLimit } from "hono/body-limit";
-import { getCookie } from "hono/cookie";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { getToken, getPublicUrl } from "./runtime.js";
 import { inboundRateLimit } from "./rate-limit.js";
+import { getMaxDataMb, overDataBudget } from "./store/usage.js";
 import { connectionsRoute } from "./routes/connections.js";
 import { buyersRoute, suppliersRoute } from "./routes/parties.js";
 import { profilePresetsRoute, profilesRoute } from "./routes/profiles.js";
@@ -36,6 +36,19 @@ export function createApp(opts: AppOptions = {}): Hono {
     "*",
     bodyLimit({ maxSize: 24 * 1024 * 1024, onError: (c) => c.json({ error: "payload too large" }, 413) }),
   );
+
+  // The app's own pages and API must not be framed by other sites (clickjacking
+  // of e.g. Delete / Replace config) and must not leak the ?token= URL via
+  // Referer. The inbound surface is exempt: buyer platforms embed the mock
+  // catalog in an iframe, and the punchback receipt renders inside it.
+  app.use("*", async (c, next) => {
+    await next();
+    c.header("X-Content-Type-Options", "nosniff");
+    if (c.req.path.startsWith("/sim/") || c.req.path.startsWith("/punchout/")) return;
+    c.header("X-Frame-Options", "DENY");
+    c.header("Content-Security-Policy", "frame-ancestors 'none'");
+    c.header("Referrer-Policy", "no-referrer");
+  });
 
   // Guard the admin/control plane (/api/*) against DNS-rebinding: a page on an
   // attacker domain that re-resolves to 127.0.0.1 becomes "same-origin" in the
@@ -76,8 +89,9 @@ export function createApp(opts: AppOptions = {}): Hono {
 
   // When a token is configured (the tool is exposed via a non-loopback
   // --public-url), gate /api/* (except the health probe) behind it. Token may
-  // arrive as a Bearer header, an x-pos-token header, a ?token= query, or a
-  // pos-api-token cookie.
+  // arrive as a Bearer header, an x-pos-token header, or a ?token= query (for
+  // EventSource and download links, which can't set headers). No cookie: one
+  // would ride along on cross-site requests.
   app.use("/api/*", async (c, next) => {
     const token = getToken();
     if (!token) return next();
@@ -87,7 +101,6 @@ export function createApp(opts: AppOptions = {}): Hono {
       (auth.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() : "") ||
       c.req.header("x-pos-token") ||
       c.req.query("token") ||
-      getCookie(c, "pos-api-token") ||
       "";
     if (safeEqual(provided, token)) return next();
     return c.json({ error: "unauthorized" }, 401);
@@ -112,6 +125,19 @@ export function createApp(opts: AppOptions = {}): Hono {
   const inboundLimit = inboundRateLimit();
   app.use("/punchout/*", inboundLimit);
   app.use("/sim/*", inboundLimit);
+  // Disk budget: once logs + attachments reach --max-data-mb, the open surface
+  // stops accepting writes (catalog GETs still work) until sessions are deleted.
+  const dataBudget: MiddlewareHandler = async (c, next) => {
+    if (c.req.method !== "GET" && c.req.method !== "HEAD" && overDataBudget()) {
+      return c.text(
+        `punchout-simulator data directory is full (limit ${getMaxDataMb()} MB) — delete old sessions in the UI, or raise --max-data-mb`,
+        507,
+      );
+    }
+    return next();
+  };
+  app.use("/punchout/*", dataBudget);
+  app.use("/sim/*", dataBudget);
   app.route("/punchout", punchoutReturnRoute); // Mode A callback
   app.route("/sim", simRoute); // Mode B mock supplier
 

@@ -155,7 +155,7 @@ simRoute.post("/:id/punchout", async (c) => {
 
   const buyerCred = from ?? { domain: "", identity: "" };
   const startPageUrl =
-    `${getPublicUrl()}/sim/${supplier.id}/catalog?cookie=${encodeURIComponent(buyerCookie)}` +
+    `${getPublicUrl()}/sim/${encodeURIComponent(supplier.id)}/catalog?cookie=${encodeURIComponent(buyerCookie)}` +
     `&formpost=${encodeURIComponent(formPost)}` +
     `&bd=${encodeURIComponent(buyerCred.domain)}&bi=${encodeURIComponent(buyerCred.identity)}`;
 
@@ -293,7 +293,7 @@ function catalogPage(o: CatalogPageOpts): string {
   <h1>${escapeXml(o.supplier.name)} <small>(virtual supplier)</small></h1>
   <div class="sub">Mock catalog served by punchout-simulator. Set quantities and return the cart.</div>
   ${o.banner}
-  <form method="post" action="${getPublicUrl()}/sim/${o.supplier.id}/checkout">
+  <form method="post" action="${escapeXml(`${getPublicUrl()}/sim/${encodeURIComponent(o.supplier.id)}/checkout`)}">
     <input type="hidden" name="cookie" value="${escapeXml(o.cookie)}">
     <input type="hidden" name="formpost" value="${escapeXml(o.formpost)}">
     <input type="hidden" name="bd" value="${escapeXml(o.bd)}">

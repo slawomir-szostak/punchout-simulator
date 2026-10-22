@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import type { AttachmentRef } from "../cxml/types.js";
 import { normalizeContentId } from "../cxml/multipart.js";
 import { attachmentsDir, ensureDirs } from "./paths.js";
+import { trackWrite } from "./usage.js";
 
 // Attachments are stored as separate files data/attachments/<hash>, referenced
 // from the JSON log record (hash + Content-ID). We never inline base64 into the
@@ -16,7 +17,10 @@ export function saveAttachment(
   ensureDirs();
   const hash = createHash("sha256").update(data).digest("hex");
   const path = resolve(attachmentsDir(), hash);
-  if (!existsSync(path)) writeFileSync(path, data, { mode: 0o600 });
+  if (!existsSync(path)) {
+    writeFileSync(path, data, { mode: 0o600 });
+    trackWrite(data.length);
+  }
   return {
     contentId: normalizeContentId(meta.contentId),
     filename: meta.filename,

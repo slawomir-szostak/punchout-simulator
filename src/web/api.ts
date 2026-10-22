@@ -70,11 +70,11 @@ function crud<T>(base: string) {
         (r) => jsonOrThrow<T>(r),
       ),
     update: (id: string, data: unknown) =>
-      authFetch(`${base}/${id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(data) }).then(
+      authFetch(`${base}/${encodeURIComponent(id)}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(data) }).then(
         (r) => jsonOrThrow<T>(r),
       ),
     remove: (id: string) =>
-      authFetch(`${base}/${id}`, { method: "DELETE" }).then((r) => jsonOrThrow<{ ok: boolean }>(r)),
+      authFetch(`${base}/${encodeURIComponent(id)}`, { method: "DELETE" }).then((r) => jsonOrThrow<{ ok: boolean }>(r)),
   };
 }
 
@@ -99,19 +99,19 @@ export const api = {
     }).then((r) => jsonOrThrow<Connection>(r)),
 
   updateConnection: (id: string, data: Partial<Connection>) =>
-    authFetch(`/api/connections/${id}`, {
+    authFetch(`/api/connections/${encodeURIComponent(id)}`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(data),
     }).then((r) => jsonOrThrow<Connection>(r)),
 
   deleteConnection: (id: string) =>
-    authFetch(`/api/connections/${id}`, { method: "DELETE" }).then((r) =>
+    authFetch(`/api/connections/${encodeURIComponent(id)}`, { method: "DELETE" }).then((r) =>
       jsonOrThrow<{ ok: boolean }>(r),
     ),
 
   setupPreview: (id: string, body: { buyerCookie?: string; operation?: string; items?: unknown[] } = {}) =>
-    authFetch(`/api/connections/${id}/setup/preview`, {
+    authFetch(`/api/connections/${encodeURIComponent(id)}/setup/preview`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
@@ -119,28 +119,28 @@ export const api = {
 
   // Validate the current cXML against its document rules without sending it.
   validate: (id: string, body: { docType: string; xml: string }) =>
-    authFetch(`/api/connections/${id}/validate`, {
+    authFetch(`/api/connections/${encodeURIComponent(id)}/validate`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     }).then((r) => jsonOrThrow<ValidationResult>(r)),
 
   sendSetup: (id: string, body: { buyerCookie?: string; xml?: string }) =>
-    authFetch(`/api/connections/${id}/setup`, {
+    authFetch(`/api/connections/${encodeURIComponent(id)}/setup`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     }).then((r) => jsonOrThrow<SetupResult>(r)),
 
   orderPreview: (id: string, body: unknown) =>
-    authFetch(`/api/connections/${id}/order/preview`, {
+    authFetch(`/api/connections/${encodeURIComponent(id)}/order/preview`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     }).then((r) => jsonOrThrow<{ xml: string; orderId: string }>(r)),
 
   sendOrder: (id: string, body: unknown) =>
-    authFetch(`/api/connections/${id}/order`, {
+    authFetch(`/api/connections/${encodeURIComponent(id)}/order`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),

@@ -4,6 +4,7 @@ import { nanoid } from "nanoid";
 import { bus } from "../bus.js";
 import type { LogRecord } from "../cxml/types.js";
 import { ensureDirs, sessionFile, sessionsDir } from "./paths.js";
+import { trackDelete, trackWrite } from "./usage.js";
 
 // Request/response log: JSONL, append-only, partitioned per session
 // (data/sessions/<sessionId>.jsonl). Appending one line is O(1); the filename
@@ -31,6 +32,7 @@ export function appendLog(input: LogInput): LogRecord {
   };
   const line = JSON.stringify(record) + "\n";
   appendFileSync(sessionFile(record.sessionId), line, { encoding: "utf8", mode: 0o600 });
+  trackWrite(Buffer.byteLength(line));
   updateSummaryCache(record, Buffer.byteLength(line));
   bus.emitLog(record);
   return record;
@@ -59,7 +61,9 @@ export function deleteSession(sessionId: string): boolean {
   // destructive rm so it can never escape the sessions directory (defense in depth).
   if (!file.startsWith(resolve(sessionsDir()) + sep)) return false;
   if (!existsSync(file)) return false;
+  const size = statSync(file).size;
   rmSync(file);
+  trackDelete(size);
   summaryCache.delete(sessionId);
   return true;
 }

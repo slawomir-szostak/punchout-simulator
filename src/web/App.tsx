@@ -880,7 +880,7 @@ function Onboarding({
 function SupplierPanel({ supplier, publicUrl }: { supplier?: Supplier; publicUrl: string }) {
   const theme = useTheme();
   if (!supplier) return <p className="hint">Supplier not found.</p>;
-  const base = `${publicUrl}/sim/${supplier.id}`;
+  const base = `${publicUrl}/sim/${encodeURIComponent(supplier.id)}`;
   return (
     <div className="supplier-panel">
       <p className="hint">
