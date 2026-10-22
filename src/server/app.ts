@@ -130,7 +130,7 @@ export function createApp(opts: AppOptions = {}): Hono {
   const dataBudget: MiddlewareHandler = async (c, next) => {
     if (c.req.method !== "GET" && c.req.method !== "HEAD" && overDataBudget()) {
       return c.text(
-        `punchout-simulator data directory is full (limit ${getMaxDataMb()} MB) — delete old sessions in the UI, or raise --max-data-mb`,
+        `punchout-simulator data directory is full (limit ${getMaxDataMb()} MB) — delete old sessions in the UI (their attachments go with them), or raise --max-data-mb`,
         507,
       );
     }

@@ -165,6 +165,19 @@ export function listSessions(): SessionSummary[] {
   return summaries.sort((a, b) => (b.lastTs ?? "").localeCompare(a.lastTs ?? ""));
 }
 
+/** Hashes of every attachment some session log still references. */
+export function referencedAttachmentHashes(): Set<string> {
+  ensureDirs();
+  const hashes = new Set<string>();
+  for (const file of readdirSync(sessionsDir())) {
+    if (!file.endsWith(".jsonl")) continue;
+    for (const r of readSession(file.replace(/\.jsonl$/, ""))) {
+      for (const a of r.attachments ?? []) hashes.add(a.hash);
+    }
+  }
+  return hashes;
+}
+
 export function readAllRecent(limit = 200): LogRecord[] {
   return listSessions()
     .flatMap((s) => readSession(s.sessionId))

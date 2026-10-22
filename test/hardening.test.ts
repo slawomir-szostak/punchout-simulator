@@ -5,6 +5,9 @@ import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/server/app.js";
 import { MAX_RESPONSE_BYTES, sendCxml } from "../src/server/http.js";
+import { buildMultipartRelated } from "../src/server/cxml/multipart.js";
+import { listSessions } from "../src/server/store/log.js";
+import { dataUsageBytes } from "../src/server/store/usage.js";
 import { createSupplier, initConfig } from "../src/server/store/config.js";
 import { setDataDir } from "../src/server/store/paths.js";
 import { DEFAULT_MAX_DATA_MB, setMaxDataMb } from "../src/server/store/usage.js";
@@ -70,6 +73,37 @@ describe("disk budget", () => {
     expect(await full.text()).toMatch(/--max-data-mb/);
     // Reads still work.
     expect((await app.request("/sim/demo-supplier/catalog")).status).toBe(200);
+  });
+});
+
+describe("attachment pruning", () => {
+  // An inbound OrderRequest (own session "order-<po>") carrying one attachment.
+  const order = (po: string, data: Buffer) => {
+    const xml = `<cXML><Request><OrderRequest><OrderRequestHeader orderID="${po}"/></OrderRequest></Request></cXML>`;
+    const mp = buildMultipartRelated(xml, [{ contentId: `att-${po}@x`, filename: "f.bin", contentType: "application/octet-stream", data }]);
+    return app.request("/sim/demo-supplier/order", { method: "POST", headers: { "content-type": mp.contentType }, body: mp.body });
+  };
+  const del = (id: string) => app.request(`/api/sessions/${id}`, { method: "DELETE" });
+
+  it("frees an over-budget data dir when the session holding the attachments is deleted", async () => {
+    setMaxDataMb(1);
+    await order("PO-BIG", Buffer.alloc(1024 * 1024 + 1, 1));
+    expect((await order("PO-NEXT", Buffer.from("x"))).status).toBe(507);
+    expect((await del("order-PO-BIG")).status).toBe(200);
+    expect(dataUsageBytes()).toBeLessThan(1024 * 1024);
+    expect((await order("PO-NEXT", Buffer.from("x"))).status).not.toBe(507);
+  });
+
+  it("keeps an attachment another session still references", async () => {
+    const shared = Buffer.from("same bytes in two orders");
+    await order("PO-A", shared);
+    await order("PO-B", shared);
+    expect(listSessions().map((s) => s.sessionId)).toEqual(expect.arrayContaining(["order-PO-A", "order-PO-B"]));
+    await del("order-PO-A");
+    const rec = (await (await app.request("/api/sessions/order-PO-B")).json()).find((r: any) => r.attachments?.length);
+    expect((await app.request(`/api/attachments/${rec.attachments[0].hash}`)).status).toBe(200);
+    await del("order-PO-B");
+    expect((await app.request(`/api/attachments/${rec.attachments[0].hash}`)).status).toBe(404);
   });
 });
 

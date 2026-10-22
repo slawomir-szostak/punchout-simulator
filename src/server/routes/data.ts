@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { forgetSession, getCart } from "../cart-store.js";
-import { readAttachment } from "../store/attachments.js";
-import { deleteSession, listSessions, readAllRecent, readSession } from "../store/log.js";
+import { pruneAttachments, readAttachment } from "../store/attachments.js";
+import { deleteSession, listSessions, readAllRecent, readSession, referencedAttachmentHashes } from "../store/log.js";
 import { getBuyer, getConnection, getSupplier } from "../store/config.js";
 import { getProxyStatus, getPublicUrl, getVersion } from "../runtime.js";
 import {
@@ -87,12 +87,14 @@ dataRoute.get("/sessions", (c) => {
 
 dataRoute.get("/sessions/:id", (c) => c.json(readSession(c.req.param("id"))));
 
-// Delete a session: remove its log file and drop the in-memory cart mapping.
-// (Attachments are content-addressed and may be shared, so they're left in place.)
+// Delete a session: remove its log file, drop the in-memory cart mapping, and
+// prune attachments no remaining session references (they're content-addressed
+// and may be shared, so only true orphans go).
 dataRoute.delete("/sessions/:id", (c) => {
   const id = c.req.param("id");
   const removed = deleteSession(id);
   forgetSession(id);
+  if (removed) pruneAttachments(referencedAttachmentHashes());
   return removed ? c.json({ ok: true }) : c.json({ error: "not found" }, 404);
 });
 
