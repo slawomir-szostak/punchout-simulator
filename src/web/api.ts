@@ -1,5 +1,6 @@
 import type {
   Buyer,
+  ConfigImportSummary,
   Cart,
   Connection,
   ConnectionWithParties,
@@ -167,6 +168,16 @@ export const api = {
 
   recent: (limit = 200) =>
     authFetch(`/api/recent?limit=${limit}`).then((r) => jsonOrThrow<LogRecord[]>(r)),
+
+  /** Download URL for the config snapshot (an <a href>, so the token rides along). */
+  configExportUrl: (includeSecrets: boolean) => withToken(`/api/config/export${includeSecrets ? "?secrets=1" : ""}`),
+
+  importConfig: (snapshot: unknown, mode: "merge" | "replace") =>
+    authFetch(`/api/config/import?mode=${mode}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(snapshot),
+    }).then((r) => jsonOrThrow<ConfigImportSummary>(r)),
 
   runtime: () => authFetch("/api/runtime").then((r) => jsonOrThrow<RuntimeInfo>(r)),
 };

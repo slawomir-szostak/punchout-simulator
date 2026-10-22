@@ -63,33 +63,41 @@ export async function initConfig(): Promise<void> {
   db = new Low<Schema>(adapter, emptySchema());
   await db.read();
   db.data ||= emptySchema();
-  db.data.buyers ||= [];
-  db.data.suppliers ||= [];
-  db.data.connections ||= [];
-  db.data.profiles ||= [];
-  db.data.productLists ||= [];
+  upgradeSchema(db.data);
+  await persist(db);
+}
 
+/**
+ * Bring a stored (or imported) document up to SCHEMA_VERSION in place: fill
+ * missing collections, seed the built-ins, run the pending migrations, stamp it.
+ * Throws — before mutating anything — on data written by a newer build.
+ */
+function upgradeSchema(data: Schema): void {
   // Refuse to open data written by a newer build: an old binary rewriting a
   // newer file would silently drop the fields it doesn't know about.
-  const stored = db.data.schemaVersion ?? 0;
+  const stored = data.schemaVersion ?? 0;
   if (stored > SCHEMA_VERSION) {
     throw new Error(
       `config.json uses schema v${stored}, but this punchout-simulator build supports up to v${SCHEMA_VERSION} — ` +
         `upgrade the tool, or point --data-dir at data written by this version`,
     );
   }
+  data.buyers ||= [];
+  data.suppliers ||= [];
+  data.connections ||= [];
+  data.profiles ||= [];
+  data.productLists ||= [];
 
   // Ensure the built-in platform presets and the sample product list exist
   // (Generic is the resolution fallback). Idempotent — inserts missing ids only.
   // Seeds run before migrations: migrateProfiles refreshes the seeded Jaggaer row.
-  seedBuiltinProfiles(db.data, now());
-  seedBuiltinProductLists(db.data, now());
+  seedBuiltinProfiles(data, now());
+  seedBuiltinProductLists(data, now());
 
   for (const m of MIGRATIONS) {
-    if (stored < m.to) m.run(db.data);
+    if (stored < m.to) m.run(data);
   }
-  db.data.schemaVersion = SCHEMA_VERSION;
-  await persist(db);
+  data.schemaVersion = SCHEMA_VERSION;
 }
 
 // config.json holds the plaintext shared secret — keep it owner-only. lowdb
@@ -391,6 +399,166 @@ export async function deleteProductList(id: string): Promise<boolean> {
 export function catalogForSupplier(supplier: Supplier): CatalogItem[] {
   const ids = supplier.productListIds ?? [];
   return ids.flatMap((id) => getProductList(id)?.items ?? []);
+}
+
+// --- Export / import ---------------------------------------------------------
+//
+// A snapshot is the config.json document plus a small envelope. Import accepts
+// either a snapshot or a bare config.json, at any schema version this build can
+// read (older ones run the migration chain), and validates the whole result
+// before touching the live store — a rejected import writes nothing.
+
+export const SNAPSHOT_FORMAT = "punchout-simulator-config";
+
+const COLLECTIONS = ["buyers", "suppliers", "connections", "profiles", "productLists"] as const;
+type CollectionName = (typeof COLLECTIONS)[number];
+
+export interface ConfigSnapshot extends Schema {
+  format: typeof SNAPSHOT_FORMAT;
+  exportedAt: string;
+  appVersion?: string;
+}
+
+export type ImportMode = "merge" | "replace";
+
+export interface ImportSummary {
+  mode: ImportMode;
+  /** Rows per collection in the imported file (after migration). */
+  imported: Record<CollectionName, number>;
+  /** Rows per collection in the store after the import. */
+  total: Record<CollectionName, number>;
+  /** Connections left with no shared secret (e.g. from a secret-less export). */
+  withoutSecret: number;
+}
+
+/** Thrown for a file that can't be imported; `errors` are user-facing. */
+export class ConfigImportError extends Error {
+  constructor(readonly errors: string[]) {
+    super(errors.join("; "));
+  }
+}
+
+/**
+ * Snapshot the live config. Shared secrets are write-only over the API (see
+ * routes/connections.ts), so they're blanked unless explicitly asked for.
+ */
+export function exportConfig(opts: { appVersion?: string; includeSecrets?: boolean } = {}): ConfigSnapshot {
+  const data = requireDb().data;
+  return {
+    format: SNAPSHOT_FORMAT,
+    exportedAt: now(),
+    appVersion: opts.appVersion,
+    schemaVersion: SCHEMA_VERSION,
+    ...Object.fromEntries(COLLECTIONS.map((k) => [k, data[k]])),
+    connections: opts.includeSecrets ? data.connections : data.connections.map((c) => ({ ...c, sharedSecret: "" })),
+  } as ConfigSnapshot;
+}
+
+/**
+ * Import a snapshot. "replace" swaps the whole config for the file's; "merge"
+ * upserts by id — rows in the file overwrite same-id rows, everything else in
+ * the store is kept.
+ */
+export async function importConfig(raw: unknown, mode: ImportMode): Promise<ImportSummary> {
+  if (raw == null || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new ConfigImportError(["file is not a JSON object"]);
+  }
+  const input = raw as Record<string, unknown>;
+  if (input.format != null && input.format !== SNAPSHOT_FORMAT) {
+    throw new ConfigImportError([`unknown format "${String(input.format)}"`]);
+  }
+
+  const errors: string[] = [];
+  if (!COLLECTIONS.some((k) => k in input)) errors.push("file contains no configuration collections");
+  for (const k of COLLECTIONS) {
+    const rows = input[k];
+    if (rows == null) continue;
+    if (!Array.isArray(rows)) {
+      errors.push(`${k} must be an array`);
+      continue;
+    }
+    const seen = new Set<string>();
+    rows.forEach((row, i) => {
+      const id = (row as { id?: unknown } | null)?.id;
+      if (row == null || typeof row !== "object" || typeof id !== "string" || id === "") {
+        errors.push(`${k}[${i}] has no id`);
+      } else if (seen.has(id)) {
+        errors.push(`${k} has duplicate id "${id}"`);
+      } else {
+        seen.add(id);
+      }
+    });
+  }
+  if (errors.length > 0) throw new ConfigImportError(errors);
+
+  // Work on a copy: migrations mutate in place, and the caller's object (or the
+  // live store, on failure) must stay untouched.
+  const incoming = structuredClone({
+    schemaVersion: typeof input.schemaVersion === "number" ? input.schemaVersion : undefined,
+    ...Object.fromEntries(COLLECTIONS.map((k) => [k, input[k] ?? []])),
+  }) as Schema;
+  const inputIds = Object.fromEntries(
+    COLLECTIONS.map((k) => [k, new Set(incoming[k].map((r: { id: string }) => r.id))]),
+  ) as Record<CollectionName, Set<string>>;
+  try {
+    upgradeSchema(incoming);
+  } catch (e) {
+    throw new ConfigImportError([e instanceof Error ? e.message : String(e)]);
+  }
+
+  // upgradeSchema seeds any built-in missing from the file. Those rows aren't
+  // the file's content: a merge must not let them reset the store's (possibly
+  // edited) built-ins. Rows a migration created have fresh ids and stay.
+  const d = requireDb();
+  type Row = { id: string };
+  const fromFile = (k: CollectionName): Row[] =>
+    (incoming[k] as Row[]).filter((r) => inputIds[k].has(r.id) || !(d.data[k] as Row[]).some((x) => x.id === r.id));
+  const next: Schema =
+    mode === "replace"
+      ? incoming
+      : ({
+          schemaVersion: SCHEMA_VERSION,
+          ...Object.fromEntries(COLLECTIONS.map((k) => [k, mergeById(d.data[k] as Row[], fromFile(k))])),
+        } as Schema);
+
+  // A blank secret means "unchanged", as on PUT /connections/:id: a secret-less
+  // export round-trips without wiping the secrets already stored here.
+  next.connections = next.connections.map((c) => {
+    if (c.sharedSecret) return c;
+    const stored = d.data.connections.find((x) => x.id === c.id)?.sharedSecret;
+    return stored ? { ...c, sharedSecret: stored } : c;
+  });
+
+  // Referential integrity of the result. A dangling profileId / productListId
+  // degrades gracefully at runtime (Generic profile / skipped list), but a
+  // connection without both of its parties can't run at all.
+  const buyerIds = new Set(next.buyers.map((b) => b.id));
+  const supplierIds = new Set(next.suppliers.map((s) => s.id));
+  for (const c of next.connections) {
+    if (!buyerIds.has(c.buyerId)) errors.push(`connection "${c.name ?? c.id}" references missing buyer "${c.buyerId}"`);
+    if (!supplierIds.has(c.supplierId)) {
+      errors.push(`connection "${c.name ?? c.id}" references missing supplier "${c.supplierId}"`);
+    }
+  }
+  if (errors.length > 0) throw new ConfigImportError(errors);
+
+  const imported = Object.fromEntries(COLLECTIONS.map((k) => [k, fromFile(k).length])) as ImportSummary["imported"];
+  d.data = next;
+  await persist(d);
+  return {
+    mode,
+    imported,
+    total: Object.fromEntries(COLLECTIONS.map((k) => [k, next[k].length])) as ImportSummary["total"],
+    withoutSecret: next.connections.filter((c) => !c.sharedSecret).length,
+  };
+}
+
+/** Upsert `incoming` rows into `current` by id, keeping `current`'s order. */
+function mergeById<T extends { id: string }>(current: T[], incoming: T[]): T[] {
+  const byId = new Map(incoming.map((r) => [r.id, r]));
+  const merged = current.map((r) => byId.get(r.id) ?? r);
+  const existing = new Set(current.map((r) => r.id));
+  return [...merged, ...incoming.filter((r) => !existing.has(r.id))];
 }
 
 // --- Legacy migration --------------------------------------------------------

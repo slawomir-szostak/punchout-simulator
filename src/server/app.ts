@@ -16,6 +16,7 @@ import { flowRoute } from "./routes/flow.js";
 import { punchoutReturnRoute } from "./routes/punchout-return.js";
 import { streamRoute } from "./routes/stream.js";
 import { dataRoute } from "./routes/data.js";
+import { backupRoute } from "./routes/backup.js";
 import { simRoute } from "./routes/sim.js";
 
 export interface AppOptions {
@@ -83,6 +84,7 @@ export function createApp(opts: AppOptions = {}): Hono {
   app.route("/api/product-list-presets", productListPresetsRoute);
   app.route("/api/connections", connectionsRoute);
   app.route("/api/connections", flowRoute); // /:id/setup, /:id/order
+  app.route("/api/config", backupRoute);
   app.route("/api", dataRoute);
   app.route("/api", streamRoute);
   // The inbound buyer surface is intentionally unauthenticated; when exposed,

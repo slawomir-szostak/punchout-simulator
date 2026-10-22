@@ -263,6 +263,8 @@ The config is normalized into five entities:
 
 At send time: `From` = buyer identity, `To` = supplier identity, `Sender` = the connection's override (or the buyer), and the request targets the supplier's endpoints. The mock-supplier endpoints are keyed by supplier id (`/sim/<supplierId>/…`).
 
+**Export / import.** *Configure → Export / import…* saves all five collections to one JSON file and loads one back — to back up a setup, move it to another machine, or share it with a colleague. Sessions and logs are not included. Shared secrets are left out of the export unless you tick *Include shared secrets* (they'd be plain text in the file); on import a blank secret keeps the one already stored for that connection. Import either **merges** (upsert by id; everything else is kept) or **replaces** the whole configuration. Files from older versions are migrated on import; a file whose connections point at missing buyers/suppliers is rejected without changing anything.
+
 ### Product lists (Mode-B catalogs)
 
 A **Product List** is a named set of catalog items, edited on its own and assigned to one or
@@ -333,6 +335,7 @@ cxml-urlencoded) — i.e. the tool's original behavior.
 - `*/api/profiles` — CRUD for procurement-platform profiles · `GET /api/profile-presets` — the built-in preset library
 - `*/api/product-lists` — CRUD for product lists · `GET /api/product-list-presets` — the built-in sample library
 - `*/api/connections` — CRUD for connection edges (reference a buyer + supplier)
+- `GET /api/config/export[?secrets=1]` · `POST /api/config/import?mode=merge|replace` — whole-config export / import (JSON)
 - `GET /api/connections/:id/setup/preview` · `POST …/setup` — preview / send the SetupRequest
 - `POST /api/connections/:id/order/preview` · `POST …/order` — preview / send the OrderRequest (multipart if attachments)
 - `POST /punchout/return` — callback receiving the punchback auto-submit

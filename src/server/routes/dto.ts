@@ -58,3 +58,6 @@ export interface OrderResult {
   request: LogRecord;
   response: LogRecord;
 }
+
+/** Result of POST /api/config/import. */
+export type { ImportSummary as ConfigImportSummary } from "../store/config.js";

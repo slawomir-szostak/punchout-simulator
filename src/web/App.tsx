@@ -28,6 +28,7 @@ import { LiveLog } from "./components/LiveLog";
 import { SessionList, type SessionRow } from "./components/SessionList";
 import { NewSessionDialog, type NewSessionChoice } from "./components/NewSessionDialog";
 import { MessageDetail } from "./components/MessageDetail";
+import { BackupDialog } from "./components/BackupDialog";
 
 type View = "sessions" | "connections" | "buyers" | "suppliers" | "products" | "profiles";
 type Panel = "edit" | "new";
@@ -86,6 +87,7 @@ export function App() {
   const [version, setVersion] = useState<string>("");
   const [proxy, setProxy] = useState<ProxyStatus | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
+  const [showBackup, setShowBackup] = useState(false);
 
   const selectedConn = useMemo(
     () => connections.find((c) => c.id === selectedConnId) ?? null,
@@ -416,6 +418,7 @@ export function App() {
             {CONFIG_TABS.map((v) => (
               <button key={v} className={`viewtab ${view === v ? "active" : ""}`} aria-current={view === v ? "page" : undefined} onClick={() => setView(v)}>{TAB_LABEL[v]}</button>
             ))}
+            <button className="viewtab viewtab-action" onClick={() => setShowBackup(true)}>Export / import…</button>
           </nav>
 
           {view === "sessions" && (
@@ -654,6 +657,21 @@ export function App() {
         <NewSessionDialog connections={connections} sessions={sessionSummaries} initialConnectionId={showNewSession.connectionId} onCancel={() => setShowNewSession(false)} onCreate={startSession} />
       )}
       {detail && <MessageDetail record={detail} onClose={() => setDetail(null)} />}
+      {showBackup && (
+        <BackupDialog
+          onClose={() => setShowBackup(false)}
+          onImported={async () => {
+            // An import can rename or drop any row: reload everything, and let the
+            // editors fall back to their empty state rather than show a stale pick.
+            setSelectedConnId(null);
+            setSelectedBuyerId(null);
+            setSelectedSupplierId(null);
+            setSelectedProductListId(null);
+            setSelectedProfileId(null);
+            await Promise.all([reloadConnections(), reloadBuyers(), reloadSuppliers(), reloadProductLists(), reloadProfiles(), reloadSessions()]);
+          }}
+        />
+      )}
     </div>
   );
 }
