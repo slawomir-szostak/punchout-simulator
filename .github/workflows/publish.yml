@@ -1,8 +1,9 @@
 name: Publish to npm
 
-# Publishes on a GitHub Release. Auto-generates provenance via GitHub OIDC,
-# cryptographically linking the package to this public repo (spec section 2).
-# Registry auth uses the NPM_TOKEN repository secret (see the job comment).
+# Publishes on a GitHub Release via npm trusted publishing: npm exchanges the
+# job's GitHub OIDC token for a short-lived publish credential, so there is no
+# stored npm token. The trusted publisher (this repo + publish.yml) is
+# registered on npmjs.com; provenance is generated automatically (spec section 2).
 
 on:
   release:
@@ -10,34 +11,29 @@ on:
   # Manual only: runs the oidc-check diagnostic below, never a publish.
   workflow_dispatch:
 
-# Authenticates with an npm automation/granular token stored as the NPM_TOKEN
-# repository secret. Provenance is still generated via GitHub OIDC (id-token).
-# (Trusted publishing / tokenless OIDC is the nicer long-term setup, but it
-# requires a correctly-matched trusted-publisher entry on npmjs.com; token auth
-# is used here because it is reliable and unambiguous.)
 jobs:
   publish:
     if: github.event_name == 'release'
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write # required for provenance attestation
+      id-token: write # OIDC: trusted-publishing auth + provenance
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
           cache: npm
+      # Trusted publishing needs npm >= 11.5.1, newer than some Node 24 bundles.
+      - run: npm install -g npm@^11.5.1
       - run: npm ci
       - run: npm run typecheck
       - run: npm run build
       - run: npm test
       - run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-  # Diagnostic for npm trusted publishing (it failed with ENEEDAUTH on v0.11.0).
+  # Diagnostic for npm trusted publishing (on v0.11.0 the exchange 404-ed with
+  # "package not found" until the trusted publisher was recreated on npmjs.com).
   # Performs the same OIDC → npm token exchange `npm publish` does, but only
   # reports the outcome: the returned token is masked and discarded, nothing is
   # published. It must live in publish.yml — the file npm's trusted publisher
