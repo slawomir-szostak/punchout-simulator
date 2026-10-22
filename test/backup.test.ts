@@ -142,3 +142,36 @@ describe("import", () => {
     expect((await res.json()).errors[0]).toMatch(/schema v\d+/);
   });
 });
+
+describe("hardening", () => {
+  it("does not hand a stored secret to a connection re-pointed at another supplier", async () => {
+    const res = await importJson({
+      suppliers: [{ id: "evil", name: "Evil", identity: { domain: "DUNS", identity: "6" }, punchoutUrl: "https://evil.example/po" }],
+      connections: [{ id: "demo", name: "Demo", buyerId: "demo-buyer", supplierId: "evil", mode: "virtual-buyer", sharedSecret: "" }],
+    });
+    expect(res.status).toBe(200);
+    expect(getConnection("demo")?.sharedSecret).toBe("");
+    expect((await res.json()).withoutSecret).toBe(1);
+  });
+
+  // CSRF: a page on another site can POST text/plain at the tokenless localhost API.
+  const post = (headers: Record<string, string>) =>
+    app.request("/api/config/import?mode=replace", { method: "POST", headers: { "content-type": "text/plain", ...headers }, body: "{}" });
+
+  it("rejects cross-site browser requests that change state", async () => {
+    expect((await post({ "sec-fetch-site": "cross-site" })).status).toBe(403);
+    expect((await post({ "sec-fetch-site": "same-site" })).status).toBe(403);
+    expect((await post({ origin: "https://evil.example" })).status).toBe(403);
+    expect((await post({ origin: "null" })).status).toBe(403);
+    expect((await app.request("/api/connections/demo", { method: "DELETE", headers: { "sec-fetch-site": "cross-site" } })).status).toBe(403);
+    expect(getConnection("demo")).toBeDefined();
+  });
+
+  it("allows same-origin, header-less and read-only requests", async () => {
+    // Pass the guard → reach the handler (400: "{}" holds no collections).
+    expect((await post({ "sec-fetch-site": "same-origin" })).status).toBe(400);
+    expect((await post({ origin: "http://localhost" })).status).toBe(400);
+    expect((await post({})).status).toBe(400);
+    expect((await app.request("/api/buyers", { headers: { "sec-fetch-site": "cross-site" } })).status).toBe(200);
+  });
+});

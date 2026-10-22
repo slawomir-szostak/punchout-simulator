@@ -522,11 +522,15 @@ export async function importConfig(raw: unknown, mode: ImportMode): Promise<Impo
         } as Schema);
 
   // A blank secret means "unchanged", as on PUT /connections/:id: a secret-less
-  // export round-trips without wiping the secrets already stored here.
+  // export round-trips without wiping the secrets already stored here. Only
+  // while the connection still pairs the same parties, though — otherwise a
+  // file could re-point a connection at another supplier and inherit its secret.
   next.connections = next.connections.map((c) => {
     if (c.sharedSecret) return c;
-    const stored = d.data.connections.find((x) => x.id === c.id)?.sharedSecret;
-    return stored ? { ...c, sharedSecret: stored } : c;
+    const stored = d.data.connections.find((x) => x.id === c.id);
+    return stored?.sharedSecret && stored.buyerId === c.buyerId && stored.supplierId === c.supplierId
+      ? { ...c, sharedSecret: stored.sharedSecret }
+      : c;
   });
 
   // Referential integrity of the result. A dangling profileId / productListId

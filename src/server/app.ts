@@ -55,6 +55,25 @@ export function createApp(opts: AppOptions = {}): Hono {
     return next();
   });
 
+  // Guard the state-changing API against CSRF: any page open in the user's
+  // browser can fire a "simple" cross-site POST (text/plain, no preflight) at
+  // the tokenless localhost API, and readJsonBody doesn't gate on Content-Type.
+  // Browsers label such requests via Sec-Fetch-Site (and Origin); the SPA is
+  // same-origin, and non-browser clients (curl, scripts) send neither header.
+  app.use("/api/*", async (c, next) => {
+    if (["GET", "HEAD", "OPTIONS"].includes(c.req.method)) return next();
+    const site = c.req.header("sec-fetch-site");
+    const origin = c.req.header("origin");
+    const host = c.req.header("host") ?? new URL(c.req.url).host;
+    const crossSite = site
+      ? site !== "same-origin" && site !== "none"
+      : !!origin && hostnameFromOrigin(origin) !== hostnameFromHeader(host);
+    if (crossSite) {
+      return c.json({ error: "forbidden cross-site request" }, 403);
+    }
+    return next();
+  });
+
   // When a token is configured (the tool is exposed via a non-loopback
   // --public-url), gate /api/* (except the health probe) behind it. Token may
   // arrive as a Bearer header, an x-pos-token header, a ?token= query, or a
@@ -134,6 +153,16 @@ function hostnameFromHeader(host?: string): string {
   if (!host) return "";
   try {
     return new URL(`http://${host}`).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+/** Bare hostname from an `Origin:` header; "" for "null" or anything unparseable
+ *  (which then never matches, i.e. counts as cross-site). */
+function hostnameFromOrigin(origin: string): string {
+  try {
+    return new URL(origin).hostname.toLowerCase();
   } catch {
     return "";
   }
