@@ -150,6 +150,34 @@ describe("failed token attempts are throttled", () => {
     expect((await from(TOKEN, "203.0.113.60")).status).toBe(200);
   });
 
+  it("past the overall budget, refuses clients that have failed but not ones that have not", async () => {
+    const { authThrottle } = await import("../src/server/rate-limit.js");
+    const t = authThrottle({ perClient: 100, globalMax: 3 });
+    for (const ip of ["a", "b", "c"]) t.recordFailure(ip);
+    expect(t.blockedFor("a")).toBeGreaterThan(0); // has failed → out for this window
+    expect(t.blockedFor("operator")).toBe(0); // never failed → unaffected
+  });
+
+  it("never resets counters to make room when the client table is full", async () => {
+    const { authThrottle } = await import("../src/server/rate-limit.js");
+    const t = authThrottle({ perClient: 2, globalMax: 1000, maxClients: 2 });
+    t.recordFailure("a");
+    t.recordFailure("a");
+    t.recordFailure("b");
+    t.recordFailure("c"); // table full: not tracked, and nothing is evicted
+    expect(t.blockedFor("a")).toBeGreaterThan(0);
+    expect(t.blockedFor("c")).toBeGreaterThan(0);
+  });
+
+  it("keys IPv6 clients by /64 so rotating addresses does not reset the count", async () => {
+    const { throttleKeyFor } = await import("../src/server/rate-limit.js");
+    expect(throttleKeyFor("2001:db8:1:2::1")).toBe(throttleKeyFor("2001:0db8:0001:0002:ffff:ffff:ffff:ffff"));
+    expect(throttleKeyFor("2001:db8:1:2::1")).not.toBe(throttleKeyFor("2001:db8:1:3::1"));
+    expect(throttleKeyFor("fe80::1%eth0")).toBe("fe80:0:0:0::/64");
+    expect(throttleKeyFor("::ffff:192.0.2.7")).toBe("192.0.2.7");
+    expect(throttleKeyFor("192.0.2.7")).toBe("192.0.2.7");
+  });
+
   it("recovers when the window turns", async () => {
     const { authThrottle } = await import("../src/server/rate-limit.js");
     const t = authThrottle({ perClient: 2, windowMs: 30 });

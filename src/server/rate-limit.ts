@@ -82,9 +82,28 @@ export function authClientKey(c: Parameters<MiddlewareHandler>[0]): string {
   } catch {
     /* in-process test client has no socket */
   }
-  if (peer && !isLoopbackAddress(peer)) return peer;
+  if (peer && !isLoopbackAddress(peer)) return throttleKeyFor(peer);
   const lastHop = c.req.header("x-forwarded-for")?.split(",").pop()?.trim();
-  return lastHop || peer || "unknown";
+  return throttleKeyFor(lastHop || peer || "unknown");
+}
+
+/**
+ * Normalise an address into a throttle key. An IPv6 host normally controls a
+ * whole /64 and can take a fresh address for every request, so IPv6 is keyed by
+ * its /64 prefix; IPv4 (including IPv4-mapped IPv6) by the full address.
+ */
+export function throttleKeyFor(address: string): string {
+  const addr = address.trim().toLowerCase().replace(/^\[|\]$/g, "").replace(/%.*$/, "");
+  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(addr);
+  if (mapped) return mapped[1];
+  if (!addr.includes(":")) return addr;
+  const [head, tail] = addr.split("::") as [string, string | undefined];
+  const left = head ? head.split(":") : [];
+  const right = tail ? tail.split(":") : [];
+  const groups =
+    tail === undefined ? left : [...left, ...Array(Math.max(0, 8 - left.length - right.length)).fill("0"), ...right];
+  if (groups.length !== 8) return addr; // not a well-formed address: key it verbatim
+  return groups.slice(0, 4).map((g) => g.replace(/^0+(?=.)/, "")).join(":") + "::/64";
 }
 
 function isLoopbackAddress(addr: string): boolean {
@@ -94,17 +113,26 @@ function isLoopbackAddress(addr: string): boolean {
 
 // Throttle for failed /api token attempts. The auto-generated token is far
 // beyond guessing, but an operator-chosen one may not be, and without this the
-// only limit on guesses is the network. Fixed one-minute windows again: a
-// client that keeps failing is refused outright (429, the token is not even
-// compared — otherwise a correct guess would still get through and the limit
-// would bound nothing) until the window turns over. Deliberately per client
-// only, with no global cap: a global one would let anyone who can reach the
-// port lock the operator out by sending wrong tokens. Successful requests are
-// never counted.
+// only limit on guesses is the network. Fixed one-minute windows again. A
+// refused client gets 429 without its token being compared — otherwise a
+// correct guess would still get through and the limit would bound nothing.
+//
+// Two limits, shaped so that neither lets a stranger lock the operator out:
+//  - per client: `perClient` wrong tokens, then that client is refused;
+//  - overall: once `globalMax` wrong tokens have arrived from anyone, every
+//    client that has itself sent a wrong token this window is refused. A client
+//    with no failures is never affected, so the operator's working session
+//    carries on; a guesser spread over many addresses gets one attempt per
+//    address beyond the budget instead of `perClient` each.
+// Successful requests are never counted.
 export interface AuthThrottleOptions {
   windowMs?: number;
   /** Failed attempts per client per window before that client is refused. */
   perClient?: number;
+  /** Failed attempts overall per window before every failing client is refused. */
+  globalMax?: number;
+  /** Most clients tracked per window (memory bound). */
+  maxClients?: number;
 }
 
 export interface AuthThrottle {
@@ -116,12 +144,16 @@ export interface AuthThrottle {
 export function authThrottle(opts: AuthThrottleOptions = {}): AuthThrottle {
   const windowMs = opts.windowMs ?? 60_000;
   const perClient = opts.perClient ?? 30;
+  const globalMax = opts.globalMax ?? 300;
+  const maxClients = opts.maxClients ?? 50_000;
   let windowStart = 0;
+  let totalFailures = 0;
   let failures = new Map<string, number>();
 
   const roll = (nowMs: number) => {
     if (nowMs - windowStart >= windowMs) {
       windowStart = nowMs;
+      totalFailures = 0;
       failures = new Map();
     }
   };
@@ -130,13 +162,18 @@ export function authThrottle(opts: AuthThrottleOptions = {}): AuthThrottle {
     blockedFor(key) {
       const nowMs = Date.now();
       roll(nowMs);
-      if ((failures.get(key) ?? 0) < perClient) return 0;
-      return Math.max(1, Math.ceil((windowStart + windowMs - nowMs) / 1000));
+      const wait = Math.max(1, Math.ceil((windowStart + windowMs - nowMs) / 1000));
+      const mine = failures.get(key);
+      // Table full (tens of thousands of distinct failing networks in a minute):
+      // counters are never reset to make room, so an untracked client can no
+      // longer be told from a fresh guesser and is refused until the window turns.
+      if (mine === undefined) return failures.size >= maxClients ? wait : 0;
+      return mine >= perClient || totalFailures >= globalMax ? wait : 0;
     },
     recordFailure(key) {
       roll(Date.now());
-      // Memory bound. Clearing forgives everyone early, which is the safe side.
-      if (failures.size >= 10_000) failures.clear();
+      totalFailures += 1;
+      if (!failures.has(key) && failures.size >= maxClients) return;
       failures.set(key, (failures.get(key) ?? 0) + 1);
     },
   };
