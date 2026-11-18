@@ -6,7 +6,7 @@ import { logger } from "hono/logger";
 import { bodyLimit } from "hono/body-limit";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { getToken, getPublicUrl } from "./runtime.js";
-import { authThrottle, clientKey, inboundRateLimit } from "./rate-limit.js";
+import { authClientKey, authThrottle, inboundRateLimit } from "./rate-limit.js";
 import { getMaxDataMb, overDataBudget } from "./store/usage.js";
 import { connectionsRoute } from "./routes/connections.js";
 import { buyersRoute, suppliersRoute } from "./routes/parties.js";
@@ -99,9 +99,9 @@ export function createApp(opts: AppOptions = {}): Hono {
     const token = getToken();
     if (!token) return next();
     if (c.req.path === "/api/health") return next();
-    // Too many wrong tokens from this client (or overall) this minute: refuse
-    // without comparing, so the limit actually bounds the guess rate.
-    const client = clientKey(c);
+    // Too many wrong tokens from this client this minute: refuse without
+    // comparing, so the limit actually bounds the guess rate.
+    const client = authClientKey(c);
     const wait = failedAuth.blockedFor(client);
     if (wait > 0) {
       c.header("Retry-After", String(wait));

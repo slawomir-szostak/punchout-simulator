@@ -112,9 +112,10 @@ see them in the SetupRequest preview, so treat API access as secret access.
 
 **Choose a long token.** The generated one is 24 random characters. If you set
 your own, use at least 16 random characters — the tool warns at startup when it
-is shorter. Wrong tokens are throttled (30 per client and 300 overall per
-minute, then `429` until the minute is up), which slows guessing but does not
-rescue a guessable token.
+is shorter. Wrong tokens are throttled per client (30 a minute, then `429`
+until the minute is up), which slows guessing but does not rescue a guessable
+token. Clients behind one address — a shared NAT, or everything reaching a
+Docker container — share that allowance.
 
 **The tool speaks plain HTTP.** On `localhost` that is fine. Exposed on a LAN
 with `--host 0.0.0.0`, the token and every shared secret in a cXML document

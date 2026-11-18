@@ -419,8 +419,8 @@ web page open in your browser can post to <code>localhost</code>.</p>
 the shared secrets inside cXML documents cross the network unencrypted. Beyond
 a trusted network, put TLS in front — a tunnel (ngrok/cloudflared, passed as
 <code>--public-url</code>) or a reverse proxy with a certificate. Wrong tokens are
-throttled (30 per client, 300 overall per minute, then <code>429</code>), which slows
-guessing but does not make a short token safe.</p>
+throttled per client (30 a minute, then <code>429</code>), which slows guessing but does
+not make a short token safe.</p>
 </div>
 <h3 id="environment-variables">Environment variables</h3>
 <p>Every flag default can also come from the environment, which is convenient for

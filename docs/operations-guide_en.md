@@ -41,8 +41,8 @@ product list on first run, and opens the browser. Useful flags:
 > the shared secrets inside cXML documents cross the network unencrypted. Beyond
 > a trusted network, put TLS in front — a tunnel (ngrok/cloudflared, passed as
 > `--public-url`) or a reverse proxy with a certificate. Wrong tokens are
-> throttled (30 per client, 300 overall per minute, then `429`), which slows
-> guessing but does not make a short token safe.
+> throttled per client (30 a minute, then `429`), which slows guessing but does
+> not make a short token safe.
 
 ### Environment variables
 

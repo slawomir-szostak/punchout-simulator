@@ -124,12 +124,40 @@ describe("failed token attempts are throttled", () => {
     expect(other.status).toBe(200);
   });
 
-  it("caps total failures across clients and recovers when the window turns", async () => {
+  it("cannot be used by one client to lock out another", async () => {
+    const fresh = createApp({ quiet: true });
+    // Far more failures than any limit, spread over many (forged) client keys...
+    for (let i = 0; i < 400; i++) {
+      await fresh.request("/api/connections", {
+        headers: { authorization: "Bearer wrong", "x-forwarded-for": `198.51.100.${i % 200}` },
+      });
+    }
+    // ...still leaves an uninvolved client with the right token untouched.
+    const res = await fresh.request("/api/connections", {
+      headers: { authorization: `Bearer ${TOKEN}`, "x-forwarded-for": "203.0.113.77" },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("keys a proxied client by the last X-Forwarded-For hop, not a forged first one", async () => {
+    const fresh = createApp({ quiet: true });
+    const from = (token: string, xff: string) =>
+      fresh.request("/api/connections", { headers: { authorization: `Bearer ${token}`, "x-forwarded-for": xff } });
+    // The guesser rotates the hop it controls; the proxy-appended hop stays the same.
+    for (let i = 0; i < 30; i++) expect((await from("wrong", `10.0.0.${i}, 203.0.113.50`)).status).toBe(401);
+    expect((await from("wrong", "10.9.9.9, 203.0.113.50")).status).toBe(429);
+    // Forging the operator's address as the first hop does not lock the operator out.
+    expect((await from(TOKEN, "203.0.113.60")).status).toBe(200);
+  });
+
+  it("recovers when the window turns", async () => {
     const { authThrottle } = await import("../src/server/rate-limit.js");
-    const t = authThrottle({ perClient: 100, globalMax: 3, windowMs: 30 });
-    for (const ip of ["a", "b", "c"]) t.recordFailure(ip);
-    expect(t.blockedFor("d")).toBeGreaterThan(0);
+    const t = authThrottle({ perClient: 2, windowMs: 30 });
+    t.recordFailure("a");
+    t.recordFailure("a");
+    expect(t.blockedFor("a")).toBeGreaterThan(0);
+    expect(t.blockedFor("b")).toBe(0);
     await new Promise((r) => setTimeout(r, 40));
-    expect(t.blockedFor("d")).toBe(0);
+    expect(t.blockedFor("a")).toBe(0);
   });
 });

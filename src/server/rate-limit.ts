@@ -28,7 +28,7 @@ export interface RateLimitOptions {
 // tunnel (ngrok/cloudflared), where the socket peer is always the local tunnel
 // agent. XFF is spoofable, so a determined attacker can dodge the per-client
 // bucket — the global bucket still bounds total damage.
-export function clientKey(c: Parameters<MiddlewareHandler>[0]): string {
+function clientKey(c: Parameters<MiddlewareHandler>[0]): string {
   const xff = c.req.header("x-forwarded-for");
   if (xff) return xff.split(",")[0].trim();
   try {
@@ -69,18 +69,42 @@ export function inboundRateLimit(opts: RateLimitOptions = {}): MiddlewareHandler
   };
 }
 
+// Client key for the failed-token throttle. Unlike the inbound key above, this
+// one must not be forgeable: a guesser who could pick their own key would dodge
+// the limit, and one who could pick someone else's would lock that person out.
+// So X-Forwarded-For is believed only when the socket peer is loopback — i.e. a
+// tunnel agent or proxy on this machine put it there — and then only its last
+// hop, the one that agent appended. Any other peer is keyed by its socket address.
+export function authClientKey(c: Parameters<MiddlewareHandler>[0]): string {
+  let peer: string | undefined;
+  try {
+    peer = getConnInfo(c).remote.address ?? undefined;
+  } catch {
+    /* in-process test client has no socket */
+  }
+  if (peer && !isLoopbackAddress(peer)) return peer;
+  const lastHop = c.req.header("x-forwarded-for")?.split(",").pop()?.trim();
+  return lastHop || peer || "unknown";
+}
+
+function isLoopbackAddress(addr: string): boolean {
+  const a = addr.replace(/^::ffff:/i, "");
+  return a === "::1" || a.startsWith("127.");
+}
+
 // Throttle for failed /api token attempts. The auto-generated token is far
 // beyond guessing, but an operator-chosen one may not be, and without this the
 // only limit on guesses is the network. Fixed one-minute windows again: a
 // client that keeps failing is refused outright (429, the token is not even
-// compared) until the window turns over, and a global cap bounds a guesser that
-// rotates a spoofed X-Forwarded-For. Successful requests are never counted.
+// compared — otherwise a correct guess would still get through and the limit
+// would bound nothing) until the window turns over. Deliberately per client
+// only, with no global cap: a global one would let anyone who can reach the
+// port lock the operator out by sending wrong tokens. Successful requests are
+// never counted.
 export interface AuthThrottleOptions {
   windowMs?: number;
   /** Failed attempts per client per window before that client is refused. */
   perClient?: number;
-  /** Failed attempts across all clients per window before everyone is refused. */
-  globalMax?: number;
 }
 
 export interface AuthThrottle {
@@ -92,15 +116,12 @@ export interface AuthThrottle {
 export function authThrottle(opts: AuthThrottleOptions = {}): AuthThrottle {
   const windowMs = opts.windowMs ?? 60_000;
   const perClient = opts.perClient ?? 30;
-  const globalMax = opts.globalMax ?? 300;
   let windowStart = 0;
-  let globalFailures = 0;
   let failures = new Map<string, number>();
 
   const roll = (nowMs: number) => {
     if (nowMs - windowStart >= windowMs) {
       windowStart = nowMs;
-      globalFailures = 0;
       failures = new Map();
     }
   };
@@ -109,13 +130,13 @@ export function authThrottle(opts: AuthThrottleOptions = {}): AuthThrottle {
     blockedFor(key) {
       const nowMs = Date.now();
       roll(nowMs);
-      if ((failures.get(key) ?? 0) < perClient && globalFailures < globalMax) return 0;
+      if ((failures.get(key) ?? 0) < perClient) return 0;
       return Math.max(1, Math.ceil((windowStart + windowMs - nowMs) / 1000));
     },
     recordFailure(key) {
       roll(Date.now());
-      globalFailures += 1;
-      if (failures.size >= 10_000) failures.clear(); // memory bound, as above
+      // Memory bound. Clearing forgives everyone early, which is the safe side.
+      if (failures.size >= 10_000) failures.clear();
       failures.set(key, (failures.get(key) ?? 0) + 1);
     },
   };
