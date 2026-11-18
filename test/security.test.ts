@@ -105,3 +105,31 @@ describe("secrets stay out of logs", () => {
     expect(redactToken("<-- GET /sim/demo/catalog?cookie=x")).toBe("<-- GET /sim/demo/catalog?cookie=x");
   });
 });
+
+describe("failed token attempts are throttled", () => {
+  it("refuses a client after repeated wrong tokens, even with the right one", async () => {
+    const fresh = createApp({ quiet: true });
+    const from = (token: string) =>
+      fresh.request("/api/connections", {
+        headers: { authorization: `Bearer ${token}`, "x-forwarded-for": "203.0.113.9" },
+      });
+    for (let i = 0; i < 30; i++) expect((await from("wrong")).status).toBe(401);
+    const blocked = await from(TOKEN);
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers.get("retry-after")).toBeTruthy();
+    // Another client is unaffected, and successes never count against anyone.
+    const other = await fresh.request("/api/connections", {
+      headers: { authorization: `Bearer ${TOKEN}`, "x-forwarded-for": "203.0.113.10" },
+    });
+    expect(other.status).toBe(200);
+  });
+
+  it("caps total failures across clients and recovers when the window turns", async () => {
+    const { authThrottle } = await import("../src/server/rate-limit.js");
+    const t = authThrottle({ perClient: 100, globalMax: 3, windowMs: 30 });
+    for (const ip of ["a", "b", "c"]) t.recordFailure(ip);
+    expect(t.blockedFor("d")).toBeGreaterThan(0);
+    await new Promise((r) => setTimeout(r, 40));
+    expect(t.blockedFor("d")).toBe(0);
+  });
+});

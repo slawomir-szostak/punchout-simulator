@@ -1,0 +1,30 @@
+# Weekly dependency and action updates. Minor/patch bumps arrive as one grouped
+# PR per ecosystem; majors come individually so each can be judged on its own.
+# Security updates are raised immediately regardless of this schedule.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      # undici 7+/8 need a newer Node than the declared floor (engines >=20);
+      # 0.8.2 was the release that had to undo exactly that upgrade.
+      - dependency-name: undici
+        update-types: [version-update:semver-major]
+      # Types must track the minimum supported Node, not the newest.
+      - dependency-name: "@types/node"
+        update-types: [version-update:semver-major]
+
+  # Also keeps the commit-SHA pins in publish.yml current.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]

@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Weekly, so a new advisory surfaces even when nothing is being pushed.
+  schedule:
+    - cron: "17 6 * * 1"
 
 jobs:
   build-test:
@@ -22,6 +25,18 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm test
+
+  # Fails on any moderate+ advisory in the dependencies that ship to users
+  # (dev tooling is excluded: it never reaches the published package). Its own
+  # job, so a new advisory doesn't mask the build/test result.
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - run: npm audit --omit=dev --audit-level=moderate
 
   # The image is not published anywhere; this only keeps the Dockerfile building.
   docker-build:

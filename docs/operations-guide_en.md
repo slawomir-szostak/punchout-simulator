@@ -24,7 +24,7 @@ product list on first run, and opens the browser. Useful flags:
 | `--data-dir`, `-d` | Where `config.json` and `sessions/` live (default `./data`). |
 | `--public-url` | Expose on a non-loopback URL; this **enables token auth** on `/api`. |
 | `--host` | Bind host (also enables token auth when non-loopback). |
-| `--token` | Set the API token explicitly (otherwise generated when exposed). |
+| `--token` | Set the API token explicitly (otherwise generated when exposed). Use 16+ random characters; a shorter one triggers a startup warning. |
 | `--max-data-mb` | Disk budget for session logs + attachments (default `2048`). See [Data and storage](#data-and-storage). |
 | `--no-open` | Don't open the browser. |
 | `--no-seed` | Don't seed demo data. |
@@ -35,6 +35,14 @@ product list on first run, and opens the browser. Useful flags:
 > system can reach the Mode-B catalog and the Mode-A callback. That open surface
 > is rate-limited and bounded by the disk budget — on localhost too, because any
 > web page open in your browser can post to `localhost`.
+
+> [!WARNING]
+> The tool serves plain HTTP. With `--host 0.0.0.0` on a LAN, the API token and
+> the shared secrets inside cXML documents cross the network unencrypted. Beyond
+> a trusted network, put TLS in front — a tunnel (ngrok/cloudflared, passed as
+> `--public-url`) or a reverse proxy with a certificate. Wrong tokens are
+> throttled (30 per client, 300 overall per minute, then `429`), which slows
+> guessing but does not make a short token safe.
 
 ### Environment variables
 

@@ -63,11 +63,12 @@ npm i -g punchout-simulator && punchout-simulator   # persistent install
 ```bash
 # Docker (binds 0.0.0.0 inside the container ⇒ counts as "exposed" ⇒ /api needs a
 # token). The image is not published to a registry — build it from a clone of
-# this repo first. Set your own token, or read the auto-generated ?token= URL
-# from the logs:
+# this repo first. A token is generated on every start; open the ?token= URL
+# printed in the logs. For a stable one, pass a long random value instead:
+#   -e POS_TOKEN="$(openssl rand -hex 24)"
 docker build -t punchout-simulator .
-docker run -p 127.0.0.1:8080:8080 -e POS_TOKEN=mysecret -v "$PWD/data:/data" punchout-simulator
-# then open http://localhost:8080/?token=mysecret
+docker run -p 127.0.0.1:8080:8080 -v "$PWD/data:/data" punchout-simulator
+docker logs <container>   # → http://localhost:8080/?token=…
 ```
 
 ### CLI options
@@ -108,6 +109,24 @@ The API also rejects **cross-site** state-changing requests (by `Sec-Fetch-Site`
 can't be framed by other sites. Shared secrets are **redacted from all logs** and
 masked when reading connections — but note that anyone with API access can still
 see them in the SetupRequest preview, so treat API access as secret access.
+
+**Choose a long token.** The generated one is 24 random characters. If you set
+your own, use at least 16 random characters — the tool warns at startup when it
+is shorter. Wrong tokens are throttled (30 per client and 300 overall per
+minute, then `429` until the minute is up), which slows guessing but does not
+rescue a guessable token.
+
+**The tool speaks plain HTTP.** On `localhost` that is fine. Exposed on a LAN
+with `--host 0.0.0.0`, the token and every shared secret in a cXML document
+cross the network unencrypted, readable by anyone who can watch that traffic.
+For anything beyond a trusted network, put TLS in front: a tunnel
+(ngrok/cloudflared terminate HTTPS for you — pass their URL as `--public-url`)
+or a reverse proxy with a certificate.
+
+The UI is served with a Content-Security-Policy that allows scripts only from
+the tool itself, so text arriving in cXML or an imported config cannot run as
+script even if it were ever rendered unescaped. To report a vulnerability, see
+[SECURITY.md](SECURITY.md).
 
 ---
 

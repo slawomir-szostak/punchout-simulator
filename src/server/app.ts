@@ -6,7 +6,7 @@ import { logger } from "hono/logger";
 import { bodyLimit } from "hono/body-limit";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { getToken, getPublicUrl } from "./runtime.js";
-import { inboundRateLimit } from "./rate-limit.js";
+import { authThrottle, clientKey, inboundRateLimit } from "./rate-limit.js";
 import { getMaxDataMb, overDataBudget } from "./store/usage.js";
 import { connectionsRoute } from "./routes/connections.js";
 import { buyersRoute, suppliersRoute } from "./routes/parties.js";
@@ -48,7 +48,7 @@ export function createApp(opts: AppOptions = {}): Hono {
     c.header("X-Content-Type-Options", "nosniff");
     if (c.req.path.startsWith("/sim/") || c.req.path.startsWith("/punchout/")) return;
     c.header("X-Frame-Options", "DENY");
-    c.header("Content-Security-Policy", "frame-ancestors 'none'");
+    c.header("Content-Security-Policy", APP_CSP);
     c.header("Referrer-Policy", "no-referrer");
   });
 
@@ -94,10 +94,19 @@ export function createApp(opts: AppOptions = {}): Hono {
   // arrive as a Bearer header, an x-pos-token header, or a ?token= query (for
   // EventSource and download links, which can't set headers). No cookie: one
   // would ride along on cross-site requests.
+  const failedAuth = authThrottle();
   app.use("/api/*", async (c, next) => {
     const token = getToken();
     if (!token) return next();
     if (c.req.path === "/api/health") return next();
+    // Too many wrong tokens from this client (or overall) this minute: refuse
+    // without comparing, so the limit actually bounds the guess rate.
+    const client = clientKey(c);
+    const wait = failedAuth.blockedFor(client);
+    if (wait > 0) {
+      c.header("Retry-After", String(wait));
+      return c.json({ error: "too many failed token attempts — wait and retry" }, 429);
+    }
     const auth = c.req.header("authorization") ?? "";
     const provided =
       (auth.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() : "") ||
@@ -105,6 +114,7 @@ export function createApp(opts: AppOptions = {}): Hono {
       c.req.query("token") ||
       "";
     if (safeEqual(provided, token)) return next();
+    failedAuth.recordFailure(client);
     return c.json({ error: "unauthorized" }, 401);
   });
 
@@ -172,6 +182,28 @@ export function createApp(opts: AppOptions = {}): Hono {
 
   return app;
 }
+
+// Content-Security-Policy for the app's own pages. The point is `script-src
+// 'self'`: imported config and inbound cXML are attacker-influenced text, and
+// if an escaping bug ever lets some of it through as markup (as in 0.11.1), no
+// injected inline script or event handler runs. The rest is what the SPA needs:
+// Monaco injects <style> elements and uses data: images and a bundled font, its
+// editor worker is a same-origin file (blob: covers bundler fallbacks), and the
+// embedded-catalog overlay frames a supplier page on any http(s) origin.
+export const APP_CSP = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "font-src 'self' data:",
+  "connect-src 'self'",
+  "worker-src 'self' blob:",
+  "frame-src http: https:",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+].join("; ");
 
 /** Mask the value of a `token` query parameter in a logged request line. */
 export function redactToken(line: string): string {

@@ -117,6 +117,9 @@ function parseMaxDataMb(value: string | undefined): number {
   return n;
 }
 
+/** Below this, an operator-supplied API token earns a startup warning. */
+const MIN_TOKEN_LENGTH = 16;
+
 const LOOPBACK = new Set(["localhost", "127.0.0.1", "::1", "[::1]", ""]);
 function hostnameOf(url: string): string {
   try {
@@ -215,6 +218,11 @@ async function main() {
       console.log(`\n  ⚠ EXPOSED: /api requires a token. Open the UI with the token:`);
       console.log(`     ${openUrl}`);
       console.log(`     (inbound /sim and /punchout stay open for buyer traffic)`);
+      if (token.length < MIN_TOKEN_LENGTH) {
+        console.log(`\n  ⚠ WEAK TOKEN: the configured token is only ${token.length} characters. Anyone who can`);
+        console.log(`     reach this port can try to guess it. Use ${MIN_TOKEN_LENGTH}+ random characters, or omit`);
+        console.log(`     --token/POS_TOKEN to have a strong one generated.`);
+      }
     }
     console.log("");
 

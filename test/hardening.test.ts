@@ -111,7 +111,11 @@ describe("headers", () => {
   it("forbids framing the app and API, but not the inbound surface", async () => {
     const api = await app.request("/api/health");
     expect(api.headers.get("x-frame-options")).toBe("DENY");
-    expect(api.headers.get("content-security-policy")).toBe("frame-ancestors 'none'");
+    const csp = api.headers.get("content-security-policy") ?? "";
+    expect(csp).toContain("frame-ancestors 'none'");
+    // No inline or third-party script on the app's own pages.
+    expect(csp).toContain("script-src 'self'");
+    expect(csp).not.toMatch(/script-src[^;]*unsafe/);
     expect(api.headers.get("referrer-policy")).toBe("no-referrer");
     const sim = await app.request("/sim/demo-supplier/catalog");
     expect(sim.headers.get("x-frame-options")).toBeNull();
