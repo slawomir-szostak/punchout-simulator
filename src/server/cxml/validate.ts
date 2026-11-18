@@ -136,6 +136,15 @@ function checkGeneral(doc: ParsedDoc, ctx: ValidationContext, issues: Issues, do
   }
 }
 
+/** String comparison whose duration doesn't depend on where the inputs first
+ *  differ, so response timing can't be used to recover a secret a character at
+ *  a time. (Pure JS: this module is not tied to node:crypto.) */
+function constantTimeEqual(a: string, b: string): boolean {
+  let diff = a.length ^ b.length;
+  for (let i = 0; i < b.length; i++) diff |= (a.charCodeAt(i % (a.length || 1)) || 0) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
 function checkSharedSecret(doc: ParsedDoc, ctx: ValidationContext, issues: Issues) {
   const exp = ctx.expected;
   if (!exp) return;
@@ -146,7 +155,7 @@ function checkSharedSecret(doc: ParsedDoc, ctx: ValidationContext, issues: Issue
       "Sender/Credential/SharedSecret is absent (required for SharedSecret auth)",
       "cXML/Header/Sender/Credential/SharedSecret",
     );
-  } else if (exp.sharedSecret && creds.sharedSecret !== exp.sharedSecret) {
+  } else if (exp.sharedSecret && !constantTimeEqual(creds.sharedSecret, exp.sharedSecret)) {
     issues.error(
       "sharedsecret-mismatch",
       "Sender SharedSecret does not match the connection's configured shared secret",

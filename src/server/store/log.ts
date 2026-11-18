@@ -1,5 +1,5 @@
 import { appendFileSync, existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
-import { resolve, sep } from "node:path";
+import { basename, resolve, sep } from "node:path";
 import { nanoid } from "nanoid";
 import { bus } from "../bus.js";
 import type { LogRecord } from "../cxml/types.js";
@@ -40,8 +40,15 @@ export function appendLog(input: LogInput): LogRecord {
   return record;
 }
 
+/** Cache/listing key of a session: its log's file name, which is what a
+ *  directory listing gives us (the id itself may not be a valid file name). */
+const fileKey = (file: string): string => basename(file).replace(/\.jsonl$/, "");
+
 export function readSession(sessionId: string): LogRecord[] {
-  const file = sessionFile(sessionId);
+  return readSessionFile(sessionFile(sessionId));
+}
+
+function readSessionFile(file: string): LogRecord[] {
   if (!existsSync(file)) return [];
   return readFileSync(file, "utf8")
     .split("\n")
@@ -66,7 +73,7 @@ export function deleteSession(sessionId: string): boolean {
   const size = statSync(file).size;
   rmSync(file);
   trackDelete(size);
-  summaryCache.delete(sessionId);
+  summaryCache.delete(fileKey(file));
   return true;
 }
 
@@ -130,7 +137,7 @@ function summarize(sessionId: string, records: LogRecord[]): SessionSummary {
 /** Fold one appended record into the cached summary (appendLog chokepoint). */
 function updateSummaryCache(record: LogRecord, lineBytes: number): void {
   syncCacheDir();
-  const entry = summaryCache.get(record.sessionId);
+  const entry = summaryCache.get(fileKey(sessionFile(record.sessionId)));
   if (!entry) return; // cold for this session — next listSessions parses the file
   const s = entry.summary;
   s.count += 1;
@@ -148,15 +155,16 @@ export function listSessions(): SessionSummary[] {
   const seen = new Set<string>();
   const summaries: SessionSummary[] = [];
   for (const file of files) {
-    const sessionId = file.replace(/\.jsonl$/, "");
-    seen.add(sessionId);
-    const size = statSync(resolve(sessionsDir(), file), { throwIfNoEntry: false })?.size ?? -1;
-    let entry = summaryCache.get(sessionId);
+    const key = fileKey(file);
+    seen.add(key);
+    const path = resolve(sessionsDir(), file);
+    const size = statSync(path, { throwIfNoEntry: false })?.size ?? -1;
+    let entry = summaryCache.get(key);
     if (!entry || entry.size !== size) {
-      const records = readSession(sessionId);
+      const records = readSessionFile(path);
       if (records.length === 0) continue;
-      entry = { summary: summarize(sessionId, records), size };
-      summaryCache.set(sessionId, entry);
+      entry = { summary: summarize(key, records), size };
+      summaryCache.set(key, entry);
     }
     summaries.push(entry.summary);
   }
@@ -173,7 +181,7 @@ export function referencedAttachmentHashes(): Set<string> {
   const hashes = new Set<string>();
   for (const file of readdirSync(sessionsDir())) {
     if (!file.endsWith(".jsonl")) continue;
-    for (const r of readSession(file.replace(/\.jsonl$/, ""))) {
+    for (const r of readSessionFile(resolve(sessionsDir(), file))) {
       for (const a of r.attachments ?? []) hashes.add(a.hash);
     }
   }

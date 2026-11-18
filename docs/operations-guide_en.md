@@ -328,7 +328,9 @@ Everything lives under the data directory:
 
 - `config.json` — the normalized entities (buyers, suppliers, connections,
   profiles, product lists). Migrations run automatically at boot.
-- `sessions/<sessionId>.jsonl` — one append-only log per conversation.
+- `sessions/<sessionId>.jsonl` — one append-only log per conversation. A
+  BuyerCookie containing characters that aren't safe in a file name is stored as
+  `<sanitized>~<hash>.jsonl`, so two different cookies never share a log.
 - `attachments/<sha256>` — attachment blobs, content-addressed and referenced
   from records; removed once no session references them.
 

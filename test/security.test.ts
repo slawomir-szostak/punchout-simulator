@@ -189,3 +189,65 @@ describe("failed token attempts are throttled", () => {
     expect(t.blockedFor("a")).toBe(0);
   });
 });
+
+describe("session logs: one file per session id", () => {
+  it("never lets two different ids share a log", async () => {
+    const { appendLog, readSession, listSessions, deleteSession } = await import("../src/server/store/log.js");
+    const { sessionFile } = await import("../src/server/store/paths.js");
+    const ids = ["col a/b", "col a b", "col_a_b", "col a?b", "x".repeat(250) + "1", "x".repeat(250) + "2"];
+    expect(new Set(ids.map((id) => sessionFile(id))).size).toBe(ids.length);
+    for (const id of ids) {
+      expect(sessionFile(id)).toMatch(/[\\/]sessions[\\/][A-Za-z0-9._~-]+\.jsonl$/); // still inside the sessions dir
+      appendLog({ sessionId: id, connectionId: "c", direction: "in", docType: "SetupRequest", body: `<x>${id.length}</x>` });
+    }
+    for (const id of ids) {
+      const records = readSession(id);
+      expect(records).toHaveLength(1);
+      expect(records[0].sessionId).toBe(id);
+    }
+    // Listed under their real ids, readable and deletable through them.
+    const listed = listSessions().map((s) => s.sessionId);
+    for (const id of ids) expect(listed).toContain(id);
+    expect(deleteSession("col a/b")).toBe(true);
+    expect(readSession("col a/b")).toHaveLength(0);
+    expect(readSession("col a b")).toHaveLength(1);
+  });
+
+  it("keeps reading a pre-0.11.10 log for the session that started it", async () => {
+    const { writeFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { appendLog, readSession } = await import("../src/server/store/log.js");
+    const { sessionsDir } = await import("../src/server/store/paths.js");
+    // Old layout: the sanitized id alone was the file name.
+    const record = { sessionId: "old id+1", connectionId: "c", direction: "in", docType: "SetupRequest", body: "<a/>", id: "r1", ts: "2026-01-01T00:00:00.000Z" };
+    writeFileSync(join(sessionsDir(), "old_id_1.jsonl"), JSON.stringify(record) + "\n");
+    expect(readSession("old id+1")).toHaveLength(1);
+    appendLog({ sessionId: "old id+1", connectionId: "c", direction: "out", docType: "SetupResponse", body: "<b/>" });
+    expect(readSession("old id+1")).toHaveLength(2);
+    // A different id that sanitizes to the same name does not get that file.
+    expect(readSession("old id 1")).toHaveLength(0);
+  });
+});
+
+describe("wrong SharedSecret on /sim/:id/order is throttled when exposed", () => {
+  it("refuses a client that keeps guessing, without affecting others", async () => {
+    const { seedDemoIfEmpty } = await import("../src/server/seed.js");
+    await seedDemoIfEmpty();
+    const order = (secret: string, ip: string) =>
+      app.request("/sim/demo-supplier/order", {
+        method: "POST",
+        headers: { "content-type": "text/xml", "x-forwarded-for": ip },
+        body: `<cXML payloadID="p@h" timestamp="2026-01-01T00:00:00Z"><Header>
+          <From><Credential domain="DUNS"><Identity>123456789</Identity></Credential></From>
+          <To><Credential domain="DUNS"><Identity>987654321</Identity></Credential></To>
+          <Sender><Credential domain="DUNS"><Identity>123456789</Identity><SharedSecret>${secret}</SharedSecret></Credential><UserAgent>t</UserAgent></Sender>
+          </Header><Request><OrderRequest><OrderRequestHeader orderID="PO-T" orderDate="2026-01-01" type="new">
+          <Total><Money currency="USD">1</Money></Total></OrderRequestHeader></OrderRequest></Request></cXML>`,
+      });
+    for (let i = 0; i < 30; i++) expect((await order(`guess-${i}`, "203.0.113.200")).status).toBe(400);
+    const blocked = await order("demo-secret", "203.0.113.200");
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers.get("retry-after")).toBeTruthy();
+    expect((await order("guess", "203.0.113.201")).status).toBe(400); // another client: still answered
+  });
+});

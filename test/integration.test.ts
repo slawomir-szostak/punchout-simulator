@@ -75,10 +75,13 @@ describe("Mode A loopback", () => {
     expect(setup.request.body).toContain("<SharedSecret>***</SharedSecret>");
 
     const cookie = setup.buyerCookie;
-    const formpost = new URL(setup.startPage).searchParams.get("formpost")!;
+    // The StartPage carries the BuyerCookie and nothing else; the return URL is
+    // the BrowserFormPost the SetupRequest named, kept server-side.
+    expect([...new URL(setup.startPage).searchParams.keys()]).toEqual(["cookie"]);
+    const formpost = `${base}/punchout/return`;
 
     // Checkout -> punchback, then submit to the callback as the browser would
-    const form = new URLSearchParams({ cookie, formpost, bd: "DUNS", bi: "123456789", q_0: "2", q_1: "1" });
+    const form = new URLSearchParams({ cookie, q_0: "2", q_1: "1" });
     const checkoutHtml = await fetch(`${base}/sim/demo-supplier/checkout`, {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
@@ -276,17 +279,50 @@ describe("Mode A loopback", () => {
       headers: { "content-type": "text/xml" },
       body: setupXml,
     }).then((r) => r.text());
-    const startPage = decodeHtml(/<URL>([\s\S]*?)<\/URL>/.exec(respXml)![1]);
-    const formpost = new URL(startPage).searchParams.get("formpost");
-    expect(formpost).toBe(""); // dropped, not the javascript: URL
+    expect(respXml).not.toContain("javascript:");
 
-    // And the checkout page must never render a javascript: action.
-    const checkoutHtml = await fetch(`${base}/sim/demo-supplier/checkout`, {
+    // With no usable return URL on record the checkout refuses, rather than
+    // rendering a form — and a form-supplied URL is not an alternative source.
+    const checkout = await fetch(`${base}/sim/demo-supplier/checkout`, {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ cookie: "x", formpost: "javascript:alert(1)", q_0: "1" }).toString(),
+      body: new URLSearchParams({ cookie: "evil-1", formpost: "javascript:alert(1)", q_0: "1" }).toString(),
+    });
+    expect(checkout.status).toBe(400);
+    expect(await checkout.text()).not.toContain("javascript:");
+  });
+
+  it("returns the cart only to the SetupRequest's BrowserFormPost, never a link- or form-supplied URL", async () => {
+    const setup = await fetch(`${base}/api/connections/demo/setup`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    }).then((r) => r.json());
+    const cookie = setup.buyerCookie;
+
+    // A crafted catalog link cannot plant a return URL in the page...
+    const catalog = await fetch(
+      `${base}/sim/demo-supplier/catalog?cookie=${encodeURIComponent(cookie)}&formpost=${encodeURIComponent("https://evil.example/steal")}`,
+    ).then((r) => r.text());
+    expect(catalog).not.toContain("evil.example");
+
+    // ...and neither can a tampered checkout form.
+    const html = await fetch(`${base}/sim/demo-supplier/checkout`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ cookie, formpost: "https://evil.example/steal", bd: "X", bi: "spoofed", q_0: "1" }).toString(),
     }).then((r) => r.text());
-    expect(checkoutHtml).not.toContain("javascript:");
+    expect(html).not.toContain("evil.example");
+    expect(html).toContain(`action="${base}/punchout/return"`);
+    expect(decodeHtml(html)).not.toContain("spoofed"); // buyer identity comes from the setup too
+
+    // A session the supplier never saw a setup for has nowhere to return a cart.
+    const stray = await fetch(`${base}/sim/demo-supplier/checkout`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ cookie: "never-set-up", formpost: `${base}/punchout/return`, q_0: "1" }).toString(),
+    });
+    expect(stray.status).toBe(400);
   });
 
   it("base64 connection: supplier accepts the order and the raw view shows the encoded envelope", async () => {
@@ -354,10 +390,24 @@ describe("Mode A loopback", () => {
       body: JSON.stringify({ buyerId: buyer.id, supplierId: "demo-supplier", mode: "virtual-buyer", sharedSecret: "demo-secret" }),
     });
 
+    // The SAP buyer opens a session; the mock supplier learns who it is from that.
+    await fetch(`${base}/sim/demo-supplier/punchout`, {
+      method: "POST",
+      headers: { "content-type": "text/xml" },
+      body: `<cXML payloadID="p@h" timestamp="t"><Header>
+        <From><Credential domain="DUNS"><Identity>55555</Identity></Credential></From>
+        <To><Credential domain="DUNS"><Identity>987654321</Identity></Credential></To>
+        <Sender><Credential domain="DUNS"><Identity>55555</Identity><SharedSecret>demo-secret</SharedSecret></Credential></Sender>
+        </Header><Request><PunchOutSetupRequest operation="create">
+          <BuyerCookie>sap-1</BuyerCookie>
+          <BrowserFormPost><URL>${base}/punchout/return</URL></BrowserFormPost>
+        </PunchOutSetupRequest></Request></cXML>`,
+    });
+
     const checkoutHtml = await fetch(`${base}/sim/demo-supplier/checkout`, {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ cookie: "sap-1", formpost: `${base}/punchout/return`, bd: "DUNS", bi: "55555", q_0: "1" }).toString(),
+      body: new URLSearchParams({ cookie: "sap-1", q_0: "1" }).toString(),
     }).then((r) => r.text());
     expect(checkoutHtml).toContain('name="cxml-base64"');
     expect(checkoutHtml).not.toContain('name="cxml-urlencoded"');

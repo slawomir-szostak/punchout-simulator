@@ -126,6 +126,7 @@ describe("fractional quantities (Mode B)", () => {
       name: "Frac2", items: [item({ supplierPartId: "FRAC", allowFractional: true }), item({ supplierPartId: "WHOLE" })],
     });
     const s = await createSupplier({ name: "FracCo2", identity: { domain: "DUNS", identity: "32" }, productListIds: [list.id] });
+    await openSession(s.id, "f1");
     const html = await (
       await app.request(`/sim/${s.id}/checkout`, {
         method: "POST",
@@ -140,6 +141,23 @@ describe("fractional quantities (Mode B)", () => {
   });
 });
 
+// A checkout needs a session: the mock supplier returns the cart to the
+// BrowserFormPost URL of the PunchOutSetupRequest it logged for the cookie.
+async function openSession(supplierId: string, cookie: string): Promise<void> {
+  await app.request(`/sim/${supplierId}/punchout`, {
+    method: "POST",
+    headers: { "content-type": "text/xml" },
+    body: `<cXML payloadID="p@h" timestamp="t"><Header>
+      <From><Credential domain="DUNS"><Identity>1</Identity></Credential></From>
+      <To><Credential domain="DUNS"><Identity>2</Identity></Credential></To>
+      <Sender><Credential domain="DUNS"><Identity>1</Identity><SharedSecret>s</SharedSecret></Credential></Sender>
+      </Header><Request><PunchOutSetupRequest operation="create">
+        <BuyerCookie>${cookie}</BuyerCookie>
+        <BrowserFormPost><URL>http://buyer.example/return</URL></BrowserFormPost>
+      </PunchOutSetupRequest></Request></cXML>`,
+  });
+}
+
 describe("aux ID & multiple classifications (Mode B → punchback)", () => {
   it("emits SupplierPartAuxiliaryID and every Classification for a checked-out item", async () => {
     const list = await createProductList({
@@ -150,6 +168,7 @@ describe("aux ID & multiple classifications (Mode B → punchback)", () => {
       })],
     });
     const s = await createSupplier({ name: "RichCo", identity: { domain: "DUNS", identity: "41" }, productListIds: [list.id] });
+    await openSession(s.id, "r1");
     const html = await (
       await app.request(`/sim/${s.id}/checkout`, {
         method: "POST",

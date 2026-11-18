@@ -11,7 +11,8 @@ import {
 } from "../store/config.js";
 import { appendLog, readSession } from "../store/log.js";
 import { saveAttachment } from "../store/attachments.js";
-import { getPublicUrl } from "../runtime.js";
+import { getPublicUrl, getToken } from "../runtime.js";
+import { authClientKey, authThrottle } from "../rate-limit.js";
 import {
   buildPunchOutOrderMessage,
   buildResponseStatus,
@@ -57,20 +58,48 @@ const catalogOf = (s: Supplier): CatalogItem[] => {
   return items.length > 0 ? items : DEMO_CATALOG;
 };
 
-// The edit/inspect state of a session: re-parsed from the latest inbound
-// PunchOutSetupRequest in the session log. The append-only log is the source of
-// truth, so both the catalog GET and the checkout POST recompute the same thing
-// (no extra mutable server state). A `create` setup carries no items.
-function setupContextFor(cookie: string): SetupItems {
-  if (!cookie) return { operation: "create", items: [] };
+// What a session's PunchOutSetupRequest established: the operation and carried
+// items (edit/inspect), where the cart goes back to, and who the buyer is.
+interface SetupContext extends SetupItems {
+  /** False when no SetupRequest for this cookie + supplier is on record. */
+  found: boolean;
+  /** The buyer's BrowserFormPost URL (http/https only), or "". */
+  formPost: string;
+  /** The buyer's From credential. */
+  buyer: Credential;
+}
+
+const NO_SETUP: SetupContext = {
+  found: false,
+  operation: "create",
+  items: [],
+  formPost: "",
+  buyer: { domain: "", identity: "" },
+};
+
+// Re-parsed from the latest inbound PunchOutSetupRequest this supplier logged
+// for the session. The append-only log is the source of truth, so the catalog
+// GET and the checkout POST recompute the same thing (no extra mutable server
+// state). In particular the return URL and buyer identity come from here and
+// NOT from the catalog link or the checkout form: those are in the hands of
+// whoever opens the page, and a crafted link could otherwise make the catalog
+// post the cart to an arbitrary site.
+function setupContextFor(cookie: string, supplierId: string): SetupContext {
+  if (!cookie) return NO_SETUP;
   const records = readSession(cookie);
   for (let i = records.length - 1; i >= 0; i--) {
     const r = records[i];
-    if (r.direction === "in" && r.docType === "SetupRequest") {
-      return parseSetupItems(parseXml(r.body));
+    if (r.direction === "in" && r.docType === "SetupRequest" && r.connectionId === supplierId) {
+      const doc = parseXml(r.body);
+      return {
+        found: true,
+        ...parseSetupItems(doc),
+        formPost: safeHttpUrl(text(root(doc)?.Request?.PunchOutSetupRequest?.BrowserFormPost?.URL)),
+        buyer: getHeaderCredentials(doc).from ?? NO_SETUP.buyer,
+      };
     }
   }
-  return { operation: "create", items: [] };
+  return NO_SETUP;
 }
 
 // Two cart lines refer to the same product when their SupplierPartID (and aux id,
@@ -139,7 +168,6 @@ simRoute.post("/:id/punchout", async (c) => {
   const doc = parseXml(reqXml);
   const reqRoot = root(doc)?.Request?.PunchOutSetupRequest;
   const buyerCookie = text(reqRoot?.BuyerCookie) || `pos-${nanoid(16)}`;
-  const formPost = safeHttpUrl(text(reqRoot?.BrowserFormPost?.URL));
   const from = getHeaderCredentials(doc).from;
 
   appendLog({
@@ -154,10 +182,9 @@ simRoute.post("/:id/punchout", async (c) => {
   });
 
   const buyerCred = from ?? { domain: "", identity: "" };
-  const startPageUrl =
-    `${getPublicUrl()}/sim/${encodeURIComponent(supplier.id)}/catalog?cookie=${encodeURIComponent(buyerCookie)}` +
-    `&formpost=${encodeURIComponent(formPost)}` +
-    `&bd=${encodeURIComponent(buyerCred.domain)}&bi=${encodeURIComponent(buyerCred.identity)}`;
+  // The StartPage carries only the BuyerCookie; everything else about the
+  // session is read back from the SetupRequest just logged (setupContextFor).
+  const startPageUrl = `${getPublicUrl()}/sim/${encodeURIComponent(supplier.id)}/catalog?cookie=${encodeURIComponent(buyerCookie)}`;
 
   const eff = effFor(supplier.id, from);
   const respXml = buildSetupResponse({
@@ -247,9 +274,6 @@ interface CatalogPageOpts {
   rows: string;
   submitLabel: string;
   cookie: string;
-  formpost: string;
-  bd: string;
-  bi: string;
 }
 
 function catalogPage(o: CatalogPageOpts): string {
@@ -295,9 +319,6 @@ function catalogPage(o: CatalogPageOpts): string {
   ${o.banner}
   <form method="post" action="${escapeXml(`${getPublicUrl()}/sim/${encodeURIComponent(o.supplier.id)}/checkout`)}">
     <input type="hidden" name="cookie" value="${escapeXml(o.cookie)}">
-    <input type="hidden" name="formpost" value="${escapeXml(o.formpost)}">
-    <input type="hidden" name="bd" value="${escapeXml(o.bd)}">
-    <input type="hidden" name="bi" value="${escapeXml(o.bi)}">
     <table><thead><tr><th>Item</th><th>Price</th><th>Qty</th></tr></thead>
     <tbody>${o.rows}</tbody></table>
     <button type="submit">${escapeXml(o.submitLabel)}</button>
@@ -309,13 +330,10 @@ simRoute.get("/:id/catalog", (c) => {
   const supplier = getSupplier(c.req.param("id"));
   if (!supplier) return c.text("supplier not found", 404);
   const cookie = c.req.query("cookie") ?? "";
-  const formpost = safeHttpUrl(c.req.query("formpost") ?? "");
-  const bd = c.req.query("bd") ?? "";
-  const bi = c.req.query("bi") ?? "";
   const items = catalogOf(supplier);
-  const ctx = setupContextFor(cookie);
+  const ctx = setupContextFor(cookie, supplier.id);
   const page = (banner: string, rows: string, submitLabel: string) =>
-    c.html(catalogPage({ supplier, banner, rows, submitLabel, cookie, formpost, bd, bi }));
+    c.html(catalogPage({ supplier, banner, rows, submitLabel, cookie }));
 
   // inspect: the buyer wants to view the carried item(s). Show them read-only and
   // return them unchanged. (Falls through to the catalog if none were carried.)
@@ -360,10 +378,18 @@ simRoute.post("/:id/checkout", async (c) => {
   if (!cookie) {
     return c.text("missing BuyerCookie — open the catalog from a SetupResponse StartPage", 400);
   }
-  const formpost = safeHttpUrl(String(form.formpost ?? ""));
-  const buyerCred: Credential = { domain: String(form.bd ?? ""), identity: String(form.bi ?? "") };
   const catalog = catalogOf(supplier);
-  const ctx = setupContextFor(cookie);
+  const ctx = setupContextFor(cookie, supplier.id);
+  // The cart can only go back to the BrowserFormPost URL the buyer's own
+  // SetupRequest named; a session we never saw a setup for has nowhere to go.
+  if (!ctx.found) {
+    return c.text("no PunchOutSetupRequest is on record for this BuyerCookie — start from a SetupResponse StartPage", 400);
+  }
+  if (!ctx.formPost) {
+    return c.text("the PunchOutSetupRequest for this session carried no http(s) BrowserFormPost URL, so there is nowhere to return the cart", 400);
+  }
+  const formpost = ctx.formPost;
+  const buyerCred = ctx.buyer;
 
   let items: CartItem[] = [];
   if (ctx.operation === "inspect" && ctx.items.length > 0) {
@@ -485,9 +511,25 @@ ${inner}
 
 // --- 4. OrderRequest in -> OrderResponse out ----------------------------------
 
+// The OrderResponse necessarily tells the sender whether its SharedSecret was
+// accepted, which makes this endpoint a way to test guesses at a connection's
+// secret. When the tool is exposed, bound that the same way as /api token
+// guesses: a client that keeps sending a wrong secret is refused for the rest
+// of the minute. (On a plain localhost run every client is the operator, and
+// "send a bad secret" is a legitimate thing to test repeatedly.)
+const wrongSecret = authThrottle();
+
 simRoute.post("/:id/order", async (c) => {
   const supplier = getSupplier(c.req.param("id"));
   if (!supplier) return c.text("supplier not found", 404);
+
+  const exposed = !!getToken();
+  const client = authClientKey(c);
+  const wait = exposed ? wrongSecret.blockedFor(client) : 0;
+  if (wait > 0) {
+    c.header("Retry-After", String(wait));
+    return c.text("too many OrderRequests with a wrong SharedSecret — wait and retry", 429);
+  }
 
   const ct = c.req.header("content-type") ?? "";
   const raw = Buffer.from(await c.req.arrayBuffer());
@@ -539,6 +581,10 @@ simRoute.post("/:id/order", async (c) => {
     attachments: savedRefs,
     attachmentEncoding,
   });
+
+  if (exposed && validation.issues.some((i) => i.code === "sharedsecret-mismatch")) {
+    wrongSecret.recordFailure(client);
+  }
 
   const ok = validation.ok;
   const eff = effFor(supplier.id, from);

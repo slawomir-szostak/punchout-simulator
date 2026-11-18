@@ -126,6 +126,14 @@ For anything beyond a trusted network, put TLS in front: a tunnel
 (ngrok/cloudflared terminate HTTPS for you — pass their URL as `--public-url`)
 or a reverse proxy with a certificate.
 
+In virtual-supplier mode the mock catalog returns a cart only to the
+`BrowserFormPost` URL of the SetupRequest that opened the session — it is read
+back from the session log, not from the catalog link, so a crafted link can't
+redirect a cart. An OrderRequest with a wrong `SharedSecret` is rejected as
+before; when the tool is exposed, a client that keeps sending wrong ones is
+throttled like wrong API tokens, so the endpoint can't be used to guess a
+connection's secret at speed.
+
 The UI is served with a Content-Security-Policy that allows scripts only from
 the tool itself, so text arriving in cXML or an imported config cannot run as
 script even if it were ever rendered unescaped. To report a vulnerability, see

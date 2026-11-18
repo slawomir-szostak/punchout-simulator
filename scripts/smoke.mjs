@@ -26,8 +26,6 @@ async function main() {
   ok("startPage present", !!setup.startPage);
 
   const cookie = setup.buyerCookie;
-  const startPage = new URL(setup.startPage);
-  const formpost = startPage.searchParams.get("formpost");
 
   // 3. Browse the catalog page
   const catalogHtml = await fetch(setup.startPage).then((r) => r.text());
@@ -36,8 +34,7 @@ async function main() {
   // 4. Checkout -> auto-submit punchback HTML
   const form = new URLSearchParams();
   form.set("cookie", cookie);
-  form.set("formpost", formpost);
-  form.set("bd","DUNS"); form.set("bi","123456789"); form.set("q_0", "2");
+  form.set("q_0", "2");
   form.set("q_1", "1");
   const checkoutHtml = await fetch(`${BASE}/sim/demo-supplier/checkout`, {
     method: "POST",

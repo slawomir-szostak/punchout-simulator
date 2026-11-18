@@ -747,7 +747,9 @@ and create no session; opening the catalog from a real StartPage is required.</p
 <ul>
 <li><code>config.json</code> — the normalized entities (buyers, suppliers, connections,
   profiles, product lists). Migrations run automatically at boot.</li>
-<li><code>sessions/&lt;sessionId&gt;.jsonl</code> — one append-only log per conversation.</li>
+<li><code>sessions/&lt;sessionId&gt;.jsonl</code> — one append-only log per conversation. A
+  BuyerCookie containing characters that aren't safe in a file name is stored as
+  <code>&lt;sanitized&gt;~&lt;hash&gt;.jsonl</code>, so two different cookies never share a log.</li>
 <li><code>attachments/&lt;sha256&gt;</code> — attachment blobs, content-addressed and referenced
   from records; removed once no session references them.</li>
 </ul>
