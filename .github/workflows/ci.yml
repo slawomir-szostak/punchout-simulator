@@ -22,3 +22,10 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm test
+
+  # The image is not published anywhere; this only keeps the Dockerfile building.
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: docker build -t punchout-simulator .

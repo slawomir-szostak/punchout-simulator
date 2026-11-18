@@ -17,9 +17,11 @@ export type LogInput = Omit<LogRecord, "id" | "ts"> & Partial<Pick<LogRecord, "i
 // goes on the wire (the body sent to the supplier is independent of what we log);
 // only the stored/streamed/displayed copy is masked. Applied centrally so every
 // appendLog caller (flow, sim, punchout-return) is covered.
-function redactSecrets(body: string | undefined): string {
+// The tag may carry whitespace or attributes (`<SharedSecret xml:lang="en">`)
+// and still parse as a valid secret, so match the tag name, not the literal.
+export function redactSecrets(body: string | undefined): string {
   if (!body) return body ?? "";
-  return body.replace(/(<SharedSecret>)[\s\S]*?(<\/SharedSecret>)/g, "$1***$2");
+  return body.replace(/(<SharedSecret(?:\s[^>]*)?>)[\s\S]*?(<\/SharedSecret\s*>)/g, "$1***$2");
 }
 
 export function appendLog(input: LogInput): LogRecord {

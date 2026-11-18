@@ -19,14 +19,18 @@ jobs:
       contents: read
       id-token: write # OIDC: trusted-publishing auth + provenance
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      # Actions are pinned to commit SHAs: this job can publish to npm, so a
+      # moved tag must not be able to change what runs here.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 24
           cache: npm
       # Trusted publishing needs npm >= 11.5.1, newer than some Node 24 bundles.
       - run: npm install -g npm@^11.5.1
-      - run: npm ci
+      # --ignore-scripts: this job holds the OIDC publish credential, so no
+      # dependency's install script may run in it.
+      - run: npm ci --ignore-scripts
       - run: npm run typecheck
       - run: npm run build
       - run: npm test
@@ -45,7 +49,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 24
       - name: Where npm exchanges the token

@@ -84,3 +84,24 @@ describe("Host-header gate (DNS-rebinding defense)", () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe("secrets stay out of logs", () => {
+  it("redacts SharedSecret even when the tag carries whitespace or attributes", async () => {
+    const { redactSecrets } = await import("../src/server/store/log.js");
+    for (const open of ["<SharedSecret>", "<SharedSecret >", '<SharedSecret xml:lang="en">', "<SharedSecret\n>"]) {
+      const out = redactSecrets(`<Credential>${open}hunter2</SharedSecret></Credential>`);
+      expect(out).not.toContain("hunter2");
+      expect(out).toContain("***");
+    }
+    expect(redactSecrets("<SharedSecretHint>keep</SharedSecretHint>")).toContain("keep");
+  });
+
+  it("masks the API token in request log lines", async () => {
+    const { redactToken } = await import("../src/server/app.js");
+    expect(redactToken("<-- GET /api/stream?token=abc123")).toBe("<-- GET /api/stream?token=***");
+    expect(redactToken("--> GET /api/config/export?secrets=1&token=abc123 200 3ms")).toBe(
+      "--> GET /api/config/export?secrets=1&token=*** 200 3ms",
+    );
+    expect(redactToken("<-- GET /sim/demo/catalog?cookie=x")).toBe("<-- GET /sim/demo/catalog?cookie=x");
+  });
+});

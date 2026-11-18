@@ -62,7 +62,10 @@ npm i -g punchout-simulator && punchout-simulator   # persistent install
 
 ```bash
 # Docker (binds 0.0.0.0 inside the container ⇒ counts as "exposed" ⇒ /api needs a
-# token). Set your own, or read the auto-generated ?token= URL from the logs:
+# token). The image is not published to a registry — build it from a clone of
+# this repo first. Set your own token, or read the auto-generated ?token= URL
+# from the logs:
+docker build -t punchout-simulator .
 docker run -p 127.0.0.1:8080:8080 -e POS_TOKEN=mysecret -v "$PWD/data:/data" punchout-simulator
 # then open http://localhost:8080/?token=mysecret
 ```

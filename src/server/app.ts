@@ -27,7 +27,9 @@ export interface AppOptions {
 
 export function createApp(opts: AppOptions = {}): Hono {
   const app = new Hono();
-  if (!opts.quiet) app.use("*", logger());
+  // The request log prints the full URL; EventSource and download links carry
+  // the API token as ?token=, so mask it before it reaches stdout/docker logs.
+  if (!opts.quiet) app.use("*", logger((line) => console.log(redactToken(line))));
 
   // Cap request bodies so an oversized (unauthenticated) POST can't OOM the
   // single-process server. Attachments make /sim and /order legitimately large,
@@ -169,6 +171,11 @@ export function createApp(opts: AppOptions = {}): Hono {
   }
 
   return app;
+}
+
+/** Mask the value of a `token` query parameter in a logged request line. */
+export function redactToken(line: string): string {
+  return line.replace(/([?&]token=)[^&\s]*/gi, "$1***");
 }
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
