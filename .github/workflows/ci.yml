@@ -16,8 +16,8 @@ jobs:
       matrix:
         node-version: [20, 24] # 20 = declared minimum (package.json engines)
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
@@ -32,8 +32,8 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: 24
       - run: npm audit --omit=dev --audit-level=moderate
@@ -42,5 +42,5 @@ jobs:
   docker-build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - run: docker build -t punchout-simulator .
