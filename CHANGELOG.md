@@ -5,6 +5,21 @@ corresponding [GitHub Release](https://github.com/slawomir-szostak/punchout-simu
 Versions follow [Semantic Versioning](https://semver.org); while the project is
 pre-1.0, new features may arrive in patch releases.
 
+## v0.13.2 — Fix: a crafted body could stall the server
+
+*Released 2026-11-19*
+
+Patch release. Fixes a way to stall the server that v0.13.1 introduced.
+
+v0.13.1 taught the tool to describe a reply that is not cXML — to say "this is an HTML page" and quote what it says. The code that did so ran its pattern matching over the whole body, and one of those patterns is not linear in the worst case: a body made of unclosed `<script` tags made it rescan the rest of the input for each one. 256 KB of that took about ten seconds, and the time grew with the square of the size. The same code runs on documents arriving at the open `/sim` and `/punchout` endpoints, which accept up to 24 MB without authentication, so a single crafted request could keep the single-process server busy for a very long time. The rate limit does not help against one request.
+
+### Changes
+- Only the first 8 KB of a body are examined when describing it. That is ample for a page title and a 300-character excerpt, and the cost no longer depends on the size of the body: the same input now takes a few milliseconds.
+
+If you run v0.13.1 exposed (a non-loopback `--host` or `--public-url`), upgrade. A plain localhost run is reachable only from your own machine, but upgrading is still recommended.
+
+**Full Changelog**: https://github.com/slawomir-szostak/punchout-simulator/compare/v0.13.1...v0.13.2
+
 ## v0.13.1 — Say what the supplier actually answered
 
 *Released 2026-11-19*

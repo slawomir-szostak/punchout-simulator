@@ -69,8 +69,15 @@ export interface BodyKind {
   excerpt: string;
 }
 
+// Only the start of the body is examined. The excerpt is a few hundred
+// characters, and the patterns below are not linear in the worst case: a body
+// of unclosed "<script" tags makes the script-stripping pattern rescan the rest
+// of the input for every one of them. Bodies reach this function straight from
+// the open inbound endpoints, so its cost must not depend on their size.
+const DESCRIBE_PREFIX = 8 * 1024;
+
 export function describeBody(raw: string, maxLength = 300): BodyKind {
-  const body = raw.replace(/^\uFEFF/, "").trim();
+  const body = raw.slice(0, DESCRIBE_PREFIX + 64).replace(/^\uFEFF/, "").trimStart().slice(0, DESCRIBE_PREFIX).trimEnd();
   const clip = (s: string) => (s.length > maxLength ? `${s.slice(0, maxLength)}…` : s);
   if (body === "") return { kind: "empty", excerpt: "" };
   const head = body.slice(0, 1000);

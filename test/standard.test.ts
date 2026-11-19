@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/server/app.js";
 import { buildOrderRequest, buildPunchOutOrderMessage, buildResponseStatus, buildSetupRequest, buildSetupResponse, cxmlTimestamp, splitPhone } from "../src/server/cxml/build.js";
-import { getHeaderCredentials, parseXml } from "../src/server/cxml/parse.js";
+import { describeBody, getHeaderCredentials, parseXml } from "../src/server/cxml/parse.js";
 import { validateDocument, type ExpectedCredentials } from "../src/server/cxml/validate.js";
 import { initConfig, updateSupplier, getSupplier } from "../src/server/store/config.js";
 import { setDataDir } from "../src/server/store/paths.js";
@@ -339,6 +339,21 @@ describe("a reply that is not cXML", () => {
     const xhtml = first(`<html><body><p>Service unavailable</p></body></html>`.replace("<html>", '<html xmlns="http://www.w3.org/1999/xhtml">'), { http: { status: 503 } });
     expect(xhtml.ok).toBe(false);
     expect(xhtml.issues.map((i) => i.code)).toEqual(expect.arrayContaining(["http-hint"]));
+  });
+
+  it("takes the same time however large and hostile the body is", () => {
+    // Unclosed <script tags are the worst case for the tag-stripping patterns;
+    // unbounded, 256 KB of them took about ten seconds. These bodies arrive on
+    // the open inbound endpoints, so the cost must not grow with their size.
+    const hostile = "<html>" + "<script ".repeat((5 * 1024 * 1024) / 8);
+    const start = Date.now();
+    const described = describeBody(hostile);
+    expect(Date.now() - start).toBeLessThan(250);
+    expect(described.kind).toBe("html");
+    expect(first(hostile).issues[0].message).toContain("an HTML page, not cXML");
+    // A leading BOM and whitespace are still skipped, and a real title is still found.
+    expect(first("\uFEFF\n  Page not found").issues[0].message).toContain("“Page not found”");
+    expect(first(`<html><head><title>Gateway Timeout</title></head><body>${"x".repeat(100000)}</body></html>`).issues[0].message).toContain("“Gateway Timeout”");
   });
 
   it("still pinpoints a genuine XML error, with its position", () => {
