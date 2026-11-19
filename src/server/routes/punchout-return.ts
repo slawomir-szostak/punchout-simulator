@@ -2,11 +2,13 @@ import { Hono } from "hono";
 import { bus } from "../bus.js";
 import {
   connectionForSession,
+  interpretPunchback,
   rememberSessionConnection,
+  sessionSetup,
   setCart,
 } from "../cart-store.js";
 import { resolveConnection } from "../store/config.js";
-import { appendLog } from "../store/log.js";
+import { appendLog, readSession } from "../store/log.js";
 import { parseCart, parseXml, text, root } from "../cxml/parse.js";
 import { validateDocument, type ExpectedCredentials } from "../cxml/validate.js";
 
@@ -65,9 +67,12 @@ function htmlReceipt(ok: boolean, itemCount: number): string {
 punchoutReturnRoute.post("/return", async (c) => {
   const xml = await extractCxml(c);
   const doc = parseXml(xml);
-  const cart = parseCart(doc);
   const sessionId =
-    cart.sessionId || text(root(doc)?.Message?.PunchOutOrderMessage?.BuyerCookie) || "unknown";
+    parseCart(doc).sessionId || text(root(doc)?.Message?.PunchOutOrderMessage?.BuyerCookie) || "unknown";
+  // What the punchback means depends on the operation the session was opened
+  // with (an inspect session's items are ignored; an empty edit cart deletes).
+  const history = readSession(sessionId);
+  const cart = { ...interpretPunchback(doc, history), sessionId };
 
   const connectionId = connectionForSession(sessionId);
   const resolved = connectionId ? resolveConnection(connectionId) : undefined;
@@ -86,6 +91,7 @@ punchoutReturnRoute.post("/return", async (c) => {
     expected,
     expectedBuyerCookie: sessionId,
     forceDocType: "PunchOutOrderMessage",
+    setupOperation: sessionSetup(history)?.operation,
   });
 
   if (connectionId) rememberSessionConnection(sessionId, connectionId);
@@ -104,5 +110,5 @@ punchoutReturnRoute.post("/return", async (c) => {
   setCart(cart);
   bus.emitCart(connectionId ?? "", cart);
 
-  return c.html(htmlReceipt(validation.ok, cart.items.length));
+  return c.html(htmlReceipt(validation.ok, parseCart(doc).items.length));
 });

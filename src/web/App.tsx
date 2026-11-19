@@ -259,6 +259,7 @@ export function App() {
         response: setupResp,
       } : null,
       orderXml: orderReq?.body ?? "",
+      orderType: (m(/<OrderRequestHeader[^>]*\btype="(update|delete)"/, orderReq?.body ?? "") as FlowSession["orderType"] | undefined) ?? "new",
       orderResult: orderReq && orderResp ? {
         httpStatus: orderResp.status ?? 200,
         statusCode: m(/<Status[^>]*\bcode="([^"]+)"/, orderResp.body),

@@ -325,6 +325,23 @@ export function SupplierEditor({
           <span className="hint"> — treat multiple currencies in one document as a warning, not an error (this supplier handles it)</span>
         </label>
       </div>
+      <Field
+        label={<>Carts may later be <span className="hint">(<code>operationAllowed</code> on carts the mock supplier returns)</span></>}
+        after={
+          <span className="hint">
+            Tells the buyer what it may do with a returned cart afterwards. Lower it to check that a buyer system respects the limit.
+          </span>
+        }
+      >
+        <select
+          value={draft.operationAllowed ?? "edit"}
+          onChange={(e) => setDraft({ ...draft, operationAllowed: e.target.value as "create" | "inspect" | "edit" })}
+        >
+          <option value="edit">edit — reopened to inspect or change (default)</option>
+          <option value="inspect">inspect — reopened read-only</option>
+          <option value="create">create — not reopened at all</option>
+        </select>
+      </Field>
 
       <fieldset>
         <legend>Mock catalog <span className="hint">(product lists served when the tool acts as this supplier)</span></legend>

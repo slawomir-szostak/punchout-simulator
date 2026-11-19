@@ -17,10 +17,12 @@ import {
   buildPunchOutOrderMessage,
   buildResponseStatus,
   buildSetupResponse,
+  cxmlTimestamp,
   escapeXml,
   makePayloadId,
+  type OperationAllowed,
 } from "../cxml/build.js";
-import { getHeaderCredentials, parseSetupItems, parseXml, root, text, type SetupItems } from "../cxml/parse.js";
+import { getHeaderCredentials, getOrderInfo, parseSetupItems, parseXml, root, text, type SetupItems } from "../cxml/parse.js";
 import {
   isMultipart,
   normalizeContentId,
@@ -65,8 +67,8 @@ interface SetupContext extends SetupItems {
   found: boolean;
   /** The buyer's BrowserFormPost URL (http/https only), or "". */
   formPost: string;
-  /** The buyer's From credential. */
-  buyer: Credential;
+  /** The buyer's From credential(s) — one organization, possibly in several domains. */
+  buyerAll: Credential[];
 }
 
 const NO_SETUP: SetupContext = {
@@ -74,8 +76,20 @@ const NO_SETUP: SetupContext = {
   operation: "create",
   items: [],
   formPost: "",
-  buyer: { domain: "", identity: "" },
+  buyerAll: [],
 };
+
+// The operation the mock supplier allows on the carts it returns. It can reopen
+// carts, so the honest default is "edit"; a supplier can be configured lower to
+// test that the buyer respects it.
+const operationAllowedOf = (s: Supplier): OperationAllowed => s.operationAllowed ?? "edit";
+
+// Which of the buyer's credentials to address a reply to: the one a configured
+// connection knows, else the first one sent.
+function buyerCredential(supplierId: string, all: Credential[]): Credential {
+  const known = findConnectionBySupplierAndBuyerIdentity(supplierId, all)?.buyer.identity;
+  return known ?? all[0] ?? { domain: "", identity: "" };
+}
 
 // Re-parsed from the latest inbound PunchOutSetupRequest this supplier logged
 // for the session. The append-only log is the source of truth, so the catalog
@@ -95,7 +109,7 @@ function setupContextFor(cookie: string, supplierId: string): SetupContext {
         found: true,
         ...parseSetupItems(doc),
         formPost: safeHttpUrl(text(root(doc)?.Request?.PunchOutSetupRequest?.BrowserFormPost?.URL)),
-        buyer: getHeaderCredentials(doc).from ?? NO_SETUP.buyer,
+        buyerAll: getHeaderCredentials(doc).fromAll,
       };
     }
   }
@@ -139,7 +153,7 @@ function jsonForScript(value: unknown): string {
 
 // Build the expected-credentials context for validating an inbound document,
 // from a connection matching this supplier + the inbound buyer identity.
-function expectedFor(supplierId: string, from: Credential | undefined): ExpectedCredentials | undefined {
+function expectedFor(supplierId: string, from: Credential | Credential[] | undefined): ExpectedCredentials | undefined {
   const r = findConnectionBySupplierAndBuyerIdentity(supplierId, from);
   if (!r) return undefined;
   return {
@@ -153,7 +167,7 @@ function expectedFor(supplierId: string, from: Credential | undefined): Expected
 // Effective platform profile of the buyer talking to this supplier (if a
 // matching connection exists). Lets the mock supplier mirror the buyer's
 // platform when emitting its responses/punchback (DTD version, cart transport).
-function effFor(supplierId: string, from: Credential | undefined): EffectiveProfile | undefined {
+function effFor(supplierId: string, from: Credential | Credential[] | undefined): EffectiveProfile | undefined {
   const r = findConnectionBySupplierAndBuyerIdentity(supplierId, from);
   return r ? effectiveProfile(r.connection, r.buyer) : undefined;
 }
@@ -168,7 +182,8 @@ simRoute.post("/:id/punchout", async (c) => {
   const doc = parseXml(reqXml);
   const reqRoot = root(doc)?.Request?.PunchOutSetupRequest;
   const buyerCookie = text(reqRoot?.BuyerCookie) || `pos-${nanoid(16)}`;
-  const from = getHeaderCredentials(doc).from;
+  const from = getHeaderCredentials(doc).fromAll;
+  const eff = effFor(supplier.id, from);
 
   appendLog({
     sessionId: buyerCookie,
@@ -178,22 +193,22 @@ simRoute.post("/:id/punchout", async (c) => {
     url: c.req.url,
     headers: { "Content-Type": c.req.header("content-type") ?? "" },
     body: reqXml,
-    validation: validateDocument(reqXml, { expected: expectedFor(supplier.id, from), forceDocType: "SetupRequest" }),
+    validation: validateDocument(reqXml, {
+      expected: expectedFor(supplier.id, from),
+      forceDocType: "SetupRequest",
+      expectedDtdVersion: eff ? dtdVersionFor(eff, "SetupRequest") : undefined,
+      supplierOperationAllowed: operationAllowedOf(supplier),
+    }),
   });
 
-  const buyerCred = from ?? { domain: "", identity: "" };
   // The StartPage carries only the BuyerCookie; everything else about the
   // session is read back from the SetupRequest just logged (setupContextFor).
   const startPageUrl = `${getPublicUrl()}/sim/${encodeURIComponent(supplier.id)}/catalog?cookie=${encodeURIComponent(buyerCookie)}`;
 
-  const eff = effFor(supplier.id, from);
   const respXml = buildSetupResponse({
     payloadId: makePayloadId(host(), new Date().toISOString()),
-    timestamp: new Date().toISOString(),
+    timestamp: cxmlTimestamp(),
     startPageUrl,
-    from: supplier.identity,
-    to: buyerCred,
-    sender: supplier.identity,
     dtdVersion: eff ? dtdVersionFor(eff, "SetupResponse") : undefined,
   });
   appendLog({
@@ -313,6 +328,8 @@ function catalogPage(o: CatalogPageOpts): string {
   input[type=number]{width:5rem;background:var(--field);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:.35rem .5rem}
   button{margin-top:1.5rem;background:var(--accent);color:#fff;border:0;border-radius:8px;padding:.7rem 1.4rem;font-size:1rem;cursor:pointer}
   button:hover{background:var(--accent-hover)}
+  button.cancel{background:transparent;color:var(--muted);border:1px solid var(--border);margin-left:.6rem}
+  button.cancel:hover{background:var(--panel);color:var(--text)}
 </style></head><body><div class="wrap">
   <h1>${escapeXml(o.supplier.name)} <small>(virtual supplier)</small></h1>
   <div class="sub">Mock catalog served by punchout-simulator. Set quantities and return the cart.</div>
@@ -322,6 +339,7 @@ function catalogPage(o: CatalogPageOpts): string {
     <table><thead><tr><th>Item</th><th>Price</th><th>Qty</th></tr></thead>
     <tbody>${o.rows}</tbody></table>
     <button type="submit">${escapeXml(o.submitLabel)}</button>
+    <button type="submit" name="action" value="cancel" class="cancel" formnovalidate title="End the session without returning a cart (empty PunchOutOrderMessage, Status 204)">Cancel</button>
   </form>
 </div></body></html>`;
 }
@@ -389,12 +407,16 @@ simRoute.post("/:id/checkout", async (c) => {
     return c.text("the PunchOutSetupRequest for this session carried no http(s) BrowserFormPost URL, so there is nowhere to return the cart", 400);
   }
   const formpost = ctx.formPost;
-  const buyerCred = ctx.buyer;
+  const buyerCred = buyerCredential(supplier.id, ctx.buyerAll);
+  // "Cancel" ends the session without change: an empty PunchOutOrderMessage
+  // with Status 204 (Reference Guide, "Cancelling PunchOut").
+  const cancelled = form.action === "cancel";
 
   let items: CartItem[] = [];
-  if (ctx.operation === "inspect" && ctx.items.length > 0) {
-    // Inspect is read-only: return exactly the item(s) the buyer asked to view.
-    items = ctx.items;
+  if (cancelled || ctx.operation === "inspect") {
+    // Nothing goes back. For inspect the standard is explicit: "The supplier
+    // site should return no ItemIn elements" — the buyer must ignore the item
+    // list of an inspect session anyway.
   } else {
     catalog.forEach((it, i) => {
       let qty = Number(form[`q_${i}`] ?? 0);
@@ -438,10 +460,12 @@ simRoute.post("/:id/checkout", async (c) => {
     sender: supplier.identity,
     buyerCookie: cookie,
     payloadId: makePayloadId(host(), new Date().toISOString()),
-    timestamp: new Date().toISOString(),
+    timestamp: cxmlTimestamp(),
     currency,
     items,
     dtdVersion: eff ? dtdVersionFor(eff, "PunchOutOrderMessage") : undefined,
+    operationAllowed: operationAllowedOf(supplier),
+    status: cancelled ? { code: "204", text: "No Content" } : undefined,
   });
 
   appendLog({
@@ -455,6 +479,7 @@ simRoute.post("/:id/checkout", async (c) => {
     validation: validateDocument(xml, {
       forceDocType: "PunchOutOrderMessage",
       allowMixedCurrency: supplier.allowMixedCurrency,
+      setupOperation: ctx.operation,
     }),
   });
 
@@ -558,14 +583,21 @@ simRoute.post("/:id/order", async (c) => {
   }
 
   const doc = parseXml(xml);
-  const from = getHeaderCredentials(doc).from;
+  const from = getHeaderCredentials(doc).fromAll;
   const sessionId = findSessionForOrder(doc) ?? `order-${nanoid(8)}`;
+  const eff = effFor(supplier.id, from);
+  // What this supplier already holds for the order: a change or cancellation
+  // must reference the most recent OrderRequest for it.
+  const order = getOrderInfo(doc);
+  const history = orderHistory(sessionId, supplier.id, order.orderId);
 
   const validation = validateDocument(xml, {
     expected: expectedFor(supplier.id, from),
     forceDocType: "OrderRequest",
     availableContentIds: isMultipart(ct) ? availableContentIds : undefined,
     allowMixedCurrency: supplier.allowMixedCurrency,
+    expectedDtdVersion: eff ? dtdVersionFor(eff, "OrderRequest") : undefined,
+    priorOrder: history.prior,
   });
 
   appendLog({
@@ -587,24 +619,29 @@ simRoute.post("/:id/order", async (c) => {
   }
 
   const ok = validation.ok;
-  const eff = effFor(supplier.id, from);
   // Real suppliers acknowledge with their own order number and echo the PO in
   // the Status body — that is the line a buyer's integrator looks for, so the
-  // mock does the same (and names the first error when it rejects).
-  const poNumber = orderIdOf(doc);
+  // mock does the same (and names the first error when it rejects). A change or
+  // cancellation keeps the number the original order was acknowledged with.
+  const poNumber = order.orderId;
+  const forPo = poNumber ? ` for PO ${poNumber}` : "";
+  const soNumber = order.type === "new" ? supplierOrderNumber() : (history.supplierOrderNumber ?? supplierOrderNumber());
   const firstError = validation.issues.find((i) => i.severity === "error")?.message;
+  const accepted =
+    order.type === "update"
+      ? `OK. Order number ${soNumber} updated${order.orderVersion ? ` to version ${order.orderVersion}` : ""}${forPo}.`
+      : order.type === "delete"
+        ? `OK. Order number ${soNumber} cancelled${forPo}.`
+        : `OK. Order number ${soNumber} received${forPo}.`;
   const message = ok
-    ? `OK. Order number ${supplierOrderNumber()} received${poNumber ? ` for PO ${poNumber}` : ""}.`
+    ? accepted
     : `Bad Request. Order rejected${poNumber ? ` (PO ${poNumber})` : ""}${firstError ? `: ${firstError}` : "."}`;
   const respXml = buildResponseStatus({
     payloadId: makePayloadId(host(), new Date().toISOString()),
-    timestamp: new Date().toISOString(),
+    timestamp: cxmlTimestamp(),
     statusCode: ok ? "200" : "400",
     statusText: ok ? "OK" : "Bad Request",
     message,
-    from: supplier.identity,
-    to: from ?? { domain: "", identity: "" },
-    sender: supplier.identity,
     dtdVersion: eff ? dtdVersionFor(eff, "OrderResponse") : undefined,
   });
   appendLog({
@@ -621,6 +658,32 @@ simRoute.post("/:id/order", async (c) => {
   c.header("Content-Type", "text/xml; charset=UTF-8");
   return c.body(respXml, ok ? 200 : 400);
 });
+
+// The earlier exchanges this supplier logged for an order: the most recent
+// OrderRequest (what an update/delete must reference) and the supplier order
+// number it was acknowledged with.
+function orderHistory(
+  sessionId: string,
+  supplierId: string,
+  orderId: string | undefined,
+): { prior: { payloadId?: string; orderVersion?: number } | null; supplierOrderNumber?: string } {
+  if (!orderId) return { prior: null };
+  let prior: { payloadId?: string; orderVersion?: number } | null = null;
+  let supplierOrderNumber: string | undefined;
+  for (const r of readSession(sessionId)) {
+    if (r.connectionId !== supplierId) continue;
+    if (r.direction === "in" && r.docType === "OrderRequest") {
+      const info = getOrderInfo(parseXml(r.body));
+      if (info.orderId !== orderId) continue;
+      const version = info.orderVersion == null ? undefined : Number(info.orderVersion);
+      // An original order without an explicit version is version 1.
+      prior = { payloadId: info.payloadId, orderVersion: Number.isFinite(version) ? version : info.type === "new" ? 1 : undefined };
+    } else if (r.direction === "out" && r.docType === "OrderResponse") {
+      supplierOrderNumber = /\b(SO-[A-Z0-9]{8})\b/.exec(r.body)?.[1] ?? supplierOrderNumber;
+    }
+  }
+  return { prior, supplierOrderNumber };
+}
 
 function orderIdOf(doc: ReturnType<typeof parseXml>): string | undefined {
   const orderId = root(doc)?.Request?.OrderRequest?.OrderRequestHeader?.["@_orderID"];

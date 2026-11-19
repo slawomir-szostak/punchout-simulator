@@ -60,6 +60,8 @@ export interface FlowSession {
   orderResult: OrderResult | null;
   attachments: AttachmentDraft[];
   danglingCid: boolean;
+  /** What the OrderRequest in `orderXml` is: a new order, a change, or a cancellation. */
+  orderType: "new" | "update" | "delete";
 }
 
 export function emptySession(): FlowSession {
@@ -71,5 +73,6 @@ export function emptySession(): FlowSession {
     orderResult: null,
     attachments: [],
     danglingCid: false,
+    orderType: "new",
   };
 }

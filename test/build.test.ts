@@ -186,7 +186,8 @@ describe("addresses (ShipTo / BillTo / Contact)", () => {
     const xml = buildOrderRequest({ ...orderBase, contact: { role: "endUser", name: "Jane", email: "j@x.io", phone: "+1 555" } });
     expect(xml).toContain('<Contact role="endUser"');
     expect(xml).toContain("<Email>j@x.io</Email>");
-    expect(xml).toContain("<Number>+1 555</Number>");
+    // TelephoneNumber is (CountryCode, AreaOrCityCode, Number, Extension?) in the DTD.
+    expect(xml).toContain('<TelephoneNumber><CountryCode isoCountryCode="US">1</CountryCode><AreaOrCityCode></AreaOrCityCode><Number>555</Number></TelephoneNumber>');
   });
   it("carries ShipTo and Contact inside the PunchOutSetupRequest when provided", () => {
     const xml = buildSetupRequest({

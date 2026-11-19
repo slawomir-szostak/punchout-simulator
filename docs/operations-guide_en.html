@@ -312,7 +312,7 @@ figure.diagram figcaption {
 <header class="header">
   <div class="brand"></div>
   <h1>punchout-simulator — Operations & Usage Guide</h1>
-  <p class="subtitle">Sessions, operations, profiles, product lists, addresses, attachments, and validation · 2026-11-18</p>
+  <p class="subtitle">Sessions, operations, profiles, product lists, addresses, attachments, and validation · 2026-11-19</p>
   <span class="version">v1.2 — October 2026</span>
 </header>
 
@@ -341,11 +341,16 @@ figure.diagram figcaption {
 </li>
 <li><a href="#operations-explained">Operations explained</a><ul>
 <li><a href="#what-edit-actually-does-both-ends">What "edit" actually does — both ends</a></li>
+<li><a href="#how-a-returned-cart-is-read">How a returned cart is read</a></li>
+<li><a href="#what-may-be-done-with-a-cart-later-operationallowed">What may be done with a cart later (operationAllowed)</a></li>
 </ul>
 </li>
 <li><a href="#validation">Validation</a></li>
 <li><a href="#addresses-and-contact">Addresses and contact</a></li>
-<li><a href="#attachments">Attachments</a></li>
+<li><a href="#attachments">Attachments</a><ul>
+<li><a href="#changing-or-cancelling-an-order">Changing or cancelling an order</a></li>
+</ul>
+</li>
 <li><a href="#managing-sessions">Managing sessions</a></li>
 <li><a href="#exposing-the-tool-safely">Exposing the tool safely</a></li>
 <li><a href="#data-and-storage">Data and storage</a></li>
@@ -701,7 +706,66 @@ session's setup request) and pre-loads the catalog:</p>
   cart" rows</strong> so the edit round-trips faithfully.</li>
 </ul>
 <p>For <strong><code>inspect</code></strong>, the mock supplier shows the carried item(s) <strong>read-only</strong> and
-returns them unchanged on checkout — matching the "view this item" intent.</p>
+returns <strong>no items</strong> on checkout. That is what the standard asks of a supplier:
+the buyer must ignore the item list of an inspect session, so the tool keeps the
+items exactly as it sent them.</p>
+<h3 id="how-a-returned-cart-is-read">How a returned cart is read</h3>
+<p>A punchback always ends the shopping session, but what it means for the
+requisition depends on the operation it answers and on whether it carries
+<code>Status 204</code>. The session's cart panel says which case applies:</p>
+<table>
+<thead>
+<tr>
+<th>Session</th>
+<th>Punchback</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>any</td>
+<td>items</td>
+<td>The returned items are the cart.</td>
+</tr>
+<tr>
+<td><code>create</code></td>
+<td>no items</td>
+<td>Cancelled — nothing is added.</td>
+</tr>
+<tr>
+<td><code>edit</code></td>
+<td>no items</td>
+<td>The items the session carried are <strong>deleted</strong> from the requisition.</td>
+</tr>
+<tr>
+<td><code>edit</code></td>
+<td>no items, <code>Status 204</code></td>
+<td>Cancelled <strong>without change</strong> — the requisition keeps its items.</td>
+</tr>
+<tr>
+<td><code>inspect</code></td>
+<td>anything</td>
+<td>Ignored — the items stay as they were sent.</td>
+</tr>
+</tbody>
+</table>
+<p>To produce these from the mock catalog: <strong>Cancel</strong> returns an empty cart with
+<code>Status 204</code>; setting every quantity to zero and returning the cart gives an
+empty cart without it.</p>
+<h3 id="what-may-be-done-with-a-cart-later-operationallowed">What may be done with a cart later (<code>operationAllowed</code>)</h3>
+<p>Every returned cart carries <code>operationAllowed</code>, the supplier's statement of what
+the buyer may do with it afterwards: <code>create</code> allows no reopening, <code>inspect</code> a
+read-only one, <code>edit</code> both. The cart panel shows the value the supplier sent.</p>
+<ul>
+<li><strong>Testing a supplier (Mode A):</strong> when you start an <code>edit</code> or <code>inspect</code> session
+  from a cart whose <code>operationAllowed</code> forbids it, the New session dialog warns
+  you. You can still start it, to see how the supplier reacts to a request a
+  real procurement system would not make.</li>
+<li><strong>Testing a buyer (Mode B):</strong> each supplier has a <em>Carts may later be</em> setting
+  (default <code>edit</code>). Lower it, then check that the buyer system stops offering
+  edit or inspect for carts from that supplier. If it sends one anyway, the
+  inbound SetupRequest is flagged.</li>
+</ul>
 <div class="alert alert-note">
 <div class="alert-label">Note</div>
 <p>The pre-load is derived from the latest inbound <code>PunchOutSetupRequest</code> in the
@@ -738,8 +802,36 @@ field-level; it surfaces typed <strong>errors</strong> and <strong>warnings</str
 <td>Operation / items coherence</td>
 <td><code>edit</code>/<code>inspect</code> with no items, or <code>create</code> with unexpected items, is flagged.</td>
 </tr>
+<tr>
+<td>Dates</td>
+<td><code>timestamp</code> and <code>orderDate</code> must be ISO 8601 with a numeric UTC offset (<code>2026-01-01T10:00:00+01:00</code>). Not a date is an <strong>error</strong>; no time zone, or the <code>Z</code> designator cXML doesn't allow, a <strong>warning</strong>.</td>
+</tr>
+<tr>
+<td>DOCTYPE</td>
+<td>A missing declaration, or one that doesn't name a cXML DTD, is a <strong>warning</strong>; a version other than the buyer profile's is noted.</td>
+</tr>
+<tr>
+<td><code>xml:lang</code></td>
+<td>Required on <code>Description</code> and <code>Name</code> (<strong>error</strong> when missing); recommended on <code>Comments</code>, <code>Status</code> and the root.</td>
+</tr>
+<tr>
+<td>Several credentials</td>
+<td>A party may send more than one (e.g. NetworkID and DUNS). One in a domain the connection knows must match; unknown domains are left alone; two identities in one domain are an <strong>error</strong>.</td>
+</tr>
+<tr>
+<td><code>operationAllowed</code></td>
+<td>Must be present on a punchback and be <code>create</code>, <code>inspect</code> or <code>edit</code>.</td>
+</tr>
+<tr>
+<td>Change orders</td>
+<td><code>type</code> must be <code>new</code>, <code>update</code> or <code>delete</code>; an <code>update</code>/<code>delete</code> needs a <code>DocumentReference</code> (<strong>error</strong>) to the most recent OrderRequest for that order, and a rising <code>orderVersion</code>.</td>
+</tr>
 </tbody>
 </table>
+<p>The rules follow the cXML 1.2.072 DTD and the cXML Reference Guide. An <strong>error</strong>
+is something the DTD requires; a <strong>warning</strong> is a "must" or "should" from the
+Guide that a receiver can usually still process; <strong>info</strong> is deprecated or
+simply worth knowing. The mock supplier rejects an order only on errors.</p>
 <div class="alert alert-tip">
 <div class="alert-label">Tip</div>
 <p>Validate is advisory — you can still send. Use it to catch obvious mismatches
@@ -775,6 +867,29 @@ dangling reference in its own validation as well, so you can see both sides.</p>
 toggle. <em>Raw</em> shows the headers and, for an order with attachments, the whole
 <code>multipart/related</code> envelope — boundaries, part headers, <code>Content-ID</code>s and each
 part. It is rebuilt on demand from the document and the stored attachments.</p>
+<h3 id="changing-or-cancelling-an-order">Changing or cancelling an order</h3>
+<p>After the supplier accepts an order, two buttons appear under its response:</p>
+<ul>
+<li><strong>Change order…</strong> builds an OrderRequest with <code>type="update"</code>,</li>
+<li><strong>Cancel order…</strong> one with <code>type="delete"</code>.</li>
+</ul>
+<p>Both keep the order's <code>orderID</code>, raise <code>orderVersion</code> by one, and add a
+<code>DocumentReference</code> holding the <code>payloadID</code> of the previous OrderRequest — the
+original for the first change, the change order for the one after. The document
+opens in the editor, so for a change you can alter quantities or lines before
+you send it. A cancellation still lists the items: the DTD requires at least one
+<code>ItemOut</code> in every OrderRequest.</p>
+<p>The mock supplier follows the chain. It answers a change with <em>"Order number …
+updated to version 2"</em> and a cancellation with <em>"… cancelled"</em>, under the order
+number it first acknowledged. It rejects an update or delete that has no
+<code>DocumentReference</code>, and warns when the reference points at an older document
+than the latest one it holds, when the version doesn't rise, or when it has no
+earlier order to change.</p>
+<div class="alert alert-note">
+<div class="alert-label">Note</div>
+<p>A buyer profile on DTD 1.2.008 gets change orders without <code>orderVersion</code>: that
+attribute only exists from 1.2.009.</p>
+</div>
 <h2 id="managing-sessions">Managing sessions</h2>
 <ul>
 <li><strong>Per-session log</strong> — select a session to see only its messages.</li>

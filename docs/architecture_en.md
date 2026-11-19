@@ -179,9 +179,34 @@ The `cxml/` package is protocol logic with no HTTP or storage knowledge:
 |---|---|
 | `build.ts` | Emits cXML documents from typed inputs using template literals. Handles `PunchOutSetupRequest`, `OrderRequest`, address/contact blocks, classification blocks, and line-item totals (returns `0` for mixed-currency carts). |
 | `parse.ts` | Parses inbound cXML with `fast-xml-parser`. XXE is rejected. |
-| `validate.ts` | Bidirectional, field-level validation against expectations: credentials (only on header-bearing docs), single-currency, address completeness, operation/items coherence. Produces typed issues (error / warning). |
+| `validate.ts` | Bidirectional, field-level validation written against the cXML DTD and Reference Guide: credentials (only on header-bearing docs, several per party), date-time format, DOCTYPE, `xml:lang`, single-currency, address completeness, operation/items coherence, `operationAllowed`, order `type` / `DocumentReference` / `orderVersion`. Produces typed issues: **error** (the DTD requires it), **warning** (the Guide says must/should), **info** (deprecated or informative). |
 | `multipart.ts` | Hand-assembles and parses `multipart/related` for `OrderRequest` attachments. |
 | `types.ts` + `*-presets.ts` | The shared domain types and the built-in presets. Profile presets ship for Generic, SAP Ariba, Coupa, Jaggaer (two `UserAgent` variants: `JAGGAER` and legacy `SciQuest`), Oracle iProcurement, SAP SRM / Business Network, and Workday — one source of truth for both the rows seeded into `config.json` and the in-memory fallback. |
+
+### Conformance to the cXML standard
+
+The builders and the validator are written against the published standard, not
+from memory: the **cXML 1.2.072 DTD** and the **cXML Reference Guide**
+(downloadable from [cxml.org](https://cxml.org/downloads.html)). Three
+consequences shape the code:
+
+- **Element order is the DTD's.** cXML content models are sequences, so the
+  builders emit children in the declared order — `PunchOutSetupRequest` as
+  `BuyerCookie, Extrinsic*, BrowserFormPost, Contact*, ShipTo, ItemOut*`;
+  item-level `Comments` after `ItemDetail` inside `ItemOut`; a `TelephoneNumber`
+  as `CountryCode, AreaOrCityCode, Number`. A `Response` carries no `Header`.
+- **Dates use the cXML form.** `cxmlTimestamp()` writes local time with a
+  numeric UTC offset; the Reference Guide does not allow the `Z` designator.
+- **Output depends on the declared DTD version.** A buyer profile may declare a
+  DTD as old as 1.2.008, and a document must only use what that version
+  defines. Two attributes the builders emit are newer than that —
+  `addressIDDomain` (since 1.2.025) and `orderVersion` (since 1.2.009) — and are
+  left out below those versions.
+
+Runtime validation stays field-level (no native DTD validator ships in the
+package). Conformance of the tool's *own* output is instead proven in
+development by an opt-in test suite that runs every built document through
+`xmllint` against the real DTD, once per DTD version — see the Test strategy.
 
 ### The store
 
@@ -411,7 +436,10 @@ the `BuyerCookie`, so nothing in a link or a form can change where a cart goes.
 The mock supplier also **honours the setup `operation`**: for `edit` it
 re-reads the carried `ItemOut` from the session log and pre-fills the catalog
 quantities (items it doesn't list show as extra rows); for `inspect` it renders
-the carried item(s) read-only and returns them unchanged.
+the carried item(s) read-only and returns no `ItemIn` at all, as the Reference
+Guide asks. A **Cancel** button returns an empty cart with `Status 204`, and the
+`operationAllowed` attribute on every returned cart comes from the supplier's
+configuration (`edit` by default).
 
 ```plantuml
 @startuml mode-b-sequence

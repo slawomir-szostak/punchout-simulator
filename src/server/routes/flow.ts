@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { HTTPException } from "hono/http-exception";
 import { nanoid } from "nanoid";
 import { readJsonBody } from "./json-body.js";
 import {
@@ -7,7 +8,7 @@ import {
   resolveConnection,
   type EffectiveProfile,
 } from "../store/config.js";
-import { appendLog } from "../store/log.js";
+import { appendLog, readSession } from "../store/log.js";
 import { saveAttachment } from "../store/attachments.js";
 import { rememberOrderSession, rememberSessionConnection } from "../cart-store.js";
 import { sendCxml } from "../http.js";
@@ -18,11 +19,13 @@ import {
   buildSetupRequest,
   lineItemsTotal,
   makePayloadId,
+  cxmlTimestamp,
   type ExtrinsicVal,
   type OrderAttachmentMeta,
+  type OrderType,
 } from "../cxml/build.js";
 import { buildMultipartRelated, type MultipartAttachment } from "../cxml/multipart.js";
-import { getStartPage, getStatus, parseXml } from "../cxml/parse.js";
+import { getOrderInfo, getStartPage, getStatus, parseXml } from "../cxml/parse.js";
 import { validateDocument, type ExpectedCredentials } from "../cxml/validate.js";
 import type { Address, AddressMode, AttachmentEncoding, AttachmentRef, CartItem, Contact, Credential, DocType, ResolvedConnection, SetupOperation } from "../cxml/types.js";
 import type { OrderResult, SetupResult } from "./dto.js";
@@ -141,7 +144,7 @@ flowRoute.post("/:id/setup/preview", async (c) => {
     buyerCookie,
     browserFormPostUrl: browserFormPostUrl(),
     payloadId: makePayloadId(host(), new Date().toISOString()),
-    timestamp: new Date().toISOString(),
+    timestamp: cxmlTimestamp(),
     deploymentMode: ctx.deploymentMode,
     operation: coerceOperation(body.operation) ?? ctx.eff.setupOperation,
     dtdVersion: dtdVersionFor(ctx.eff, "SetupRequest"),
@@ -172,7 +175,7 @@ flowRoute.post("/:id/setup", async (c) => {
       buyerCookie,
       browserFormPostUrl: browserFormPostUrl(),
       payloadId: makePayloadId(host(), new Date().toISOString()),
-      timestamp: new Date().toISOString(),
+      timestamp: cxmlTimestamp(),
       deploymentMode: ctx.deploymentMode,
       operation: coerceOperation(body.operation) ?? ctx.eff.setupOperation,
       dtdVersion: dtdVersionFor(ctx.eff, "SetupRequest"),
@@ -270,6 +273,35 @@ interface OrderBody {
   shipTo?: Address;
   billTo?: Address;
   contact?: Contact;
+  /**
+   * `update` or `delete` builds a change order / cancellation of the order this
+   * session last sent: same orderID, the next orderVersion, and a
+   * DocumentReference to that OrderRequest's payloadID.
+   */
+  orderType?: OrderType;
+}
+
+const coerceOrderType = (v: unknown): OrderType => (v === "update" || v === "delete" ? v : "new");
+
+/** An OrderRequest this session already sent, as a later change must reference it. */
+interface SentOrder {
+  orderId?: string;
+  payloadId?: string;
+  orderVersion: number;
+}
+
+// The OrderRequests a session sent, oldest first, read back from its log (the
+// payloadID survives secret redaction). An original order without an explicit
+// orderVersion counts as version 1.
+function sentOrders(sessionId: string, connectionId: string): SentOrder[] {
+  const out: SentOrder[] = [];
+  for (const r of readSession(sessionId)) {
+    if (r.direction !== "out" || r.docType !== "OrderRequest" || r.connectionId !== connectionId) continue;
+    const info = getOrderInfo(parseXml(r.body));
+    const version = Number(info.orderVersion);
+    out.push({ orderId: info.orderId, payloadId: info.payloadId, orderVersion: Number.isFinite(version) && info.orderVersion != null ? version : 1 });
+  }
+  return out;
 }
 
 // Build the OrderRequest cXML from a request body. Shared by the preview and
@@ -281,7 +313,13 @@ function buildOrderXml(ctx: BuyerContext, body: OrderBody): { xml: string; order
   // returns 0 in that case (see build.ts), matching the mock supplier and
   // tripping the mixed-currency validation rather than fabricating a sum.
   const total = body.total ?? lineItemsTotal(items, currency);
-  const orderId = body.orderId || `PO-${nanoid(8)}`;
+  const type = coerceOrderType(body.orderType);
+  // A change or cancellation continues the order this session last sent.
+  const previous = type === "new" ? undefined : sentOrders(body.sessionId, ctx.connectionId).at(-1);
+  if (type !== "new" && !previous) {
+    throw new HTTPException(400, { message: "this session has not sent an OrderRequest yet — there is no order to change or cancel" });
+  }
+  const orderId = previous?.orderId || body.orderId || `PO-${nanoid(8)}`;
   const attMeta: OrderAttachmentMeta[] = (body.attachments ?? []).map((a) => ({
     contentId: a.contentId,
     scope: a.scope === "order" || a.scope == null ? "order" : { itemIndex: Number(a.scope) },
@@ -292,9 +330,9 @@ function buildOrderXml(ctx: BuyerContext, body: OrderBody): { xml: string; order
     sender: ctx.sender,
     sharedSecret: ctx.sharedSecret,
     orderId,
-    orderDate: new Date().toISOString(),
+    orderDate: cxmlTimestamp(),
     payloadId: makePayloadId(host(), new Date().toISOString()),
-    timestamp: new Date().toISOString(),
+    timestamp: cxmlTimestamp(),
     deploymentMode: ctx.deploymentMode,
     currency,
     total,
@@ -309,6 +347,9 @@ function buildOrderXml(ctx: BuyerContext, body: OrderBody): { xml: string; order
     dtdVersion: dtdVersionFor(ctx.eff, "OrderRequest"),
     userAgent: ctx.eff.userAgent,
     extrinsics: orderExtrinsics(ctx, orderId),
+    type,
+    orderVersion: previous ? previous.orderVersion + 1 : undefined,
+    documentReferencePayloadId: previous?.payloadId,
   });
   return { xml, orderId };
 }
@@ -371,11 +412,18 @@ flowRoute.post("/:id/order", async (c) => {
     wireContentType = built.contentType;
   }
 
+  // For a change order: the previous OrderRequest this session sent for the
+  // same order (a re-send of the very same document is not its own predecessor).
+  const sending = getOrderInfo(parseXml(xml));
+  const earlier = sentOrders(sessionId, ctx.connectionId).filter(
+    (o) => o.orderId === sending.orderId && o.payloadId !== sending.payloadId,
+  );
   const reqValidation = validateDocument(xml, {
     expected: ctx.expected,
     forceDocType: "OrderRequest",
     availableContentIds: inputAtts.length > 0 ? availableContentIds : undefined,
     allowMixedCurrency: ctx.allowMixedCurrency,
+    priorOrder: earlier.at(-1) ?? null,
   });
 
   const reqLog = appendLog({

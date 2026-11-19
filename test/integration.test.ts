@@ -113,7 +113,10 @@ describe("Mode A loopback", () => {
     const po = /orderID="([^"]+)"/.exec(order.request.body)![1];
     expect(order.statusMessage).toMatch(/^OK\. Order number SO-[A-Z0-9]{8} received for PO /);
     expect(order.statusMessage).toContain(po);
-    expect(order.response.body).toContain(`<Status code="200" text="OK">${order.statusMessage}</Status>`);
+    expect(order.response.body).toContain(`<Status code="200" text="OK" xml:lang="en">${order.statusMessage}</Status>`);
+    // A Response carries no Header (DTD: cXML is (Header, (Message | Request)) | Response).
+    expect(order.response.body).not.toContain("<Header>");
+    expect(setup.response.body).not.toContain("<Header>");
 
     // Every record carries the endpoint of its exchange: Mode A logs where it
     // POSTed, Mode B logs the URL the buyer hit, the punchback logs its target.
@@ -265,8 +268,41 @@ describe("Mode A loopback", () => {
     expect(res.statusCode).toBe("200");
   });
 
+  it("changes and then cancels an order: same orderID, rising version, chained DocumentReference", async () => {
+    const post = (path: string, body: unknown) =>
+      fetch(`${base}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
+    const items = [{ quantity: 2, supplierPartId: "WIDGET-001", description: "Premium Steel Widget", uom: "EA", unitPriceAmount: 12.5, currency: "USD", classifications: [{ domain: "UNSPSC", value: "31161500" }] }];
+    const sessionId = "chg-session";
+    const payloadIdOf = (xml: string) => /<cXML payloadID="([^"]+)"/.exec(xml)![1];
+
+    const first = await post("/api/connections/demo/order", { sessionId, items, currency: "USD" });
+    expect(first.statusCode).toBe("200");
+    const orderId = /orderID="([^"]+)"/.exec(first.request.body)![1];
+    expect(first.request.body).toContain('type="new"');
+
+    // The change order is previewed (editable in the UI), then sent as shown.
+    const preview = await post("/api/connections/demo/order/preview", { sessionId, items: [{ ...items[0], quantity: 5 }], currency: "USD", orderType: "update" });
+    expect(preview.orderId).toBe(orderId);
+    expect(preview.xml).toContain('type="update" orderVersion="2"');
+    expect(preview.xml).toContain(`<DocumentReference payloadID="${payloadIdOf(first.request.body)}"/>`);
+    const change = await post("/api/connections/demo/order", { sessionId, xml: preview.xml, items, currency: "USD" });
+    expect(change.statusCode).toBe("200");
+    expect(change.statusMessage).toMatch(/updated to version 2/);
+    expect(change.request.validation.issues.filter((i: any) => i.severity !== "info")).toEqual([]);
+
+    // The cancellation references the change order, not the original.
+    const cancel = await post("/api/connections/demo/order", { sessionId, items, currency: "USD", orderType: "delete" });
+    expect(cancel.request.body).toContain('type="delete" orderVersion="3"');
+    expect(cancel.request.body).toContain(`<DocumentReference payloadID="${payloadIdOf(change.request.body)}"/>`);
+    expect(cancel.statusMessage).toMatch(/cancelled/);
+    // The supplier kept one order number across all three documents.
+    const so = (m: string) => /SO-[A-Z0-9]{8}/.exec(m)![0];
+    expect(so(change.statusMessage)).toBe(so(first.statusMessage));
+    expect(so(cancel.statusMessage)).toBe(so(first.statusMessage));
+  });
+
   it("rejects a non-http(s) BrowserFormPost URL (no javascript: XSS)", async () => {
-    const setupXml = `<cXML payloadID="p@h" timestamp="t"><Header>
+    const setupXml = `<cXML payloadID="p@h" timestamp="2026-01-01T10:00:00+01:00"><Header>
       <From><Credential domain="DUNS"><Identity>123456789</Identity></Credential></From>
       <To><Credential domain="DUNS"><Identity>987654321</Identity></Credential></To>
       <Sender><Credential domain="DUNS"><Identity>123456789</Identity><SharedSecret>demo-secret</SharedSecret></Credential></Sender>
@@ -394,7 +430,7 @@ describe("Mode A loopback", () => {
     await fetch(`${base}/sim/demo-supplier/punchout`, {
       method: "POST",
       headers: { "content-type": "text/xml" },
-      body: `<cXML payloadID="p@h" timestamp="t"><Header>
+      body: `<cXML payloadID="p@h" timestamp="2026-01-01T10:00:00+01:00"><Header>
         <From><Credential domain="DUNS"><Identity>55555</Identity></Credential></From>
         <To><Credential domain="DUNS"><Identity>987654321</Identity></Credential></To>
         <Sender><Credential domain="DUNS"><Identity>55555</Identity><SharedSecret>demo-secret</SharedSecret></Credential></Sender>
@@ -435,7 +471,7 @@ describe("Mode B edit / inspect", () => {
   // Send a PunchOutSetupRequest to the mock supplier carrying an operation and
   // (for edit/inspect) prior cart items as ItemOut, returning its BuyerCookie.
   async function sendSetup(cookie: string, operation: string, itemOuts: string): Promise<void> {
-    const xml = `<cXML payloadID="p@h" timestamp="t"><Header>
+    const xml = `<cXML payloadID="p@h" timestamp="2026-01-01T10:00:00+01:00"><Header>
       <From><Credential domain="DUNS"><Identity>123456789</Identity></Credential></From>
       <To><Credential domain="DUNS"><Identity>987654321</Identity></Credential></To>
       <Sender><Credential domain="DUNS"><Identity>123456789</Identity><SharedSecret>demo-secret</SharedSecret></Credential></Sender>
@@ -498,7 +534,7 @@ describe("Mode B edit / inspect", () => {
     expect(punchback).toContain('quantity="2"');
   });
 
-  it("inspect renders read-only and returns the carried item unchanged", async () => {
+  it("inspect renders read-only and returns no items (the buyer keeps what it sent)", async () => {
     await sendSetup("inspect-1", "inspect", itemOut("INSPECT-ME", 5, "Item under inspection", "4.00"));
 
     const catalog = await fetch(`${base}/sim/demo-supplier/catalog?cookie=inspect-1`).then((r) => r.text());
@@ -517,8 +553,20 @@ describe("Mode B edit / inspect", () => {
         bi: "123456789",
       }).toString(),
     }).then((r) => r.text());
+    // "The supplier site should return no ItemIn elements" for an inspect session.
     const punchback = punchbackOf(html);
-    expect(punchback).toContain("INSPECT-ME");
-    expect(punchback).toContain('quantity="5"');
+    expect(punchback).not.toContain("<ItemIn");
+    expect(punchback).toContain("<BuyerCookie>inspect-1</BuyerCookie>");
+
+    // The buyer side ignores the returned list: the session keeps the inspected item.
+    await fetch(`${base}/punchout/return`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ "cxml-urlencoded": punchback }).toString(),
+    });
+    const cart = await fetch(`${base}/api/cart/inspect-1`).then((r) => r.json());
+    expect(cart.outcome).toBe("inspected");
+    expect(cart.items).toHaveLength(1);
+    expect(cart.items[0].supplierPartId).toBe("INSPECT-ME");
   });
 });

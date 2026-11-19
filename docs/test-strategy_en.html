@@ -312,7 +312,7 @@ figure.diagram figcaption {
 <header class="header">
   <div class="brand"></div>
   <h1>punchout-simulator — Test Strategy</h1>
-  <p class="subtitle">What is tested, at which layer, with which techniques — and what is deliberately left out · 2026-11-18</p>
+  <p class="subtitle">What is tested, at which layer, with which techniques — and what is deliberately left out · 2026-11-19</p>
   <span class="version">v1.1 — October 2026</span>
 </header>
 
@@ -328,6 +328,7 @@ figure.diagram figcaption {
 </ul>
 </li>
 <li><a href="#techniques-worth-copying">Techniques worth copying</a></li>
+<li><a href="#conformance-to-the-cxml-dtd">Conformance to the cXML DTD</a></li>
 <li><a href="#gates">Gates</a></li>
 <li><a href="#what-is-deliberately-not-covered">What is deliberately not covered</a></li>
 </ul>
@@ -357,9 +358,9 @@ call the real implementations on temporary data directories.</p>
 <h2 id="the-test-pyramid">The test pyramid</h2>
 <p>All tests live in <code>test/**/*.test.ts</code> and run under <strong>Vitest</strong> (<code>environment:
 node</code>, 20-second timeout, one process-isolated environment per file). The suite
-is currently 22 files across four layers:</p>
+is currently 24 files across four layers, one of them opt-in:</p>
 <figure class="diagram">
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" data-diagram-type="DESCRIPTION" viewBox="0 0 480 565" zoomAndPan="magnify" preserveAspectRatio="xMidYMid meet" contentStyleType="text/css" width="480" height="565"><?plantuml 1.2026.8?><defs/><g font-family="sans-serif" lengthAdjust="spacing"><g class="title" data-source-line="2"><text x="15" y="38.518" fill="#000" font-size="22" textLength="448.89" font-weight="700" font-family="Verdana">Test layers (bottom = most tests, fastest)</text></g><!--entity L4--><g class="entity" data-qualified-name="L4" id="ent0001" data-source-line="4"><rect x="87.157" y="62.964" width="304.577" height="77.204" fill="#FFF" style="stroke:#000;stroke-width:1;" rx="2.5" ry="2.5"/><text x="97.157" y="87.93" fill="#000" font-size="14" textLength="174.117" font-family="Verdana">Integration over real HTTP</text><text x="97.157" y="106.998" fill="#000" font-size="14" textLength="284.577" font-family="Verdana">integration.test.ts — full Mode-A roundtrip,</text><text x="97.157" y="126.066" fill="#000" font-size="14" textLength="232.567" font-family="Verdana">ephemeral port, seeded demo data</text></g><!--entity L3--><g class="entity" data-qualified-name="L3" id="ent0002" data-source-line="5"><rect x="27.657" y="200.164" width="423.576" height="77.204" fill="#FFF" style="stroke:#000;stroke-width:1;" rx="2.5" ry="2.5"/><text x="37.657" y="225.13" fill="#000" font-size="14" textLength="179.591" font-family="Verdana">HTTP app-level (no sockets)</text><text x="37.657" y="244.198" fill="#000" font-size="14" textLength="403.576" font-family="Verdana">security / rate-limit / static / backup / hardening / duplicate —</text><text x="37.657" y="263.266" fill="#000" font-size="14" textLength="262.149" font-family="Verdana">Hono app.request() against the real app</text></g><!--entity L2--><g class="entity" data-qualified-name="L2" id="ent0003" data-source-line="6"><rect x="107.497" y="337.364" width="263.893" height="77.204" fill="#FFF" style="stroke:#000;stroke-width:1;" rx="2.5" ry="2.5"/><text x="117.497" y="362.33" fill="#000" font-size="14" textLength="127.946" font-family="Verdana">Store &amp; persistence</text><text x="117.497" y="381.398" fill="#000" font-size="14" textLength="213.373" font-family="Verdana">migrations / products / profiles /</text><text x="117.497" y="400.466" fill="#000" font-size="14" textLength="243.893" font-family="Verdana">log-dedup / log-summary / cart-store</text></g><!--entity L1--><g class="entity" data-qualified-name="L1" id="ent0004" data-source-line="7"><rect x="38.767" y="474.574" width="401.359" height="77.204" fill="#FFF" style="stroke:#000;stroke-width:1;" rx="2.5" ry="2.5"/><text x="48.767" y="499.54" fill="#000" font-size="14" textLength="67.116" font-family="Verdana">Pure units</text><text x="48.767" y="518.608" fill="#000" font-size="14" textLength="381.359" font-family="Verdana">cXML core: build / parse / validate / multipart / xml-format</text><text x="48.767" y="537.676" fill="#000" font-size="14" textLength="365.385" font-family="Verdana">helpers: csv / geo · proxy: proxy / proxy-detect (fixtures)</text></g><!--link L4 to L3--><!--link L3 to L2--><!--link L2 to L1--><?plantuml-src PP0zRXin48NxFSN4HI01MXcMNGb8aSu6re21g0YGJK6Hixi3yy_aK94w7y9tIU-Z-2GPPWrOW2i-pd3uldbVU4A74AqYtp2nHTXXPh3gX2d3OX-OWuDlu89KMLfv1OFALIsR9g5cvKUPkhZpZ6DIJC53E622XCh2xMxtq7lwwAthv9epl3s_m52iXVjWiFqEAHHlE55SzHvZfKeo7qFY5MH4WmOCkW16iRe0bQ6xERUlHg1YR2qUqCB21yX1FoBdPUypwfA8Jt09Ge6j9KSibyp2f4NibNuiKSIaaa7X7KMR4YrfULzPUtyRv4znM2TyAhB4OWbgbDXgBXFEwqfxPhi-P_l18I5yXIYHaaJdDVRUqNiYMQnY2gPeVfS3MHJPUnl6LXR_JrPrBiwfLDVGAd6Rwx-pt-RSxw68NV74kVVwvtq7MjvjOL_8ckgWKaOv3ygIgUjTWYkMIUerbAEpxH2IKzpx2Ms5teBE1scD6E3rRqKydhRpCHCVJyB9GW2BWOui_davWrqrJNS3xQ-9Z0JxsuG_lgtnTDUVYfkcstmgNlq3?></g></svg>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" data-diagram-type="DESCRIPTION" viewBox="0 0 480 584" zoomAndPan="magnify" preserveAspectRatio="xMidYMid meet" contentStyleType="text/css" width="480" height="584"><?plantuml 1.2026.8?><defs/><g font-family="sans-serif" lengthAdjust="spacing"><g class="title" data-source-line="2"><text x="15" y="38.518" fill="#000" font-size="22" textLength="448.89" font-weight="700" font-family="Verdana">Test layers (bottom = most tests, fastest)</text></g><!--entity L4--><g class="entity" data-qualified-name="L4" id="ent0001" data-source-line="4"><rect x="87.155" y="62.964" width="304.577" height="77.204" fill="#FFF" style="stroke:#000;stroke-width:1;" rx="2.5" ry="2.5"/><text x="97.155" y="87.93" fill="#000" font-size="14" textLength="174.117" font-family="Verdana">Integration over real HTTP</text><text x="97.155" y="106.998" fill="#000" font-size="14" textLength="284.577" font-family="Verdana">integration.test.ts — full Mode-A roundtrip,</text><text x="97.155" y="126.066" fill="#000" font-size="14" textLength="232.567" font-family="Verdana">ephemeral port, seeded demo data</text></g><!--entity L3--><g class="entity" data-qualified-name="L3" id="ent0002" data-source-line="5"><rect x="68.605" y="200.164" width="341.677" height="96.272" fill="#FFF" style="stroke:#000;stroke-width:1;" rx="2.5" ry="2.5"/><text x="78.605" y="225.13" fill="#000" font-size="14" textLength="179.591" font-family="Verdana">HTTP app-level (no sockets)</text><text x="78.605" y="244.198" fill="#000" font-size="14" textLength="321.677" font-family="Verdana">security / rate-limit / static / backup / hardening /</text><text x="78.605" y="263.266" fill="#000" font-size="14" textLength="149.869" font-family="Verdana">duplicate / standard —</text><text x="78.605" y="282.334" fill="#000" font-size="14" textLength="262.149" font-family="Verdana">Hono app.request() against the real app</text></g><!--entity L2--><g class="entity" data-qualified-name="L2" id="ent0003" data-source-line="6"><rect x="107.495" y="356.434" width="263.893" height="77.204" fill="#FFF" style="stroke:#000;stroke-width:1;" rx="2.5" ry="2.5"/><text x="117.495" y="381.4" fill="#000" font-size="14" textLength="127.946" font-family="Verdana">Store &amp; persistence</text><text x="117.495" y="400.468" fill="#000" font-size="14" textLength="213.373" font-family="Verdana">migrations / products / profiles /</text><text x="117.495" y="419.536" fill="#000" font-size="14" textLength="243.893" font-family="Verdana">log-dedup / log-summary / cart-store</text></g><!--entity L1--><g class="entity" data-qualified-name="L1" id="ent0004" data-source-line="7"><rect x="38.765" y="493.644" width="401.359" height="77.204" fill="#FFF" style="stroke:#000;stroke-width:1;" rx="2.5" ry="2.5"/><text x="48.765" y="518.61" fill="#000" font-size="14" textLength="67.116" font-family="Verdana">Pure units</text><text x="48.765" y="537.678" fill="#000" font-size="14" textLength="381.359" font-family="Verdana">cXML core: build / parse / validate / multipart / xml-format</text><text x="48.765" y="556.746" fill="#000" font-size="14" textLength="365.385" font-family="Verdana">helpers: csv / geo · proxy: proxy / proxy-detect (fixtures)</text></g><!--link L4 to L3--><!--link L3 to L2--><!--link L2 to L1--><?plantuml-src PP0zRXin48NxFSN4HI01MXcMNGb8aSu6re21g0YGJK6Hixk4-MVEK94w7y9tIU-Z-2GPPWrOW2i-pd3uldbVU4AFa9ooeM7B3c67nE3K2JF1OX-PeuTluADKMLgqWa5HLSkcoQXPXL6cBku2uvWLsnWW7Z13HkNWThTxw8FzwAthv9e9tfvVO2ZEmNqqs7w774imd6rQzG5JfSeodsBc5H2YGGC6VGIZM5s08kXkpksh4QYKMeS7TB084IZgHsHQze5Gbspv19SW5DWwwotBXLYOj8YzqeybYPXKDYYy8rpsmPJah9Q1-MamqgpSVRYDyh-uhJC-5LbeiGGrIeGremddrQKzSrwVS_xWc16-Gf9uhSGODFR1s_TqI9nIZgPeVfU3TKWLniMnbH3-KrPDnNkLwqfQPMwf_ZlxRSxz7ehObM2P-g1_tdUWvTqMziKwKnrKfhhUGJbhvarzSMobNWCwUjSECNl5VPZGLUWjQ3f8QyG8htyhul6qdO-P-7WIJXO2M0psoE9Fondigccw6sX_JTP8oBzD_1FQ6azt_QcuQRhDf-BLFm00?></g></svg>
 
 </figure>
 
@@ -422,6 +423,12 @@ routing, no network:</p>
   BuyerCookies never sharing a log file. It runs in <strong>its own
   file</strong> so the global runtime token cannot leak into other suites (Vitest
   isolates files).</li>
+<li><code>standard.test.ts</code> — behaviour taken from the cXML DTD and Reference Guide:
+  date-time form, DOCTYPE and <code>xml:lang</code> rules, the element order of the tool's
+  own documents, change and cancel orders (the <code>DocumentReference</code> chain and
+  <code>orderVersion</code>), several credentials per party, <code>operationAllowed</code>, and how an
+  empty cart is read for each operation — including the mock supplier's Cancel
+  button and the buyer side keeping an inspected cart.</li>
 <li><code>rate-limit.test.ts</code> and <code>static.test.ts</code> — abuse limits (per-client and
   global when exposed, the looser global cap on localhost) and SPA serving.</li>
 <li><code>backup.test.ts</code> — configuration export/import: secrets blanked unless asked
@@ -465,6 +472,25 @@ traffic takes — including the loopback proxy bypass.</p>
   is scoped by putting the suite that sets it in its own file, leaning on
   Vitest's per-file isolation instead of teardown discipline.</li>
 </ul>
+<h2 id="conformance-to-the-cxml-dtd">Conformance to the cXML DTD</h2>
+<p><code>dtd-conformance.test.ts</code> builds every document the tool can produce — setup
+requests for each operation, new / update / delete orders, with attachments,
+contacts and extrinsics, both responses, and full, empty and cancelled
+punchbacks — and validates each against the <strong>real cXML DTD</strong> with <code>xmllint</code>.</p>
+<p>It is <strong>opt-in</strong>. The DTD belongs to the cXML project and is not redistributed
+in this repository, and the published package deliberately has no native
+validator, so the suite runs only when pointed at a local copy:</p>
+<pre><code class="language-bash">CXML_DTD=/path/to/cXML/1.2.072/cXML.dtd npm test
+</code></pre>
+<p>Without the variable (in CI, for instance) its tests are reported as skipped.
+The DTD version is read from the path and the documents are built <em>for that
+version</em>, so the suite is meant to be run once per version a buyer profile
+declares — 1.2.008, 1.2.011, 1.2.014, 1.2.023, 1.2.040, 1.2.045 — and once for
+the current 1.2.072. That is how the two version-dependent attributes
+(<code>addressIDDomain</code>, <code>orderVersion</code>) were found. Download the DTDs from
+<a href="https://cxml.org/downloads.html">cxml.org</a>; older versions are at
+<code>http://xml.cxml.org/schemas/cXML/&lt;version&gt;/cXML.dtd</code>.</p>
+<p>Run it after any change to <code>build.ts</code>.</p>
 <h2 id="gates">Gates</h2>
 <p>The same three commands gate every path to a release:</p>
 <table>

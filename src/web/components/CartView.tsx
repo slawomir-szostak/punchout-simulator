@@ -4,10 +4,24 @@ export function CartView({ cart }: { cart: Cart | null }) {
   if (!cart) {
     return <p className="hint">No cart yet. Open the StartPage, shop, and return the cart — it lands here.</p>;
   }
+  // What the punchback means for the requisition (cXML Reference Guide, "Empty
+  // Shopping Carts") — decided server-side from the session's operation.
+  const note =
+    cart.outcome === "cancelled"
+      ? "The session was cancelled — the supplier returned no items, so nothing is added to the requisition."
+      : cart.outcome === "emptied"
+        ? "The edit session came back empty — the items it carried are deleted from the requisition."
+        : cart.outcome === "unchanged"
+          ? "The edit session was cancelled without change (Status 204) — the requisition keeps the items it had."
+          : cart.outcome === "inspected"
+            ? "Inspect session — whatever the supplier returned is ignored; the items stay as they were sent."
+            : null;
   if (cart.items.length === 0) {
-    return <p className="hint">Punchback received but the cart is empty.</p>;
+    return <p className="hint">{note ?? "Punchback received but the cart is empty."}</p>;
   }
   return (
+    <>
+    {note && <p className="hint">{note}</p>}
     <table className="cart-table">
       <thead>
         <tr>
@@ -49,5 +63,17 @@ export function CartView({ cart }: { cart: Cart | null }) {
         </tfoot>
       )}
     </table>
+    {cart.operationAllowed && cart.outcome === "returned" && (
+      <p className="hint">
+        The supplier allows this cart to be{" "}
+        {cart.operationAllowed === "edit"
+          ? "reopened later to inspect or edit"
+          : cart.operationAllowed === "inspect"
+            ? "reopened later to inspect only"
+            : "ordered only — no later edit or inspect"}{" "}
+        (<code>operationAllowed="{cart.operationAllowed}"</code>).
+      </p>
+    )}
+    </>
   );
 }

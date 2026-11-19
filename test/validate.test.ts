@@ -13,20 +13,20 @@ const codes = (xml: string, ctx = {}) =>
 
 describe("SetupResponse validation", () => {
   it("passes a valid response", () => {
-    const xml = `<cXML payloadID="p@h" timestamp="t"><Response><Status code="200" text="OK"/><PunchOutSetupResponse><StartPage><URL>https://s/start</URL></StartPage></PunchOutSetupResponse></Response></cXML>`;
+    const xml = `<cXML payloadID="p@h" timestamp="2026-01-01T10:00:00+01:00"><Response><Status code="200" text="OK"/><PunchOutSetupResponse><StartPage><URL>https://s/start</URL></StartPage></PunchOutSetupResponse></Response></cXML>`;
     const r = validateDocument(xml);
     expect(r.ok).toBe(true);
     expect(r.docType).toBe("SetupResponse");
   });
   it("flags a non-200 status and missing StartPage", () => {
-    const xml = `<cXML payloadID="p@h" timestamp="t"><Response><Status code="500"/><PunchOutSetupResponse></PunchOutSetupResponse></Response></cXML>`;
+    const xml = `<cXML payloadID="p@h" timestamp="2026-01-01T10:00:00+01:00"><Response><Status code="500"/><PunchOutSetupResponse></PunchOutSetupResponse></Response></cXML>`;
     const c = codes(xml);
     expect(c).toContain("status-not-200");
     expect(c).toContain("missing-startpage");
   });
   it("warns when edit/inspect carries no items, and when create carries items", () => {
     const setup = (op: string, items: string) =>
-      `<cXML payloadID="p@h" timestamp="t"><Request><PunchOutSetupRequest operation="${op}"><BuyerCookie>c</BuyerCookie><BrowserFormPost><URL>https://b/return</URL></BrowserFormPost>${items}</PunchOutSetupRequest></Request></cXML>`;
+      `<cXML payloadID="p@h" timestamp="2026-01-01T10:00:00+01:00"><Request><PunchOutSetupRequest operation="${op}"><BuyerCookie>c</BuyerCookie><BrowserFormPost><URL>https://b/return</URL></BrowserFormPost>${items}</PunchOutSetupRequest></Request></cXML>`;
     const itemOut = '<ItemOut quantity="1"><ItemID><SupplierPartID>A</SupplierPartID></ItemID><ItemDetail><UnitPrice><Money currency="USD">1</Money></UnitPrice></ItemDetail></ItemOut>';
     expect(codes(setup("edit", ""))).toContain("setup-missing-items");
     expect(codes(setup("create", itemOut))).toContain("setup-unexpected-items");
@@ -35,8 +35,8 @@ describe("SetupResponse validation", () => {
   });
   it("does NOT flag missing credentials on a (headerless) response, even with expected creds", () => {
     // Responses carry no <Header> by spec — the credential check is request-only.
-    const setupResp = `<cXML payloadID="p@h" timestamp="t"><Response><Status code="200" text="OK"/><PunchOutSetupResponse><StartPage><URL>https://s/start</URL></StartPage></PunchOutSetupResponse></Response></cXML>`;
-    const orderResp = `<cXML payloadID="p@h" timestamp="t"><Response><Status code="200" text="OK"/></Response></cXML>`;
+    const setupResp = `<cXML payloadID="p@h" timestamp="2026-01-01T10:00:00+01:00"><Response><Status code="200" text="OK"/><PunchOutSetupResponse><StartPage><URL>https://s/start</URL></StartPage></PunchOutSetupResponse></Response></cXML>`;
+    const orderResp = `<cXML payloadID="p@h" timestamp="2026-01-01T10:00:00+01:00"><Response><Status code="200" text="OK"/></Response></cXML>`;
     for (const xml of [setupResp, orderResp]) {
       const c = codes(xml, { expected });
       expect(c).not.toContain("missing-credential");
@@ -46,7 +46,7 @@ describe("SetupResponse validation", () => {
 
 describe("shared-secret validation", () => {
   // A SetupRequest with no <SharedSecret> in the Sender.
-  const noSecret = `<cXML payloadID="p@h" timestamp="t"><Header>
+  const noSecret = `<cXML payloadID="p@h" timestamp="2026-01-01T10:00:00+01:00"><Header>
     <From><Credential domain="DUNS"><Identity>111</Identity></Credential></From>
     <To><Credential domain="DUNS"><Identity>222</Identity></Credential></To>
     <Sender><Credential domain="DUNS"><Identity>111</Identity></Credential><UserAgent>x</UserAgent></Sender>
@@ -62,11 +62,11 @@ describe("shared-secret validation", () => {
 });
 
 describe("punchback validation", () => {
-  const base = (total: string) => `<cXML payloadID="p@h" timestamp="t"><Message><PunchOutOrderMessage>
+  const base = (total: string) => `<cXML payloadID="p@h" timestamp="2026-01-01T10:00:00+01:00"><Message><PunchOutOrderMessage>
     <BuyerCookie>cookie-1</BuyerCookie>
     <PunchOutOrderMessageHeader operationAllowed="create"><Total><Money currency="USD">${total}</Money></Total></PunchOutOrderMessageHeader>
     <ItemIn quantity="2"><ItemID><SupplierPartID>A</SupplierPartID></ItemID>
-      <ItemDetail><UnitPrice><Money currency="USD">10.00</Money></UnitPrice><Description>x</Description><UnitOfMeasure>EA</UnitOfMeasure><Classification domain="UNSPSC">1</Classification></ItemDetail>
+      <ItemDetail><UnitPrice><Money currency="USD">10.00</Money></UnitPrice><Description xml:lang="en">x</Description><UnitOfMeasure>EA</UnitOfMeasure><Classification domain="UNSPSC">1</Classification></ItemDetail>
     </ItemIn></PunchOutOrderMessage></Message></cXML>`;
 
   it("passes a consistent cart", () => {
@@ -80,26 +80,26 @@ describe("punchback validation", () => {
     expect(codes(base("20.00"), { expectedBuyerCookie: "other" })).toContain("buyercookie-mismatch");
   });
   it("errors on a mixed-currency cart and skips the (meaningless) total-mismatch warning", () => {
-    const mixed = `<cXML payloadID="p@h" timestamp="t"><Message><PunchOutOrderMessage>
+    const mixed = `<cXML payloadID="p@h" timestamp="2026-01-01T10:00:00+01:00"><Message><PunchOutOrderMessage>
       <BuyerCookie>cookie-1</BuyerCookie>
       <PunchOutOrderMessageHeader operationAllowed="create"><Total><Money currency="USD">0.00</Money></Total></PunchOutOrderMessageHeader>
       <ItemIn quantity="1"><ItemID><SupplierPartID>A</SupplierPartID></ItemID>
-        <ItemDetail><UnitPrice><Money currency="USD">10.00</Money></UnitPrice><Description>x</Description><UnitOfMeasure>EA</UnitOfMeasure><Classification domain="UNSPSC">1</Classification></ItemDetail></ItemIn>
+        <ItemDetail><UnitPrice><Money currency="USD">10.00</Money></UnitPrice><Description xml:lang="en">x</Description><UnitOfMeasure>EA</UnitOfMeasure><Classification domain="UNSPSC">1</Classification></ItemDetail></ItemIn>
       <ItemIn quantity="2"><ItemID><SupplierPartID>B</SupplierPartID></ItemID>
-        <ItemDetail><UnitPrice><Money currency="EUR">1.15</Money></UnitPrice><Description>y</Description><UnitOfMeasure>MTR</UnitOfMeasure><Classification domain="UNSPSC">2</Classification></ItemDetail></ItemIn>
+        <ItemDetail><UnitPrice><Money currency="EUR">1.15</Money></UnitPrice><Description xml:lang="en">y</Description><UnitOfMeasure>MTR</UnitOfMeasure><Classification domain="UNSPSC">2</Classification></ItemDetail></ItemIn>
     </PunchOutOrderMessage></Message></cXML>`;
     const c = codes(mixed);
     expect(c).toContain("mixed-currency");
     expect(c).not.toContain("total-mismatch");
   });
   it("downgrades mixed-currency to a non-blocking warning when the supplier allows it", () => {
-    const mixed = `<cXML payloadID="p@h" timestamp="t"><Message><PunchOutOrderMessage>
+    const mixed = `<cXML payloadID="p@h" timestamp="2026-01-01T10:00:00+01:00"><Message><PunchOutOrderMessage>
       <BuyerCookie>cookie-1</BuyerCookie>
       <PunchOutOrderMessageHeader operationAllowed="create"><Total><Money currency="USD">0.00</Money></Total></PunchOutOrderMessageHeader>
       <ItemIn quantity="1"><ItemID><SupplierPartID>A</SupplierPartID></ItemID>
-        <ItemDetail><UnitPrice><Money currency="USD">10.00</Money></UnitPrice><Description>x</Description><UnitOfMeasure>EA</UnitOfMeasure><Classification domain="UNSPSC">1</Classification></ItemDetail></ItemIn>
+        <ItemDetail><UnitPrice><Money currency="USD">10.00</Money></UnitPrice><Description xml:lang="en">x</Description><UnitOfMeasure>EA</UnitOfMeasure><Classification domain="UNSPSC">1</Classification></ItemDetail></ItemIn>
       <ItemIn quantity="2"><ItemID><SupplierPartID>B</SupplierPartID></ItemID>
-        <ItemDetail><UnitPrice><Money currency="EUR">1.15</Money></UnitPrice><Description>y</Description><UnitOfMeasure>MTR</UnitOfMeasure><Classification domain="UNSPSC">2</Classification></ItemDetail></ItemIn>
+        <ItemDetail><UnitPrice><Money currency="EUR">1.15</Money></UnitPrice><Description xml:lang="en">y</Description><UnitOfMeasure>MTR</UnitOfMeasure><Classification domain="UNSPSC">2</Classification></ItemDetail></ItemIn>
     </PunchOutOrderMessage></Message></cXML>`;
     const r = validateDocument(mixed, { expectedBuyerCookie: "cookie-1", allowMixedCurrency: true });
     expect(r.ok).toBe(true); // warning, not error → does not block
@@ -107,7 +107,7 @@ describe("punchback validation", () => {
     expect(mc?.severity).toBe("warning");
   });
   it("errors when a required item field is missing", () => {
-    const xml = `<cXML payloadID="p@h" timestamp="t"><Message><PunchOutOrderMessage>
+    const xml = `<cXML payloadID="p@h" timestamp="2026-01-01T10:00:00+01:00"><Message><PunchOutOrderMessage>
       <BuyerCookie>c</BuyerCookie>
       <PunchOutOrderMessageHeader><Total><Money currency="USD">10</Money></Total></PunchOutOrderMessageHeader>
       <ItemIn quantity="1"><ItemID><SupplierPartID>A</SupplierPartID></ItemID>
@@ -118,7 +118,7 @@ describe("punchback validation", () => {
 });
 
 describe("OrderRequest address completeness", () => {
-  const order = (shipTo: string) => `<cXML payloadID="p@h" timestamp="t"><Request><OrderRequest>
+  const order = (shipTo: string) => `<cXML payloadID="p@h" timestamp="2026-01-01T10:00:00+01:00"><Request><OrderRequest>
     <OrderRequestHeader orderID="PO-1" orderDate="d"><Total><Money currency="USD">10</Money></Total>
       ${shipTo}<BillTo><Address addressID="9001"><Name>AP</Name></Address></BillTo></OrderRequestHeader>
     <ItemOut quantity="1"><ItemID><SupplierPartID>A</SupplierPartID></ItemID><ItemDetail><UnitPrice><Money currency="USD">10</Money></UnitPrice></ItemDetail></ItemOut>
@@ -136,7 +136,7 @@ describe("OrderRequest address completeness", () => {
 });
 
 describe("OrderRequest attachment validation", () => {
-  const order = (cid: string) => `<cXML payloadID="p@h" timestamp="t"><Header>
+  const order = (cid: string) => `<cXML payloadID="p@h" timestamp="2026-01-01T10:00:00+01:00"><Header>
     <From><Credential domain="DUNS"><Identity>111</Identity></Credential></From>
     <To><Credential domain="DUNS"><Identity>222</Identity></Credential></To>
     <Sender><Credential domain="DUNS"><Identity>111</Identity><SharedSecret>s3cret</SharedSecret></Credential></Sender>
@@ -164,7 +164,7 @@ describe("OrderRequest attachment validation", () => {
 
 describe("credential & shared-secret checks", () => {
   it("warns on an unknown credential", () => {
-    const xml = `<cXML payloadID="p@h" timestamp="t"><Header>
+    const xml = `<cXML payloadID="p@h" timestamp="2026-01-01T10:00:00+01:00"><Header>
       <From><Credential domain="DUNS"><Identity>999</Identity></Credential></From>
       <To><Credential domain="DUNS"><Identity>222</Identity></Credential></To>
       <Sender><Credential domain="DUNS"><Identity>111</Identity><SharedSecret>s3cret</SharedSecret></Credential></Sender>
@@ -172,7 +172,7 @@ describe("credential & shared-secret checks", () => {
     expect(codes(xml, { expected })).toContain("credential-mismatch");
   });
   it("errors on a wrong SharedSecret", () => {
-    const xml = `<cXML payloadID="p@h" timestamp="t"><Header>
+    const xml = `<cXML payloadID="p@h" timestamp="2026-01-01T10:00:00+01:00"><Header>
       <From><Credential domain="DUNS"><Identity>111</Identity></Credential></From>
       <To><Credential domain="DUNS"><Identity>222</Identity></Credential></To>
       <Sender><Credential domain="DUNS"><Identity>111</Identity><SharedSecret>WRONG</SharedSecret></Credential></Sender>

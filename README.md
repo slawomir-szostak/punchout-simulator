@@ -148,22 +148,43 @@ document in both directions, and results are surfaced per message in the UI
 (errors, warnings and info). For a seller, the tool is as much a *"did my catalog
 emit correct cXML?"* linter as a transport driver.
 
-General checks: well-formedness, `payloadID`/`timestamp` presence, and
-`From`/`To`/`Sender` credentials + `SharedSecret` consistency with the
-connection's buyer/supplier identities.
+The rules are written against the **cXML 1.2.072 DTD** and the **cXML Reference
+Guide**. An **error** is something the DTD requires or that makes the document
+unprocessable; a **warning** is a "must"/"should" from the Reference Guide that a
+receiver can usually still work around; **info** is permitted but deprecated or
+simply worth knowing.
+
+General checks, on every document:
+
+- well-formedness; `payloadID` and `timestamp` present;
+- **`timestamp` format** — ISO 8601 with a numeric UTC offset
+  (`2026-01-01T10:00:00+01:00`). Not a date is an error; a missing time zone or
+  the `Z` designator (which cXML does not allow) is a warning;
+- a **DOCTYPE** naming a cXML DTD; the declared version is compared with the
+  buyer profile's;
+- **`xml:lang`** — required on `Description` and `Name`, recommended elsewhere;
+- `From`/`To`/`Sender` credentials + `SharedSecret` against the connection's
+  identities. A party may carry **several credentials** (say a NetworkID and a
+  DUNS): one in a known domain must match, others are left alone, and two
+  different identities in the same domain are an error.
 
 Document-specific:
 
 | Document | Checks |
 |---|---|
 | **PunchOutSetupResponse** | `Status` present & `200`; valid `StartPage/URL` |
-| **PunchOutOrderMessage** (punchback) | `BuyerCookie` matches the session; header `Total`/`Money`+currency; each `ItemIn` has quantity, `SupplierPartID`, `UnitPrice`+currency, `Description`, `UnitOfMeasure`, `Classification`@domain; **single currency** (mixed-currency is an error unless the supplier allows it); **Total consistency** (sum of line totals) |
-| **OrderRequest** | `orderID`/`orderDate`/`Total`; `ShipTo`/`BillTo` present **and complete** (an `addressID` or a postal Street/City — an empty block is flagged); `Contact@role`; each `ItemOut`; **single currency** (as above); **attachment `cid:` resolution** (see below) |
+| **PunchOutSetupRequest** | `operation` is one of `create`/`inspect`/`edit`/`source`; `BrowserFormPost`; items present for `edit`/`inspect` and absent for `create`; an `edit`/`inspect` the supplier's `operationAllowed` never permitted |
+| **PunchOutOrderMessage** (punchback) | `BuyerCookie` matches the session; **`operationAllowed`** present and valid; header `Total`/`Money`+currency; each `ItemIn` has quantity, `SupplierPartID`, `UnitPrice`+currency, `Description`, `UnitOfMeasure`, `Classification`@domain; **single currency** (mixed-currency is an error unless the supplier allows it); **Total consistency** (sum of line totals); an **empty cart** is explained rather than flagged (cancelled, emptied, or unchanged with `Status 204`); items returned for an `inspect` session or beside a `204`; a `SharedSecret` travelling through the browser |
+| **OrderRequest** | `orderID`/`orderDate` (and its format)/`Total`; **`type`** is `new`/`update`/`delete`; an `update` or `delete` carries a **`DocumentReference`** to the previous OrderRequest and a rising **`orderVersion`**; `ShipTo`/`BillTo` present **and complete** (an `addressID` or a postal Street/City — an empty block is flagged); `Contact@role`; each `ItemOut`; **single currency** (as above); **attachment `cid:` resolution** (see below) |
 | **OrderResponse** | `Status` code present / not an error |
 
 > Note: full cXML DTD validation would require a native validating XML parser,
 > which would hurt `npx` portability. Instead the tool does well-formedness plus
 > the thorough field-level rules above — the high-value half of the linter.
+> The documents the tool itself sends **are** checked against the real DTD
+> during development, for every DTD version a buyer profile declares (1.2.008 to
+> 1.2.045) and the current 1.2.072 — see the
+> [Test strategy](https://slawomir-szostak.github.io/punchout-simulator/test-strategy_en.html).
 
 ### The dangling-`cid` attachment test
 
@@ -187,6 +208,12 @@ receiver detects the missing attachment. `<Comments>` (and therefore
   Ariba/Coupa receivers expect. Switch it in the connection editor to exercise
   either ingestion path; the built-in mock supplier (Mode B) decodes whichever
   it receives. Defaults to `binary`.
+- **Change or cancel an order.** Once an order has been accepted, *Change
+  order…* and *Cancel order…* build the follow-up OrderRequest the standard
+  defines: the same `orderID`, `type="update"` or `type="delete"`, the next
+  `orderVersion`, and a `DocumentReference` to the previous document. Edit it
+  like any other order before sending. The mock supplier checks the chain and
+  answers under the order number it first acknowledged.
 - The flow is a **persistent per-connection session**: switching between the
   Flow and Settings tabs (or connections) keeps your in-progress order, and you
   can **edit and re-send** after a supplier rejection. "New session" starts a
@@ -219,8 +246,13 @@ SetupRequest → catalog → cart → OrderRequest → OrderResponse. The **Sess
 The built-in **mock supplier honours these on the receiving side too**: an
 `edit` pre-fills the catalog quantities from the carried `ItemOut` (items it
 doesn't list appear as extra "from cart" rows), and an `inspect` shows the
-item(s) read-only and returns them unchanged — so the full round-trip is
-exercisable end-to-end against the built-in mock.
+item(s) read-only and returns **no items** — as the standard asks, since the
+buyer must ignore the item list of an inspect session anyway. The mock catalog
+also has a **Cancel** button, which ends the session with an empty cart and
+`Status 204`, and each supplier has a setting for the **`operationAllowed`** it
+returns with its carts. The tool reads every punchback the way the standard
+prescribes: an empty cart from a `create` session adds nothing, from an `edit`
+session deletes the items, and with `Status 204` leaves them as they were.
 
 Connections/Buyers/Suppliers/Products/Profiles remain under **Configure** — you set
 them up there, then run them from **Sessions**.

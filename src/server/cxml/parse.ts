@@ -112,34 +112,49 @@ export function getDocType(doc: ParsedDoc): DocType {
 
 // --- credential extraction ----------------------------------------------------
 
-function credentialOf(node: any): Credential | undefined {
-  const cred = node?.Credential;
-  if (!cred) return undefined;
-  const first = Array.isArray(cred) ? cred[0] : cred;
-  return {
-    domain: attr(first, "domain") ?? "",
-    identity: text(first?.Identity) ?? "",
-  };
+// From, To and Sender may each carry several Credential elements (the DTD says
+// `Credential+`): they identify one organization in different domains, e.g. a
+// DUNS number and a NetworkId. All of them are returned.
+function credentialsOf(node: any): Credential[] {
+  return asArray(node?.Credential)
+    .filter((c) => c != null)
+    .map((c) => ({ domain: attr(c, "domain") ?? "", identity: text(c?.Identity) ?? "" }));
 }
 
 export interface HeaderCredentials {
+  /** The first credential of each party (kept for callers that need just one). */
   from?: Credential;
   to?: Credential;
   sender?: Credential;
   sharedSecret?: string;
+  /** Every credential of each party, in document order. */
+  fromAll: Credential[];
+  toAll: Credential[];
+  senderAll: Credential[];
 }
 
 export function getHeaderCredentials(doc: ParsedDoc): HeaderCredentials {
   const header = root(doc)?.Header;
-  if (!header) return {};
-  const senderCred = header.Sender?.Credential;
-  const senderFirst = Array.isArray(senderCred) ? senderCred[0] : senderCred;
+  if (!header) return { fromAll: [], toAll: [], senderAll: [] };
+  const fromAll = credentialsOf(header.From);
+  const toAll = credentialsOf(header.To);
+  const senderAll = credentialsOf(header.Sender);
+  // The secret sits on whichever Sender credential authenticates the sender.
+  const withSecret = asArray(header.Sender?.Credential).find((c) => text(c?.SharedSecret) != null);
   return {
-    from: credentialOf(header.From),
-    to: credentialOf(header.To),
-    sender: credentialOf(header.Sender),
-    sharedSecret: text(senderFirst?.SharedSecret),
+    from: fromAll[0],
+    to: toAll[0],
+    sender: senderAll[0],
+    sharedSecret: text(withSecret?.SharedSecret),
+    fromAll,
+    toAll,
+    senderAll,
   };
+}
+
+/** The credential in `list` that equals one of `known`, if any. */
+export function matchCredential(list: Credential[], known: Array<Credential | undefined>): Credential | undefined {
+  return list.find((c) => known.some((k) => !!k && k.domain === c.domain && k.identity === c.identity));
 }
 
 export function getPayloadId(doc: ParsedDoc): string | undefined {
@@ -291,6 +306,33 @@ export function parseSetupItems(doc: ParsedDoc): SetupItems {
   };
 }
 
+/** Message/Status/@code of a punchback (e.g. "204" for a cancelled session). */
+export function getMessageStatusCode(doc: ParsedDoc): string | undefined {
+  return attr(root(doc)?.Message?.Status, "code");
+}
+
+/** The identifying attributes of an OrderRequest, for change-order handling. */
+export interface OrderInfo {
+  payloadId?: string;
+  orderId?: string;
+  /** OrderRequestHeader/@type; the DTD default is "new". */
+  type: string;
+  orderVersion?: string;
+  /** DocumentReference/@payloadID, present on update / delete. */
+  documentReference?: string;
+}
+
+export function getOrderInfo(doc: ParsedDoc): OrderInfo {
+  const header = root(doc)?.Request?.OrderRequest?.OrderRequestHeader;
+  return {
+    payloadId: getPayloadId(doc),
+    orderId: attr(header, "orderID"),
+    type: attr(header, "type") ?? "new",
+    orderVersion: attr(header, "orderVersion"),
+    documentReference: attr(header?.DocumentReference, "payloadID"),
+  };
+}
+
 export function parseCart(doc: ParsedDoc): Cart {
   const pom = root(doc)?.Message?.PunchOutOrderMessage;
   const sessionId = text(pom?.BuyerCookie) ?? "";
@@ -300,6 +342,7 @@ export function parseCart(doc: ParsedDoc): Cart {
   return {
     sessionId,
     operationAllowed: attr(headerNode, "operationAllowed"),
+    statusCode: getMessageStatusCode(doc),
     total:
       total.amount != null && total.currency
         ? { amount: total.amount, currency: total.currency }

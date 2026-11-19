@@ -32,7 +32,7 @@ call the real implementations on temporary data directories.
 
 All tests live in `test/**/*.test.ts` and run under **Vitest** (`environment:
 node`, 20-second timeout, one process-isolated environment per file). The suite
-is currently 22 files across four layers:
+is currently 24 files across four layers, one of them opt-in:
 
 ```plantuml
 @startuml test-layers
@@ -40,7 +40,7 @@ is currently 22 files across four layers:
 title Test layers (bottom = most tests, fastest)
 
 rectangle "Integration over real HTTP\nintegration.test.ts — full Mode-A roundtrip,\nephemeral port, seeded demo data" as L4
-rectangle "HTTP app-level (no sockets)\nsecurity / rate-limit / static / backup / hardening / duplicate —\nHono app.request() against the real app" as L3
+rectangle "HTTP app-level (no sockets)\nsecurity / rate-limit / static / backup / hardening /\nduplicate / standard —\nHono app.request() against the real app" as L3
 rectangle "Store & persistence\nmigrations / products / profiles /\nlog-dedup / log-summary / cart-store" as L2
 rectangle "Pure units\ncXML core: build / parse / validate / multipart / xml-format\nhelpers: csv / geo · proxy: proxy / proxy-detect (fixtures)" as L1
 
@@ -89,6 +89,12 @@ routing, no network:
   BuyerCookies never sharing a log file. It runs in **its own
   file** so the global runtime token cannot leak into other suites (Vitest
   isolates files).
+- `standard.test.ts` — behaviour taken from the cXML DTD and Reference Guide:
+  date-time form, DOCTYPE and `xml:lang` rules, the element order of the tool's
+  own documents, change and cancel orders (the `DocumentReference` chain and
+  `orderVersion`), several credentials per party, `operationAllowed`, and how an
+  empty cart is read for each operation — including the mock supplier's Cancel
+  button and the buyer side keeping an inspected cart.
 - `rate-limit.test.ts` and `static.test.ts` — abuse limits (per-client and
   global when exposed, the looser global cap on localhost) and SPA serving.
 - `backup.test.ts` — configuration export/import: secrets blanked unless asked
@@ -133,6 +139,32 @@ traffic takes — including the loopback proxy bypass.
 - **File-level isolation as a feature.** Global runtime state (the API token)
   is scoped by putting the suite that sets it in its own file, leaning on
   Vitest's per-file isolation instead of teardown discipline.
+
+## Conformance to the cXML DTD
+
+`dtd-conformance.test.ts` builds every document the tool can produce — setup
+requests for each operation, new / update / delete orders, with attachments,
+contacts and extrinsics, both responses, and full, empty and cancelled
+punchbacks — and validates each against the **real cXML DTD** with `xmllint`.
+
+It is **opt-in**. The DTD belongs to the cXML project and is not redistributed
+in this repository, and the published package deliberately has no native
+validator, so the suite runs only when pointed at a local copy:
+
+```bash
+CXML_DTD=/path/to/cXML/1.2.072/cXML.dtd npm test
+```
+
+Without the variable (in CI, for instance) its tests are reported as skipped.
+The DTD version is read from the path and the documents are built *for that
+version*, so the suite is meant to be run once per version a buyer profile
+declares — 1.2.008, 1.2.011, 1.2.014, 1.2.023, 1.2.040, 1.2.045 — and once for
+the current 1.2.072. That is how the two version-dependent attributes
+(`addressIDDomain`, `orderVersion`) were found. Download the DTDs from
+[cxml.org](https://cxml.org/downloads.html); older versions are at
+`http://xml.cxml.org/schemas/cXML/<version>/cXML.dtd`.
+
+Run it after any change to `build.ts`.
 
 ## Gates
 

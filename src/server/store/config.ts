@@ -246,17 +246,22 @@ export function resolveConnection(id: string): ResolvedConnection | undefined {
   return { connection, buyer, supplier };
 }
 
-/** Find the connection (if any) linking a supplier to a buyer with `from`. */
+/**
+ * Find the connection (if any) linking a supplier to the buyer a document came
+ * from. `from` may be the whole list of From credentials: a buyer may identify
+ * itself in several domains, and any one of them matching is a match.
+ */
 export function findConnectionBySupplierAndBuyerIdentity(
   supplierId: string,
-  from: Credential | undefined,
+  from: Credential | Credential[] | undefined,
 ): ResolvedConnection | undefined {
   const d = requireDb();
+  const candidates = from == null ? [] : Array.isArray(from) ? from : [from];
   for (const connection of d.data.connections) {
     if (connection.supplierId !== supplierId) continue;
     const buyer = getBuyer(connection.buyerId);
     if (!buyer) continue;
-    if (from && buyer.identity.domain === from.domain && buyer.identity.identity === from.identity) {
+    if (candidates.some((c) => buyer.identity.domain === c.domain && buyer.identity.identity === c.identity)) {
       const supplier = getSupplier(supplierId);
       if (supplier) return { connection, buyer, supplier };
     }

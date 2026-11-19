@@ -25,6 +25,14 @@ import type {
 // parser (which would hurt `npx` portability — spec section 6), so we do
 // well-formedness via fast-xml-parser plus thorough field-level rules, which
 // is the high-value half of the linter for sellers checking their own output.
+//
+// The rules below are written against the cXML 1.2.072 DTD and the cXML
+// Reference Guide. Severity follows one convention:
+//   error   — the DTD requires it (a required attribute or element, an
+//             enumerated value) or the transaction cannot be processed;
+//   warning — the Reference Guide says "must"/"should" but a receiver can
+//             usually still process the document (date formats, DOCTYPE);
+//   info    — permitted but deprecated or merely worth knowing.
 
 /** The credentials/auth expected for this exchange, resolved from a connection. */
 export interface ExpectedCredentials {
@@ -48,6 +56,25 @@ export interface ValidationContext {
    * Resolved from the supplier involved in the exchange.
    */
   allowMixedCurrency?: boolean;
+  /**
+   * PunchOutSetupRequest/@operation of the session a punchback belongs to. Decides
+   * how an empty or non-empty cart must be read (Reference Guide, "Empty
+   * Shopping Carts").
+   */
+  setupOperation?: string;
+  /**
+   * The most recent earlier OrderRequest for the same orderID, when the caller
+   * can know it: `null` means "none on record", `undefined` "not checked".
+   * An update/delete must reference it through DocumentReference.
+   */
+  priorOrder?: { payloadId?: string; orderVersion?: number } | null;
+  /** DTD version the sender's platform profile uses for this document type. */
+  expectedDtdVersion?: string;
+  /**
+   * For a setup arriving at the mock supplier: the operationAllowed that
+   * supplier returns with its carts, to flag an edit/inspect it never permitted.
+   */
+  supplierOperationAllowed?: string;
 }
 
 class Issues {
@@ -97,9 +124,15 @@ function checkGeneral(doc: ParsedDoc, ctx: ValidationContext, issues: Issues, do
     );
   }
 
-  if (!getTimestamp(doc)) {
+  const timestamp = getTimestamp(doc);
+  if (!timestamp) {
     issues.error("missing-timestamp", "cXML/@timestamp is missing", "cXML/@timestamp");
+  } else {
+    checkDateTime(timestamp, "timestamp", "cXML/@timestamp", issues);
   }
+
+  checkDoctype(doc, ctx, issues);
+  checkXmlLang(doc, issues);
 
   if (!ctx.expected) return;
   // Only requests and the punchback carry a <Header> with From/To/Sender by spec.
@@ -110,29 +143,148 @@ function checkGeneral(doc: ParsedDoc, ctx: ValidationContext, issues: Issues, do
   if (!carriesHeader) return;
   const exp = ctx.expected;
   const creds = getHeaderCredentials(doc);
+  // A party may carry several credentials — one organization in different
+  // domains. Reference Guide, "Multiple Credentials": validate every credential
+  // whose domain we recognize and reject a mismatch; reject two credentials of
+  // the same domain with different values. Credentials in domains we don't
+  // know are not ours to judge.
+  const knownDomains = new Set(
+    [exp.from, exp.to, exp.sender].filter((k): k is Credential => !!k).map((k) => k.domain),
+  );
 
-  for (const [name, c] of [
-    ["From", creds.from],
-    ["To", creds.to],
-    ["Sender", creds.sender],
+  for (const [name, list] of [
+    ["From", creds.fromAll],
+    ["To", creds.toAll],
+    ["Sender", creds.senderAll],
   ] as const) {
-    if (!c) {
-      issues.warn("missing-credential", `Header/${name} credential is missing`, `cXML/Header/${name}`);
+    const path = `cXML/Header/${name}`;
+    if (list.length === 0) {
+      issues.warn("missing-credential", `Header/${name} credential is missing`, path);
       continue;
     }
-    if (!c.domain) {
-      issues.warn("credential-domain", `Header/${name}/Credential/@domain is empty`, `cXML/Header/${name}`);
+    const seen = new Map<string, string>();
+    for (const c of list) {
+      if (!c.domain) issues.warn("credential-domain", `Header/${name}/Credential/@domain is empty`, path);
+      if (!c.identity) issues.warn("credential-identity", `Header/${name}/Credential/Identity is empty`, path);
+      if (!c.domain || !c.identity) continue;
+      const earlier = seen.get(c.domain);
+      if (earlier != null && earlier !== c.identity) {
+        issues.error(
+          "credential-domain-conflict",
+          `Header/${name} has two credentials in domain "${c.domain}" with different identities (${earlier}, ${c.identity})`,
+          path,
+        );
+      }
+      seen.set(c.domain, c.identity);
     }
-    if (!c.identity) {
-      issues.warn("credential-identity", `Header/${name}/Credential/Identity is empty`, `cXML/Header/${name}`);
-    }
-    if (c.domain && c.identity && !credKnown(c, exp)) {
+    const complete = list.filter((c) => c.domain && c.identity);
+    const recognized = complete.filter((c) => knownDomains.has(c.domain));
+    // Nothing in a domain we know: judge the party by what it did send.
+    for (const c of recognized.length > 0 ? recognized : complete) {
+      if (credKnown(c, exp)) continue;
       issues.warn(
         "credential-mismatch",
         `Header/${name} (${c.domain}/${c.identity}) does not match any identity configured on the connection`,
-        `cXML/Header/${name}`,
+        path,
       );
     }
+  }
+}
+
+// --- format checks -------------------------------------------------------------
+
+const DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?$/;
+
+// cXML dates and times use the restricted ISO 8601 subset of the W3C "Date and
+// Time Formats" note: a complete date plus hours, minutes and seconds, in local
+// time with a numeric offset from UTC. The DTD types these `datetime.tz` ("Time
+// zone is required"), and the Reference Guide adds that the "Z" designator is
+// not allowed.
+function checkDateTime(value: string, what: string, path: string, issues: Issues): void {
+  const m = DATE_TIME.exec(value.trim());
+  if (!m || Number.isNaN(Date.parse(m[2] ? value.trim() : `${value.trim()}Z`))) {
+    issues.error(
+      `${what}-format`,
+      `${path} "${value}" is not an ISO 8601 date-time (expected YYYY-MM-DDThh:mm:ss±hh:mm)`,
+      path,
+    );
+    return;
+  }
+  if (!m[2]) {
+    issues.warn(`${what}-no-timezone`, `${path} "${value}" has no time zone; cXML requires an offset from UTC (e.g. -08:00)`, path);
+  } else if (m[2] === "Z") {
+    issues.warn(`${what}-utc-designator`, `${path} "${value}" uses the "Z" designator; cXML requires a numeric offset from UTC (e.g. +00:00)`, path);
+  }
+}
+
+const DOCTYPE = /<!DOCTYPE\s+(\S+)(?:\s+SYSTEM\s+(["'])(.*?)\2)?/;
+const CXML_DTD_URL = /^https?:\/\/xml\.cxml\.org\/schemas\/cXML\/(\d+\.\d+\.\d+)\/[A-Za-z]+\.dtd$/;
+
+// "The second line in cXML documents must contain the DOCTYPE document type
+// declaration" (Reference Guide). It names the DTD version the sender built
+// the document against, which is how a receiver knows what to expect.
+function checkDoctype(doc: ParsedDoc, ctx: ValidationContext, issues: Issues): void {
+  const m = DOCTYPE.exec(doc.raw);
+  if (!m) {
+    issues.warn("missing-doctype", "The document has no <!DOCTYPE cXML SYSTEM \"…/cXML.dtd\"> declaration", "DOCTYPE");
+    return;
+  }
+  const url = m[3] ?? "";
+  const version = CXML_DTD_URL.exec(url)?.[1];
+  if (m[1] !== "cXML" || !version) {
+    issues.warn(
+      "doctype-unrecognized",
+      `DOCTYPE does not reference a cXML DTD at http://xml.cxml.org/schemas/cXML/<version>/ (found ${m[1]}${url ? ` "${url}"` : ""})`,
+      "DOCTYPE",
+    );
+    return;
+  }
+  if (ctx.expectedDtdVersion && version !== ctx.expectedDtdVersion) {
+    issues.info(
+      "dtd-version-differs",
+      `Document declares cXML ${version}; the sender's platform profile uses ${ctx.expectedDtdVersion} for this document type`,
+      "DOCTYPE",
+    );
+  }
+}
+
+// Elements whose xml:lang the DTD marks #REQUIRED, and those where it is
+// #IMPLIED but "will be required in a future version (leaving it out is
+// deprecated)".
+const LANG_REQUIRED = ["Description", "Name"];
+const LANG_RECOMMENDED = ["Comments", "Status"];
+
+function checkXmlLang(doc: ParsedDoc, issues: Issues): void {
+  const missing = new Map<string, number>();
+  const visit = (key: string, node: any): void => {
+    for (const n of asArray(node)) {
+      if (LANG_REQUIRED.includes(key) || LANG_RECOMMENDED.includes(key)) {
+        if (attr(n, "xml:lang") == null) missing.set(key, (missing.get(key) ?? 0) + 1);
+      }
+      if (n && typeof n === "object") {
+        for (const [k, v] of Object.entries(n)) {
+          // Extrinsic and BuyerCookie are declared ANY: their content is opaque.
+          if (!k.startsWith("@_") && k !== "#text" && k !== "Extrinsic" && k !== "BuyerCookie") visit(k, v);
+        }
+      }
+    }
+  };
+  const cxml = root(doc);
+  if (!cxml || typeof cxml !== "object") return;
+  for (const [k, v] of Object.entries(cxml)) if (!k.startsWith("@_") && k !== "#text") visit(k, v);
+
+  for (const name of LANG_REQUIRED) {
+    const n = missing.get(name);
+    if (n) issues.error(`${name.toLowerCase()}-missing-xml-lang`, `${n} <${name}> element(s) lack the required xml:lang attribute`, `…/${name}/@xml:lang`);
+  }
+  const recommended = LANG_RECOMMENDED.filter((name) => missing.has(name));
+  if (attr(cxml, "xml:lang") == null) recommended.unshift("cXML");
+  if (recommended.length > 0) {
+    issues.info(
+      "xml-lang-recommended",
+      `xml:lang is missing on ${recommended.map((r) => `<${r}>`).join(", ")} — optional today, but leaving it out is deprecated`,
+      "@xml:lang",
+    );
   }
 }
 
@@ -226,9 +378,61 @@ function checkPunchback(doc: ParsedDoc, ctx: ValidationContext, issues: Issues) 
     issues.error("missing-total-currency", "Total/Money/@currency is missing", "cXML/.../Total/Money");
   }
 
+  // operationAllowed is #REQUIRED and enumerated; quoteStatus is enumerated.
+  const allowed = attr(headerNode, "operationAllowed");
+  if (headerNode != null && !["create", "inspect", "edit"].includes(allowed ?? "")) {
+    issues.error(
+      "pom-invalid-operationallowed",
+      allowed == null
+        ? "PunchOutOrderMessageHeader/@operationAllowed is missing (required: create, inspect or edit)"
+        : `PunchOutOrderMessageHeader/@operationAllowed="${allowed}" is not one of create, inspect, edit`,
+      "cXML/.../PunchOutOrderMessageHeader/@operationAllowed",
+    );
+  }
+  const quoteStatus = attr(headerNode, "quoteStatus");
+  if (quoteStatus != null && quoteStatus !== "pending" && quoteStatus !== "final") {
+    issues.error("pom-invalid-quotestatus", `PunchOutOrderMessageHeader/@quoteStatus="${quoteStatus}" is not one of pending, final`, "cXML/.../PunchOutOrderMessageHeader/@quoteStatus");
+  }
+
+  // "The authentication element should not be sent within Message documents
+  // transported via an end user's browser" (DTD, Credential).
+  if (getHeaderCredentials(doc).sharedSecret != null) {
+    issues.warn(
+      "sharedsecret-in-message",
+      "The punchback carries a SharedSecret. It travels through the user's browser, so authentication elements should not be sent in a Message",
+      "cXML/Header/Sender/Credential/SharedSecret",
+    );
+  }
+
+  // An empty cart is legitimate; what it means depends on the session's
+  // operation and on Message/Status (Reference Guide, "Empty Shopping Carts").
   const items = asArray(pom.ItemIn);
+  const statusCode = attr(root(doc)?.Message?.Status, "code");
+  const op = ctx.setupOperation;
+  if (statusCode === "204" && items.length > 0) {
+    issues.warn(
+      "status-204-with-items",
+      "Message/Status is 204 (session ended without change) but the cart contains ItemIn elements; a 204 punchback should carry none",
+      "cXML/Message/Status",
+    );
+  }
+  if (op === "inspect" && items.length > 0) {
+    issues.warn(
+      "inspect-returned-items",
+      'The session was operation="inspect": the supplier should return no ItemIn elements, and the buyer must ignore the ones sent',
+      "cXML/.../PunchOutOrderMessage",
+    );
+  }
   if (items.length === 0) {
-    issues.warn("empty-cart", "PunchOutOrderMessage contains no ItemIn elements", "cXML/.../PunchOutOrderMessage");
+    const meaning =
+      op === "edit"
+        ? statusCode === "204"
+          ? "the user cancelled an edit session without change: the requisition keeps its items"
+          : "an edit session returned empty: its existing items must be deleted from the requisition"
+        : op === "inspect"
+          ? "expected for an inspect session"
+          : "the session was cancelled: no items are added to the requisition";
+    issues.info("empty-cart", `PunchOutOrderMessage contains no ItemIn elements — ${meaning}`, "cXML/.../PunchOutOrderMessage");
   }
 
   let lineSum = 0;
@@ -360,9 +564,13 @@ function checkOrderRequest(doc: ParsedDoc, ctx: ValidationContext, issues: Issue
   if (!attr(header, "orderID")) {
     issues.error("missing-orderid", "OrderRequestHeader/@orderID is missing", "cXML/.../OrderRequestHeader");
   }
-  if (!attr(header, "orderDate")) {
+  const orderDate = attr(header, "orderDate");
+  if (!orderDate) {
     issues.error("missing-orderdate", "OrderRequestHeader/@orderDate is missing", "cXML/.../OrderRequestHeader");
+  } else {
+    checkDateTime(orderDate, "orderdate", "OrderRequestHeader/@orderDate", issues);
   }
+  checkOrderType(header, ctx, issues);
   if (header?.Total?.Money == null) {
     issues.error("missing-order-total", "OrderRequestHeader/Total/Money is missing", "cXML/.../OrderRequestHeader/Total");
   }
@@ -442,6 +650,70 @@ function checkOrderRequest(doc: ParsedDoc, ctx: ValidationContext, issues: Issue
   }
 }
 
+// OrderRequestHeader/@type is new (the default), update or delete. "Update and
+// delete orders must use the DocumentReference element with the payloadID to
+// refer to the original purchase order" — more precisely, to the most recent
+// OrderRequest for that order, forming a chain back to the type="new" one.
+// orderVersion is 1 for the original and goes up by 1 per change order.
+function checkOrderType(header: any, ctx: ValidationContext, issues: Issues): void {
+  const base = "cXML/.../OrderRequestHeader";
+  const type = attr(header, "type") ?? "new";
+  if (!["new", "update", "delete"].includes(type)) {
+    issues.error("order-invalid-type", `OrderRequestHeader/@type="${type}" is not one of new, update, delete`, `${base}/@type`);
+    return;
+  }
+  const rawVersion = attr(header, "orderVersion");
+  const version = rawVersion == null ? undefined : Number(rawVersion);
+  if (rawVersion != null && !Number.isFinite(version)) {
+    issues.error("order-version-format", `OrderRequestHeader/@orderVersion="${rawVersion}" is not a number`, `${base}/@orderVersion`);
+  }
+  const docRef = attr(header?.DocumentReference, "payloadID");
+
+  if (type === "new") {
+    if (header?.DocumentReference != null) {
+      issues.info("order-unexpected-documentreference", 'DocumentReference is only needed when @type is "update" or "delete"', `${base}/DocumentReference`);
+    }
+    if (version != null && Number.isFinite(version) && version !== 1) {
+      issues.warn("order-version", `A new order should carry orderVersion 1 (found ${rawVersion})`, `${base}/@orderVersion`);
+    }
+    return;
+  }
+
+  if (!docRef) {
+    issues.error(
+      "order-missing-documentreference",
+      `An OrderRequest with type="${type}" must reference the previous OrderRequest through DocumentReference/@payloadID`,
+      `${base}/DocumentReference`,
+    );
+  }
+  if (version == null) {
+    issues.warn("order-version", `A change order (type="${type}") should carry orderVersion (2 for the first change)`, `${base}/@orderVersion`);
+  } else if (Number.isFinite(version) && version < 2) {
+    issues.warn("order-version", `A change order (type="${type}") should have an orderVersion above 1 (found ${rawVersion})`, `${base}/@orderVersion`);
+  }
+
+  const prior = ctx.priorOrder;
+  if (prior === undefined) return; // the caller has no order history to compare with
+  if (prior === null) {
+    issues.warn("order-no-prior", `type="${type}" refers to an order this endpoint has no earlier OrderRequest for`, base);
+    return;
+  }
+  if (docRef && prior.payloadId && docRef !== prior.payloadId) {
+    issues.warn(
+      "order-documentreference-stale",
+      `DocumentReference points at payloadID "${docRef}", but the most recent OrderRequest for this order is "${prior.payloadId}"`,
+      `${base}/DocumentReference`,
+    );
+  }
+  if (version != null && Number.isFinite(version) && prior.orderVersion != null && version <= prior.orderVersion) {
+    issues.warn(
+      "order-version",
+      `orderVersion ${rawVersion} does not exceed the previous version ${prior.orderVersion}`,
+      `${base}/@orderVersion`,
+    );
+  }
+}
+
 function checkOrderResponse(doc: ParsedDoc, issues: Issues) {
   const status = getStatus(doc);
   if (!status.code) {
@@ -477,7 +749,26 @@ export function validateDocument(raw: string, ctx: ValidationContext = {}): Vali
       }
       // edit/inspect reopen prior items, so they should carry ItemOut; create
       // starts an empty cart, so ItemOut there is unexpected.
-      const op = attr(setup, "operation") ?? "create";
+      // @operation is #REQUIRED: create | inspect | edit | source.
+      const rawOp = attr(setup, "operation");
+      if (setup != null && !["create", "inspect", "edit", "source"].includes(rawOp ?? "")) {
+        issues.error(
+          "setup-invalid-operation",
+          rawOp == null
+            ? "PunchOutSetupRequest/@operation is missing (required: create, inspect, edit or source)"
+            : `PunchOutSetupRequest/@operation="${rawOp}" is not one of create, inspect, edit, source`,
+          "cXML/.../PunchOutSetupRequest/@operation",
+        );
+      }
+      const op = rawOp ?? "create";
+      const granted = ctx.supplierOperationAllowed;
+      if (granted && ((op === "edit" && granted !== "edit") || (op === "inspect" && granted === "create"))) {
+        issues.warn(
+          "setup-operation-not-allowed",
+          `operation="${op}" reopens a cart, but this supplier returns its carts with operationAllowed="${granted}", which does not permit it`,
+          "cXML/.../PunchOutSetupRequest/@operation",
+        );
+      }
       const hasItems = asArray(setup?.ItemOut).length > 0;
       if ((op === "edit" || op === "inspect") && !hasItems) {
         issues.warn("setup-missing-items", `operation="${op}" usually carries the prior item(s) as ItemOut, but none are present`, "cXML/.../PunchOutSetupRequest");

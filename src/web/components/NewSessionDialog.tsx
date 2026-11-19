@@ -35,6 +35,8 @@ export function NewSessionDialog({
   const [operation, setOperation] = useState<"create" | "edit" | "inspect">("create");
   const [sourceId, setSourceId] = useState("");
   const [sourceCart, setSourceCart] = useState<CartItem[] | null>(null);
+  // operationAllowed the supplier returned with the source cart, if any.
+  const [sourceAllows, setSourceAllows] = useState<string | undefined>(undefined);
   const [itemIdx, setItemIdx] = useState<number>(-1); // -1 = all items
   const ref = useRef<HTMLDivElement>(null);
 
@@ -58,12 +60,23 @@ export function NewSessionDialog({
   // Load the chosen source session's cart so we can carry / pick its items.
   useEffect(() => {
     setSourceCart(null);
+    setSourceAllows(undefined);
     setItemIdx(-1);
     if (!sourceId || operation === "create") return;
-    api.getCart(sourceId).then((cart) => setSourceCart(cart?.items ?? [])).catch(() => setSourceCart([]));
+    api
+      .getCart(sourceId)
+      .then((cart) => {
+        setSourceCart(cart?.items ?? []);
+        setSourceAllows(cart?.operationAllowed);
+      })
+      .catch(() => setSourceCart([]));
   }, [sourceId, operation]);
 
   const needsSource = operation === "edit" || operation === "inspect";
+  // The supplier decides what may be done with a cart later: operationAllowed
+  // "create" permits no reopening, "inspect" a read-only one, "edit" both.
+  const notAllowed =
+    needsSource && sourceAllows != null && ((operation === "edit" && sourceAllows !== "edit") || (operation === "inspect" && sourceAllows === "create"));
   const canCreate =
     !!connectionId && (!needsSource || (!!sourceId && (sourceCart?.length ?? 0) > 0));
 
@@ -152,6 +165,13 @@ export function NewSessionDialog({
                     ))}
                   </select>
                 </Field>
+              )}
+              {notAllowed && (
+                <p className="hint warn-hint">
+                  The supplier returned that cart with <code>operationAllowed="{sourceAllows}"</code>, which does not
+                  permit a later <code>{operation}</code>. A real procurement system would not offer it — you can
+                  still start the session to see how the supplier reacts.
+                </p>
               )}
               {sourceId && sourceCart != null && sourceCart.length === 0 && (
                 <p className="hint">That session has no cart items to carry.</p>

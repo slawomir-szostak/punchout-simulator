@@ -5,6 +5,45 @@ corresponding [GitHub Release](https://github.com/slawomir-szostak/punchout-simu
 Versions follow [Semantic Versioning](https://semver.org); while the project is
 pre-1.0, new features may arrive in patch releases.
 
+## v0.12.0 — Built against the cXML standard: change orders, cancelled sessions, operationAllowed
+
+*Released 2026-11-19*
+
+Minor release. Brings the tool in line with the cXML standard and adds the parts of the PunchOut exchange it was missing: change and cancel orders, cancelled sessions, `operationAllowed`, and several credentials per party.
+
+Until now the cXML handling was written from experience of what procurement platforms send. For this release it was rebuilt against the published standard — the cXML 1.2.072 DTD and the cXML Reference Guide — and the first thing that turned up was that the tool's own documents were not valid cXML. Phone numbers lacked the country and area code elements the DTD requires. Item-level attachment comments sat inside `ItemDetail` instead of after it. Responses carried a `Header` the DTD does not allow. The children of `PunchOutSetupRequest` were in the wrong order. Timestamps ended in `Z`, which the Reference Guide forbids. And two attributes were sent to buyer profiles whose declared DTD version does not define them. All of that is fixed: every document the tool builds now validates against the real DTD, for each DTD version a buyer profile declares (1.2.008 to 1.2.045) and for the current one.
+
+### Change and cancel orders
+- After a supplier accepts an order, **Change order…** and **Cancel order…** build the follow-up the standard defines: the same `orderID`, `type="update"` or `type="delete"`, the next `orderVersion`, and a `DocumentReference` to the previous OrderRequest. The document opens in the editor before sending.
+- The mock supplier follows the chain: it answers a change with "updated to version 2" and a cancellation with "cancelled", under the order number it first acknowledged. It rejects an update or delete without a `DocumentReference`, and warns about a stale reference, a version that does not rise, or an order it has never seen.
+
+### Cancelled sessions and empty carts
+- The mock catalog has a **Cancel** button: an empty PunchOutOrderMessage with `Status 204`.
+- A returned cart is read the way the Reference Guide prescribes. Empty after `create`: cancelled, nothing added. Empty after `edit`: the items are deleted. Empty with `Status 204` after `edit`: nothing changes. After `inspect`: whatever came back is ignored. The session's cart panel says which case applies.
+
+### `operationAllowed`
+- Each supplier has a setting for the `operationAllowed` its carts are returned with, so you can check that a buyer system respects "this cart may not be edited".
+- The New session dialog warns when you start an `edit` or `inspect` from a cart whose supplier did not allow it. You can still start it, to see how the supplier reacts.
+
+### Several credentials per party
+- `From`, `To` and `Sender` may each carry more than one `Credential` (for example a NetworkID and a DUNS). All are read. One in a domain the connection knows must match; unknown domains are left alone; two different identities in one domain are an error. Previously only the first credential was read, so a match on the second was reported as a mismatch.
+
+### Validation
+- New checks: date-time format of `timestamp` and `orderDate`, DOCTYPE, `xml:lang`, `operationAllowed`, the setup `operation`, order `type` / `DocumentReference` / `orderVersion`, and a `SharedSecret` travelling in a punchback.
+- Severity now follows one rule. **Error:** the DTD requires it. **Warning:** the Reference Guide says "must" or "should", but a receiver can usually still process the document. **Info:** deprecated or simply worth knowing.
+
+### Behaviour changes
+- **Inspect returns no items.** The mock supplier used to echo the inspected items back; the standard says a supplier should return none.
+- **The mock supplier's default `operationAllowed` is now `edit`** (it was `create`), since it does reopen carts.
+- **The mock supplier's responses no longer have a `Header`.**
+- **More orders can be rejected.** The mock supplier rejects an order on any validation error, and there are new errors: an unparseable `timestamp` or `orderDate`, a `Description` or `Name` without `xml:lang`, an invalid order `type`, an update or delete without a `DocumentReference`.
+- **Timestamps** are written in local time with a UTC offset (`2026-01-01T10:00:00+01:00`) instead of UTC with `Z`.
+
+### For contributors
+- `test/dtd-conformance.test.ts` validates every built document against the real DTD with `xmllint`. It runs only when `CXML_DTD` points at a local copy of the DTD, which is not redistributed here.
+
+**Full Changelog**: https://github.com/slawomir-szostak/punchout-simulator/compare/v0.11.10...v0.12.0
+
 ## v0.11.10 — Virtual supplier: carts can't be redirected, sessions can't collide
 
 *Released 2026-11-18*

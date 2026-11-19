@@ -195,6 +195,13 @@ export interface Supplier {
    */
   allowMixedCurrency?: boolean;
   /**
+   * `PunchOutOrderMessageHeader/@operationAllowed` the mock supplier returns
+   * with a cart: the highest operation the buyer may later perform on it.
+   * `create` permits no reopening, `inspect` a read-only one, `edit` both.
+   * Defaults to `edit`, since the mock catalog can reopen carts.
+   */
+  operationAllowed?: "create" | "inspect" | "edit";
+  /**
    * @deprecated Legacy inline catalog. Read only, for one-time migration into a
    * generated Product List (see store/config.ts). No longer written from the UI.
    */
@@ -331,9 +338,25 @@ export interface CartItem {
   manufacturerName?: string;
 }
 
+/**
+ * What a punchback means for the buyer's requisition, following the cXML
+ * Reference Guide ("Empty Shopping Carts"):
+ *  - `returned`  — the cart's items replace what the session had;
+ *  - `cancelled` — a `create` session ended with no items: nothing to add;
+ *  - `emptied`   — an `edit` session came back empty: its items are deleted;
+ *  - `unchanged` — an `edit` session ended with Status 204: keep the items as
+ *                  they were;
+ *  - `inspected` — an `inspect` session: whatever came back is ignored.
+ */
+export type CartOutcome = "returned" | "cancelled" | "emptied" | "unchanged" | "inspected";
+
 export interface Cart {
   sessionId: string; // BuyerCookie
   operationAllowed?: string;
+  /** Message/Status/@code of the punchback, when it carried one (e.g. "204"). */
+  statusCode?: string;
+  /** How the buyer must treat this punchback; set once the session's operation is known. */
+  outcome?: CartOutcome;
   total?: { amount: number; currency: string };
   items: CartItem[];
 }

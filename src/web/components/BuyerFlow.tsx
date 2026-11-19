@@ -166,7 +166,11 @@ export function BuyerFlow({ connection, session, cart, operation, sourceItems, o
   const attachmentMeta = () =>
     session.attachments.map((a) => ({ contentId: a.contentId, scope: a.scope }));
 
-  const buildOrder = async () => {
+  // Build the OrderRequest. `type` defaults to whatever the current document is,
+  // so "Rebuild from cart" keeps a change order a change order. An update or
+  // delete continues the order this session already sent: same orderID, the next
+  // orderVersion and a DocumentReference to the previous OrderRequest.
+  const buildOrder = async (type: FlowSession["orderType"] = session.orderType) => {
     if (!cart) return;
     setBusy(true);
     setError(null);
@@ -176,8 +180,11 @@ export function BuyerFlow({ connection, session, cart, operation, sourceItems, o
         items: cart.items,
         currency: cart.total?.currency ?? "USD",
         attachments: attachmentMeta(),
+        orderType: type,
       });
-      onChange({ orderXml: xml });
+      onChange({ orderXml: xml, orderType: type });
+      setOrderOpen(true);
+      setOrderCheck(null);
       setAttachmentsDirty(false);
     } catch (e) {
       setError(String(e));
@@ -353,6 +360,8 @@ export function BuyerFlow({ connection, session, cart, operation, sourceItems, o
         </h3>
         {!cart ? (
           <p className="hint">Waiting for a cart before building the OrderRequest.</p>
+        ) : cart.items.length === 0 ? (
+          <p className="hint">The session ended without items, so there is nothing to order.</p>
         ) : (
           <>
             <div className="attachments">
@@ -409,7 +418,7 @@ export function BuyerFlow({ connection, session, cart, operation, sourceItems, o
 
             {!session.orderXml && (
               <div className="step-actions">
-                <button className="btn-primary" onClick={buildOrder} disabled={busy}>
+                <button className="btn-primary" onClick={() => buildOrder("new")} disabled={busy}>
                   {busy ? "Working…" : "Build OrderRequest →"}
                 </button>
               </div>
@@ -440,15 +449,31 @@ export function BuyerFlow({ connection, session, cart, operation, sourceItems, o
                 )}
                 <div className="step-actions">
                   <button className={orderStatus === "done" ? "btn-secondary" : "btn-primary"} onClick={sendOrder} disabled={busy}>
-                    {busy ? "Working…" : session.orderResult ? "Re-send OrderRequest ↻" : "Send OrderRequest →"}
+                    {busy
+                      ? "Working…"
+                      : session.orderType === "update"
+                        ? "Send change order →"
+                        : session.orderType === "delete"
+                          ? "Send cancellation →"
+                          : session.orderResult
+                            ? "Re-send OrderRequest ↻"
+                            : "Send OrderRequest →"}
                   </button>
                   <button className="btn-secondary" onClick={() => validate("OrderRequest", session.orderXml, setOrderCheck)} disabled={busy || !session.orderXml}>
                     Validate
                   </button>
-                  <button className="btn-secondary" onClick={buildOrder} disabled={busy} title="Regenerate the document from the cart and the attachment list">
+                  <button className="btn-secondary" onClick={() => buildOrder()} disabled={busy} title="Regenerate the document from the cart and the attachment list">
                     Rebuild from cart
                   </button>
                 </div>
+                {session.orderType !== "new" && (
+                  <p className="hint">
+                    This is a <strong>{session.orderType === "update" ? "change order" : "cancellation"}</strong> (
+                    <code>type="{session.orderType}"</code>): it keeps the order's <code>orderID</code>, raises{" "}
+                    <code>orderVersion</code> and points at the previous OrderRequest through <code>DocumentReference</code>.
+                    {session.orderType === "update" && " Edit the quantities or lines above before sending."}
+                  </p>
+                )}
                 {orderCheck && (
                   <div className="precheck">
                     <span className="precheck-label">Pre-send validation</span>
@@ -469,6 +494,17 @@ export function BuyerFlow({ connection, session, cart, operation, sourceItems, o
               transportError={session.orderResult.transportError}
             />
             <ValidationSummary validations={[session.orderResult.request.validation, session.orderResult.response.validation]} />
+            {orderOk && cart && cart.items.length > 0 && (
+              <div className="step-actions">
+                <span className="hint">Follow up on this order:</span>
+                <button className="btn-secondary" onClick={() => buildOrder("update")} disabled={busy} title='Build an OrderRequest with type="update" for the order just sent'>
+                  Change order…
+                </button>
+                <button className="btn-secondary" onClick={() => buildOrder("delete")} disabled={busy} title='Build an OrderRequest with type="delete" for the order just sent'>
+                  Cancel order…
+                </button>
+              </div>
+            )}
           </div>
         )}
       </section>

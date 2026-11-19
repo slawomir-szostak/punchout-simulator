@@ -147,7 +147,7 @@ async function openSession(supplierId: string, cookie: string): Promise<void> {
   await app.request(`/sim/${supplierId}/punchout`, {
     method: "POST",
     headers: { "content-type": "text/xml" },
-    body: `<cXML payloadID="p@h" timestamp="t"><Header>
+    body: `<cXML payloadID="p@h" timestamp="2026-01-01T10:00:00+01:00"><Header>
       <From><Credential domain="DUNS"><Identity>1</Identity></Credential></From>
       <To><Credential domain="DUNS"><Identity>2</Identity></Credential></To>
       <Sender><Credential domain="DUNS"><Identity>1</Identity><SharedSecret>s</SharedSecret></Credential></Sender>

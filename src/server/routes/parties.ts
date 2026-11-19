@@ -109,6 +109,10 @@ function normalizeSupplier(body: any): SupplierInput {
     orderUrl: body?.orderUrl ? String(body.orderUrl) : undefined,
     productListIds,
     allowMixedCurrency: Boolean(body?.allowMixedCurrency),
+    operationAllowed:
+      body?.operationAllowed === "create" || body?.operationAllowed === "inspect" || body?.operationAllowed === "edit"
+        ? body.operationAllowed
+        : undefined,
   };
 }
 

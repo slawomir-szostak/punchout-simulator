@@ -15,6 +15,24 @@ export function escapeXml(value: string | number | undefined | null): string {
     .replace(/'/g, "&apos;");
 }
 
+/**
+ * A date-time in the form cXML requires: the restricted ISO 8601 subset of the
+ * W3C "Date and Time Formats" note, in local time with a numeric offset from
+ * UTC, e.g. `2015-04-14T13:36:00-08:00`. The "Z" designator is not allowed
+ * (cXML Reference Guide, "Date, Time, and Other Data Types"), which rules out
+ * `Date.prototype.toISOString()`.
+ */
+export function cxmlTimestamp(date: Date = new Date()): string {
+  const pad = (n: number) => String(Math.trunc(Math.abs(n))).padStart(2, "0");
+  const offsetMin = -date.getTimezoneOffset();
+  const sign = offsetMin >= 0 ? "+" : "-";
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+    `T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}` +
+    `${sign}${pad(offsetMin / 60)}:${pad(offsetMin % 60)}`
+  );
+}
+
 /** Build a cXML payloadID of the form `<timestamp>.<random>@<host>`. */
 export function makePayloadId(host: string, nowIso: string): string {
   return `${nowIso}.${nanoid(10)}@${host}`;
@@ -86,6 +104,22 @@ ${senderBlock(p.sender, p.sharedSecret, p.userAgent)}
 }
 
 const DEFAULT_DTD_VERSION = "1.2.045";
+
+// A platform profile may declare an old DTD version, and a document must only
+// use what that version defines. Attributes the builders emit that are newer
+// than the oldest profile DTD (found by validating against each version):
+const ADDRESS_ID_DOMAIN_SINCE = "1.2.025"; // Address/@addressIDDomain, Contact/@addressIDDomain
+const ORDER_VERSION_SINCE = "1.2.009"; // OrderRequestHeader/@orderVersion
+
+/** True when DTD `version` is at least `min` (both "major.minor.patch"). */
+export function dtdAtLeast(version: string | undefined, min: string): boolean {
+  const a = (version ?? DEFAULT_DTD_VERSION).split(".").map(Number);
+  const b = min.split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) > (b[i] ?? 0);
+  }
+  return true;
+}
 
 function doctype(version: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -175,14 +209,17 @@ ${classificationBlock(it, "          ")}
       </ItemOut>`;
 }
 
+// Child order is fixed by the DTD:
+//   PunchOutSetupRequest (BuyerCookie, Extrinsic*, BrowserFormPost?, Contact*,
+//                         SupplierSetup?, ShipTo?, SelectedItem?, ItemOut*)
 export function buildSetupRequest(o: SetupRequestOptions): string {
   const lang = o.lang ?? "en-US";
   const deployment = o.deploymentMode
     ? ` deploymentMode="${escapeXml(o.deploymentMode)}"`
     : "";
   const mode = o.addressMode ?? "full";
-  const shipTo = o.shipTo ? `\n${addressBlock("ShipTo", o.shipTo, mode)}` : "";
-  const contact = o.contact ? `\n${contactBlock(o.contact, mode, "      ")}` : "";
+  const shipTo = o.shipTo ? `\n${addressBlock("ShipTo", o.shipTo, mode, o.dtdVersion)}` : "";
+  const contact = o.contact ? `\n${contactBlock(o.contact, mode, "      ", o.dtdVersion)}` : "";
   const items = o.items && o.items.length > 0 ? `\n${o.items.map((it, i) => setupItemOut(it, i + 1)).join("\n")}` : "";
   const inner = `${header({
     from: o.from,
@@ -193,10 +230,10 @@ export function buildSetupRequest(o: SetupRequestOptions): string {
   })}
   <Request${deployment}>
     <PunchOutSetupRequest operation="${escapeXml(o.operation ?? "create")}">
-      <BuyerCookie>${escapeXml(o.buyerCookie)}</BuyerCookie>
+      <BuyerCookie>${escapeXml(o.buyerCookie)}</BuyerCookie>${extrinsicBlock(o.extrinsics, "      ")}
       <BrowserFormPost>
         <URL>${escapeXml(o.browserFormPostUrl)}</URL>
-      </BrowserFormPost>${extrinsicBlock(o.extrinsics, "      ")}${shipTo}${contact}${items}
+      </BrowserFormPost>${contact}${shipTo}${items}
     </PunchOutSetupRequest>
   </Request>`;
   return envelope(o.payloadId, o.timestamp, lang, inner, o.dtdVersion);
@@ -236,7 +273,18 @@ export interface OrderRequestOptions {
   dtdVersion?: string;
   userAgent?: string;
   extrinsics?: ExtrinsicVal[];
+  /** OrderRequestHeader/@type: a new order (default), a change, or a cancellation. */
+  type?: OrderType;
+  /** OrderRequestHeader/@orderVersion — 1 for the original, +1 per change order. */
+  orderVersion?: number;
+  /**
+   * payloadID of the most recent OrderRequest for this order. Required by the
+   * standard on `update` and `delete`, emitted as DocumentReference.
+   */
+  documentReferencePayloadId?: string;
 }
+
+export type OrderType = "new" | "update" | "delete";
 
 // --- Address / Contact emission ----------------------------------------------
 //
@@ -248,9 +296,10 @@ const wantsId = (m: AddressMode) => m === "id-only" || m === "both";
 const wantsPostal = (m: AddressMode) => m === "full" || m === "both";
 const hasPostal = (a: Address) => !!(a.deliverTo || a.street || a.city || a.state || a.postalCode);
 
-function idAttrs(a: Address, mode: AddressMode): string {
+function idAttrs(a: Address, mode: AddressMode, dtdVersion?: string): string {
   if (!wantsId(mode) || !a.addressId) return "";
-  return ` addressID="${escapeXml(a.addressId)}"${a.addressIdDomain ? ` addressIDDomain="${escapeXml(a.addressIdDomain)}"` : ""}`;
+  const domain = a.addressIdDomain && dtdAtLeast(dtdVersion, ADDRESS_ID_DOMAIN_SINCE) ? ` addressIDDomain="${escapeXml(a.addressIdDomain)}"` : "";
+  return ` addressID="${escapeXml(a.addressId)}"${domain}`;
 }
 
 function postalBlock(a: Address, indent: string): string {
@@ -263,24 +312,47 @@ ${indent}  <Country isoCountryCode="${escapeXml(a.countryIsoCode ?? "US")}">${es
 ${indent}</PostalAddress>`;
 }
 
+/**
+ * Split a free-form phone number into the three parts the DTD requires:
+ *   TelephoneNumber (CountryCode, AreaOrCityCode, Number, Extension?)
+ * An international number written with separators ("+48 12 345 67 89",
+ * "+1 (415) 555-0100") yields country code / area code / local number. Anything
+ * else goes whole into Number, with the other two elements present but empty.
+ */
+export function splitPhone(raw: string): { countryCode: string; areaCode: string; number: string } {
+  const s = raw.trim();
+  const groups = s.replace(/^\+/, "").split(/[^0-9]+/).filter(Boolean);
+  if (s.startsWith("+") && groups.length >= 3) {
+    return { countryCode: groups[0], areaCode: groups[1], number: groups.slice(2).join("") };
+  }
+  if (s.startsWith("+") && groups.length === 2) {
+    return { countryCode: groups[0], areaCode: "", number: groups[1] };
+  }
+  return { countryCode: "", areaCode: "", number: s };
+}
+
 function contactInfo(a: Address, indent: string): string {
   const email = a.email ? `\n${indent}<Email>${escapeXml(a.email)}</Email>` : "";
-  const phone = a.phone ? `\n${indent}<Phone><TelephoneNumber><Number>${escapeXml(a.phone)}</Number></TelephoneNumber></Phone>` : "";
+  let phone = "";
+  if (a.phone) {
+    const p = splitPhone(a.phone);
+    phone = `\n${indent}<Phone><TelephoneNumber><CountryCode isoCountryCode="${escapeXml(a.countryIsoCode ?? "US")}">${escapeXml(p.countryCode)}</CountryCode><AreaOrCityCode>${escapeXml(p.areaCode)}</AreaOrCityCode><Number>${escapeXml(p.number)}</Number></TelephoneNumber></Phone>`;
+  }
   return email + phone;
 }
 
-function addressBlock(tag: "ShipTo" | "BillTo", a: Address, mode: AddressMode): string {
+function addressBlock(tag: "ShipTo" | "BillTo", a: Address, mode: AddressMode, dtdVersion?: string): string {
   const postal = wantsPostal(mode) ? `\n${postalBlock(a, "          ")}` : "";
   return `      <${tag}>
-        <Address${idAttrs(a, mode)}>
+        <Address${idAttrs(a, mode, dtdVersion)}>
           <Name xml:lang="en">${escapeXml(a.name ?? "")}</Name>${postal}${contactInfo(a, "          ")}
         </Address>
       </${tag}>`;
 }
 
-function contactBlock(c: Contact, mode: AddressMode, indent: string): string {
+function contactBlock(c: Contact, mode: AddressMode, indent: string, dtdVersion?: string): string {
   const postal = mode !== "id-only" && hasPostal(c) ? `\n${postalBlock(c, indent + "  ")}` : "";
-  return `${indent}<Contact role="${escapeXml(c.role || "endUser")}"${idAttrs(c, mode)}>
+  return `${indent}<Contact role="${escapeXml(c.role || "endUser")}"${idAttrs(c, mode, dtdVersion)}>
 ${indent}  <Name xml:lang="en">${escapeXml(c.name ?? "")}</Name>${postal}${contactInfo(c, indent + "  ")}
 ${indent}</Contact>`;
 }
@@ -293,7 +365,7 @@ function commentsWithAttachments(cids: string[], indent: string): string {
         `${indent}  <Attachment>\n${indent}    <URL>cid:${escapeXml(cid)}</URL>\n${indent}  </Attachment>`,
     )
     .join("\n");
-  return `\n${indent}<Comments>\n${atts}\n${indent}</Comments>`;
+  return `\n${indent}<Comments xml:lang="en">\n${atts}\n${indent}</Comments>`;
 }
 
 export function buildOrderRequest(o: OrderRequestOptions): string {
@@ -338,14 +410,23 @@ ${classificationBlock(it, "          ")}${
             it.manufacturerName
               ? `\n          <ManufacturerName>${escapeXml(it.manufacturerName)}</ManufacturerName>`
               : ""
-          }${commentsWithAttachments(cids, "          ")}
-        </ItemDetail>
+          }
+        </ItemDetail>${commentsWithAttachments(cids, "        ")}
       </ItemOut>`;
     })
     .join("\n");
 
   const mode = o.addressMode ?? "full";
-  const contact = o.contact ? `\n${contactBlock(o.contact, mode, "        ")}` : "";
+  const contact = o.contact ? `\n${contactBlock(o.contact, mode, "        ", o.dtdVersion)}` : "";
+  const type: OrderType = o.type ?? "new";
+  const version =
+    o.orderVersion != null && dtdAtLeast(o.dtdVersion, ORDER_VERSION_SINCE) ? ` orderVersion="${escapeXml(o.orderVersion)}"` : "";
+  const docRef = o.documentReferencePayloadId
+    ? `\n        <DocumentReference payloadID="${escapeXml(o.documentReferencePayloadId)}"/>`
+    : "";
+  // Header child order is fixed by the DTD: … Contact*, Comments*, Followup?,
+  // ControlKeys?, DocumentReference?, … Extrinsic*. Item-level Comments belong
+  // to ItemOut (after ItemDetail), not inside ItemDetail.
   const inner = `${header({
     from: o.from,
     to: o.to,
@@ -357,12 +438,12 @@ ${classificationBlock(it, "          ")}${
     <OrderRequest>
       <OrderRequestHeader orderID="${escapeXml(o.orderId)}" orderDate="${escapeXml(
         o.orderDate,
-      )}" type="new">
+      )}" type="${type}"${version}>
         <Total>
           <Money currency="${escapeXml(o.currency)}">${escapeXml(o.total)}</Money>
         </Total>
-${addressBlock("ShipTo", o.shipTo ?? {}, mode)}
-${addressBlock("BillTo", o.billTo ?? {}, mode)}${contact}${commentsWithAttachments(orderLevelCids, "        ")}${extrinsicBlock(
+${addressBlock("ShipTo", o.shipTo ?? {}, mode, o.dtdVersion)}
+${addressBlock("BillTo", o.billTo ?? {}, mode, o.dtdVersion)}${contact}${commentsWithAttachments(orderLevelCids, "        ")}${docRef}${extrinsicBlock(
         o.extrinsics,
         "        ",
       )}
@@ -375,9 +456,9 @@ ${items}
 
 // --- Responses & punchback (Mode B / mock supplier) --------------------------
 
-function optionalHeader(p?: { from: Credential; to: Credential; sender: Credential }): string {
-  return p ? `${header({ from: p.from, to: p.to, sender: p.sender })}\n` : "";
-}
+// A Response carries no Header: the DTD's envelope is
+//   cXML (((Header, (Message | Request)) | Response), ds:Signature*)
+// so From/To/Sender appear only on requests and on the punchback Message.
 
 export function buildSetupResponse(o: {
   payloadId: string;
@@ -386,19 +467,12 @@ export function buildSetupResponse(o: {
   statusCode?: string;
   statusText?: string;
   lang?: string;
-  from?: Credential;
-  to?: Credential;
-  sender?: Credential;
   dtdVersion?: string;
 }): string {
-  const head =
-    o.from && o.to && o.sender
-      ? optionalHeader({ from: o.from, to: o.to, sender: o.sender })
-      : "";
-  const inner = `${head}  <Response>
+  const inner = `  <Response>
     <Status code="${escapeXml(o.statusCode ?? "200")}" text="${escapeXml(
       o.statusText ?? "OK",
-    )}"/>
+    )}" xml:lang="en"/>
     <PunchOutSetupResponse>
       <StartPage>
         <URL>${escapeXml(o.startPageUrl)}</URL>
@@ -416,20 +490,13 @@ export function buildResponseStatus(o: {
   /** Human-readable Status body (order number, rejection reason). Defaults to the text for non-OK statuses. */
   message?: string;
   lang?: string;
-  from?: Credential;
-  to?: Credential;
-  sender?: Credential;
   dtdVersion?: string;
 }): string {
-  const head =
-    o.from && o.to && o.sender
-      ? optionalHeader({ from: o.from, to: o.to, sender: o.sender })
-      : "";
   const message = o.message ?? (o.statusText === "OK" || !o.statusText ? "" : o.statusText);
-  const inner = `${head}  <Response>
+  const inner = `  <Response>
     <Status code="${escapeXml(o.statusCode ?? "200")}" text="${escapeXml(
       o.statusText ?? "OK",
-    )}">${escapeXml(message)}</Status>
+    )}" xml:lang="en">${escapeXml(message)}</Status>
   </Response>`;
   return envelope(o.payloadId, o.timestamp, o.lang ?? "en-US", inner, o.dtdVersion);
 }
@@ -445,8 +512,19 @@ export interface PunchbackOptions {
   currency: string;
   items: CartItem[];
   dtdVersion?: string;
-  operationAllowed?: string;
+  /**
+   * Highest operation the buyer may later perform on this cart (a required
+   * attribute): `create` allows none, `inspect` a read-only reopen, `edit` both.
+   */
+  operationAllowed?: OperationAllowed;
+  /**
+   * Optional Message/Status. Code 204 "No Content" ends the session without any
+   * change to the shopping cart (the user cancelled); the cart is then empty.
+   */
+  status?: { code: string; text: string };
 }
+
+export type OperationAllowed = "create" | "inspect" | "edit";
 
 export function buildPunchOutOrderMessage(o: PunchbackOptions): string {
   const total = lineItemsTotal(o.items, o.currency);
@@ -478,16 +556,18 @@ ${classificationBlock(it, "        ")}${
     )
     .join("\n");
 
+  const status = o.status
+    ? `\n    <Status code="${escapeXml(o.status.code)}" text="${escapeXml(o.status.text)}" xml:lang="en"/>`
+    : "";
   const inner = `${header({ from: o.from, to: o.to, sender: o.sender })}
-  <Message>
+  <Message>${status}
     <PunchOutOrderMessage>
       <BuyerCookie>${escapeXml(o.buyerCookie)}</BuyerCookie>
       <PunchOutOrderMessageHeader operationAllowed="${escapeXml(o.operationAllowed ?? "create")}">
         <Total>
           <Money currency="${escapeXml(o.currency)}">${escapeXml(total.toFixed(2))}</Money>
         </Total>
-      </PunchOutOrderMessageHeader>
-${items}
+      </PunchOutOrderMessageHeader>${items ? `\n${items}` : ""}
     </PunchOutOrderMessage>
   </Message>`;
   return envelope(o.payloadId, o.timestamp, o.lang ?? "en-US", inner, o.dtdVersion);

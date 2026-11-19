@@ -330,7 +330,42 @@ session's setup request) and pre-loads the catalog:
   cart" rows** so the edit round-trips faithfully.
 
 For **`inspect`**, the mock supplier shows the carried item(s) **read-only** and
-returns them unchanged on checkout — matching the "view this item" intent.
+returns **no items** on checkout. That is what the standard asks of a supplier:
+the buyer must ignore the item list of an inspect session, so the tool keeps the
+items exactly as it sent them.
+
+### How a returned cart is read
+
+A punchback always ends the shopping session, but what it means for the
+requisition depends on the operation it answers and on whether it carries
+`Status 204`. The session's cart panel says which case applies:
+
+| Session | Punchback | Meaning |
+|---|---|---|
+| any | items | The returned items are the cart. |
+| `create` | no items | Cancelled — nothing is added. |
+| `edit` | no items | The items the session carried are **deleted** from the requisition. |
+| `edit` | no items, `Status 204` | Cancelled **without change** — the requisition keeps its items. |
+| `inspect` | anything | Ignored — the items stay as they were sent. |
+
+To produce these from the mock catalog: **Cancel** returns an empty cart with
+`Status 204`; setting every quantity to zero and returning the cart gives an
+empty cart without it.
+
+### What may be done with a cart later (`operationAllowed`)
+
+Every returned cart carries `operationAllowed`, the supplier's statement of what
+the buyer may do with it afterwards: `create` allows no reopening, `inspect` a
+read-only one, `edit` both. The cart panel shows the value the supplier sent.
+
+- **Testing a supplier (Mode A):** when you start an `edit` or `inspect` session
+  from a cart whose `operationAllowed` forbids it, the New session dialog warns
+  you. You can still start it, to see how the supplier reacts to a request a
+  real procurement system would not make.
+- **Testing a buyer (Mode B):** each supplier has a *Carts may later be* setting
+  (default `edit`). Lower it, then check that the buyer system stops offering
+  edit or inspect for carts from that supplier. If it sends one anyway, the
+  inbound SetupRequest is flagged.
 
 > [!NOTE]
 > The pre-load is derived from the latest inbound `PunchOutSetupRequest` in the
@@ -351,6 +386,17 @@ field-level; it surfaces typed **errors** and **warnings**:
 | Single currency | Mixed currencies in one cart are an **error** (and the total emits `0`), unless the supplier's `allowMixedCurrency` is set, which downgrades it to a **warning**. |
 | Address completeness | Incomplete ship-to / bill-to (per the buyer profile's address mode) is flagged. |
 | Operation / items coherence | `edit`/`inspect` with no items, or `create` with unexpected items, is flagged. |
+| Dates | `timestamp` and `orderDate` must be ISO 8601 with a numeric UTC offset (`2026-01-01T10:00:00+01:00`). Not a date is an **error**; no time zone, or the `Z` designator cXML doesn't allow, a **warning**. |
+| DOCTYPE | A missing declaration, or one that doesn't name a cXML DTD, is a **warning**; a version other than the buyer profile's is noted. |
+| `xml:lang` | Required on `Description` and `Name` (**error** when missing); recommended on `Comments`, `Status` and the root. |
+| Several credentials | A party may send more than one (e.g. NetworkID and DUNS). One in a domain the connection knows must match; unknown domains are left alone; two identities in one domain are an **error**. |
+| `operationAllowed` | Must be present on a punchback and be `create`, `inspect` or `edit`. |
+| Change orders | `type` must be `new`, `update` or `delete`; an `update`/`delete` needs a `DocumentReference` (**error**) to the most recent OrderRequest for that order, and a rising `orderVersion`. |
+
+The rules follow the cXML 1.2.072 DTD and the cXML Reference Guide. An **error**
+is something the DTD requires; a **warning** is a "must" or "should" from the
+Guide that a receiver can usually still process; **info** is deprecated or
+simply worth knowing. The mock supplier rejects an order only on errors.
 
 > [!TIP]
 > Validate is advisory — you can still send. Use it to catch obvious mismatches
@@ -392,6 +438,31 @@ dangling reference in its own validation as well, so you can see both sides.
 toggle. *Raw* shows the headers and, for an order with attachments, the whole
 `multipart/related` envelope — boundaries, part headers, `Content-ID`s and each
 part. It is rebuilt on demand from the document and the stored attachments.
+
+### Changing or cancelling an order
+
+After the supplier accepts an order, two buttons appear under its response:
+
+- **Change order…** builds an OrderRequest with `type="update"`,
+- **Cancel order…** one with `type="delete"`.
+
+Both keep the order's `orderID`, raise `orderVersion` by one, and add a
+`DocumentReference` holding the `payloadID` of the previous OrderRequest — the
+original for the first change, the change order for the one after. The document
+opens in the editor, so for a change you can alter quantities or lines before
+you send it. A cancellation still lists the items: the DTD requires at least one
+`ItemOut` in every OrderRequest.
+
+The mock supplier follows the chain. It answers a change with *"Order number …
+updated to version 2"* and a cancellation with *"… cancelled"*, under the order
+number it first acknowledged. It rejects an update or delete that has no
+`DocumentReference`, and warns when the reference points at an older document
+than the latest one it holds, when the version doesn't rise, or when it has no
+earlier order to change.
+
+> [!NOTE]
+> A buyer profile on DTD 1.2.008 gets change orders without `orderVersion`: that
+> attribute only exists from 1.2.009.
 
 ## Managing sessions
 
