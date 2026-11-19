@@ -302,3 +302,48 @@ describe("mock supplier and buyer, end to end (in-process)", () => {
     expect((await none.json()).error).toContain("no order to change");
   });
 });
+
+// A counterparty that fails before its cXML layer answers with something that
+// is not cXML. The validator must say what it got, not how the XML check tripped.
+describe("a reply that is not cXML", () => {
+  const first = (body: string, ctx = {}) => validateDocument(body, { forceDocType: "SetupResponse", ...ctx });
+
+  it("quotes plain text instead of reporting the first unexpected character", () => {
+    const r = first("Proxy Authentication Required", { http: { status: 407, contentType: "text/plain" } });
+    expect(r.docType).toBe("SetupResponse"); // not "Unknown": we know what we asked for
+    expect(r.wellFormed).toBe(false);
+    const msg = r.issues[0].message;
+    expect(msg).toContain("plain text, not cXML");
+    expect(msg).toContain("HTTP 407");
+    expect(msg).toContain("“Proxy Authentication Required”");
+    expect(msg).not.toContain("char 'P'");
+    expect(r.issues.find((i) => i.code === "http-hint")?.message).toContain("HTTPS_PROXY");
+  });
+
+  it("recognizes an HTML page and reports its title and visible text", () => {
+    const html = `<!DOCTYPE html><html><head><title>401 Unauthorized</title><style>p{color:red}</style></head><body><h1>Access denied</h1><p>Please sign in<br>to continue.</p></body></html>`;
+    const r = first(html, { http: { status: 401, contentType: "text/html" } });
+    const msg = r.issues[0].message;
+    expect(msg).toContain("an HTML page, not cXML");
+    expect(msg).toContain("Page title: “401 Unauthorized”");
+    expect(msg).toContain("Access denied Please sign in to continue.");
+    expect(msg).not.toContain("color:red");
+    expect(r.issues.find((i) => i.code === "http-hint")?.message).toContain("shared secret");
+  });
+
+  it("handles JSON, an empty body, a redirect and well-formed XML that is not cXML", () => {
+    expect(first('{"error":"forbidden"}').issues[0].message).toContain("JSON, not cXML");
+    expect(first("  ").issues[0].message).toContain("body is empty");
+    const redirect = first("", { http: { status: 302, location: "https://supplier.example/punchout" } });
+    expect(redirect.issues.find((i) => i.code === "http-hint")?.message).toContain("https://supplier.example/punchout");
+    const xhtml = first(`<html><body><p>Service unavailable</p></body></html>`.replace("<html>", '<html xmlns="http://www.w3.org/1999/xhtml">'), { http: { status: 503 } });
+    expect(xhtml.ok).toBe(false);
+    expect(xhtml.issues.map((i) => i.code)).toEqual(expect.arrayContaining(["http-hint"]));
+  });
+
+  it("still pinpoints a genuine XML error, with its position", () => {
+    const msg = first("<cXML payloadID=\"p@h\">\n  <Response><Status code=\"200\"></Response>\n</cXML>").issues[0].message;
+    expect(msg).toContain("XML is not well-formed");
+    expect(msg).toMatch(/line 2, column \d+/);
+  });
+});

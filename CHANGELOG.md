@@ -5,6 +5,23 @@ corresponding [GitHub Release](https://github.com/slawomir-szostak/punchout-simu
 Versions follow [Semantic Versioning](https://semver.org); while the project is
 pre-1.0, new features may arrive in patch releases.
 
+## v0.13.1 — Say what the supplier actually answered
+
+*Released 2026-11-19*
+
+Patch release. When a supplier answers with something that is not cXML, the tool now says what it got.
+
+A supplier endpoint that fails before its cXML layer — a wrong URL, a gateway that refuses the request, a proxy that wants credentials — does not answer with cXML. It answers with a web server's error page or a line of plain text. The tool ran that through its XML check and reported the check's first complaint: `XML is not well-formed: char 'P' is not expected`, under the label "Unknown". That was the letter P of "Page not found". Nothing showed the text itself, the HTTP status, or the URL that had been called, so there was no way to tell a mistyped URL from a rejected login.
+
+### Changes
+- **The reply is identified and quoted.** Plain text, an HTML page (its title and visible text), JSON, an empty body, or XML whose root is not `<cXML>` — the message says which, and shows what it says: *This is plain text, not cXML (HTTP 404, Content-Type text/plain). It says: “Page not found”*.
+- **The HTTP status is explained** with what it usually means in this situation and what to check: 401/403, 404 (with the URL the tool posted to), 405, 407 (a proxy wanting credentials), 415, redirects (with the target), 5xx, and a 200 that returns a web page.
+- **It is shown where you look first.** The step header reads `HTTP 404 · no cXML reply` instead of `Status —`, and the supplier-response panel carries the explanation. The validation is labelled with the document that was expected (`SetupResponse`), not "Unknown".
+- **Genuine XML errors give their position** — line and column — and the start of the document.
+- **Fix:** the order step was marked as done when the supplier answered an OrderRequest with an error page. It now needs an actual cXML answer.
+
+**Full Changelog**: https://github.com/slawomir-szostak/punchout-simulator/compare/v0.13.0...v0.13.1
+
 ## v0.13.0 — Tax, shipping and accounting, per buyer, supplier and pair
 
 *Released 2026-11-19*

@@ -35,11 +35,12 @@ export function parseXml(raw: string): ParsedDoc {
   }
   const check = XMLValidator.validate(raw, { allowBooleanAttributes: true });
   if (check !== true) {
+    const where = check?.err?.line != null ? ` (line ${check.err.line}, column ${check.err.col})` : "";
     return {
       raw,
       tree: null,
       wellFormed: false,
-      wellFormedError: check?.err?.msg ?? "not well-formed",
+      wellFormedError: `${(check?.err?.msg ?? "not well-formed").replace(/\.$/, "")}${where}`,
     };
   }
   try {
@@ -52,6 +53,40 @@ export function parseXml(raw: string): ParsedDoc {
       wellFormedError: e instanceof Error ? e.message : String(e),
     };
   }
+}
+
+/**
+ * What a body that should have been cXML actually is. A counterparty that
+ * fails before its cXML layer answers with something else entirely — a proxy's
+ * or web server's HTML error page, a plain-text message, JSON from an API
+ * gateway — and "not well-formed" says nothing about that.
+ */
+export interface BodyKind {
+  kind: "empty" | "text" | "html" | "json" | "xml";
+  /** HTML <title>, when there is one. */
+  title?: string;
+  /** The readable start of the body: markup stripped, whitespace collapsed. */
+  excerpt: string;
+}
+
+export function describeBody(raw: string, maxLength = 300): BodyKind {
+  const body = raw.replace(/^\uFEFF/, "").trim();
+  const clip = (s: string) => (s.length > maxLength ? `${s.slice(0, maxLength)}…` : s);
+  if (body === "") return { kind: "empty", excerpt: "" };
+  const head = body.slice(0, 1000);
+  if (/<!doctype\s+html|<html[\s>]/i.test(head)) {
+    const title = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(body)?.[1]?.replace(/\s+/g, " ").trim();
+    const visible = body
+      .replace(/<(script|style|head)[\s\S]*?<\/\1>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&nbsp;/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    return { kind: "html", title: title || undefined, excerpt: clip(visible) };
+  }
+  if (body.startsWith("{") || body.startsWith("[")) return { kind: "json", excerpt: clip(body.replace(/\s+/g, " ")) };
+  if (!body.startsWith("<")) return { kind: "text", excerpt: clip(body.replace(/\s+/g, " ")) };
+  return { kind: "xml", excerpt: clip(body.replace(/\s+/g, " ")) };
 }
 
 // --- small navigation helpers -------------------------------------------------

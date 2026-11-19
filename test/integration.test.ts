@@ -301,6 +301,35 @@ describe("Mode A loopback", () => {
     expect(so(cancel.statusMessage)).toBe(so(first.statusMessage));
   });
 
+  it("explains a supplier that answers with an error page instead of cXML", async () => {
+    // A stand-in for an endpoint behind a gateway that refuses the request.
+    const { createServer } = await import("node:http");
+    const fake = createServer((_req, res) => {
+      res.writeHead(401, { "content-type": "text/plain" });
+      res.end("Permission denied: unknown sender");
+    });
+    await new Promise<void>((r) => fake.listen(0, "127.0.0.1", r));
+    const url = `http://127.0.0.1:${(fake.address() as any).port}/punchout`;
+    try {
+      const post = (path: string, body: unknown) =>
+        fetch(`${base}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
+      const supplier = await post("/api/suppliers", { name: "Refusing Supplier", identity: { domain: "DUNS", identity: "777" }, punchoutUrl: url, orderUrl: url });
+      const conn = await post("/api/connections", { buyerId: "demo-buyer", supplierId: supplier.id, mode: "virtual-buyer", sharedSecret: "" });
+      const setup = await post(`/api/connections/${conn.id}/setup`, {});
+      expect(setup.httpStatus).toBe(401);
+      expect(setup.statusCode).toBeUndefined();
+      const v = setup.response.validation;
+      expect(v.docType).toBe("SetupResponse");
+      expect(v.issues[0].message).toContain("plain text, not cXML (HTTP 401, Content-Type text/plain)");
+      expect(v.issues[0].message).toContain("“Permission denied: unknown sender”");
+      expect(v.issues.map((i: any) => i.code)).toContain("http-hint");
+      // The request itself was flagged for going out without a shared secret.
+      expect(setup.request.validation.issues.map((i: any) => i.code)).toContain("missing-sharedsecret");
+    } finally {
+      fake.close();
+    }
+  });
+
   it("rejects a non-http(s) BrowserFormPost URL (no javascript: XSS)", async () => {
     const setupXml = `<cXML payloadID="p@h" timestamp="2026-01-01T10:00:00+01:00"><Header>
       <From><Credential domain="DUNS"><Identity>123456789</Identity></Credential></From>

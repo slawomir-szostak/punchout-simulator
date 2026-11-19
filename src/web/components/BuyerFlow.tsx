@@ -29,10 +29,15 @@ type StepStatus = "pending" | "active" | "done" | "error";
 
 // What the counterparty actually said: cXML Status code + text, and the
 // Status body where suppliers put order numbers and rejection reasons.
-function SupplierReply(o: { ok: boolean; code?: string; text?: string; message?: string; transportError?: string }) {
+// `http` is given when the reply carried no cXML Status at all — the endpoint
+// answered with something that is not cXML (an error page, plain text), and the
+// HTTP status is then the only status there is.
+function SupplierReply(o: { ok: boolean; code?: string; text?: string; message?: string; transportError?: string; http?: number }) {
   const headline = o.transportError
     ? `Transport error: ${o.transportError}`
-    : `Status ${o.code ?? "—"}${o.text ? ` ${o.text}` : ""}`;
+    : o.code == null && o.http != null
+      ? `HTTP ${o.http} · not a cXML document`
+      : `Status ${o.code ?? "—"}${o.text ? ` ${o.text}` : ""}`;
   return (
     <div className={`supplier-reply ${o.ok ? "supplier-reply-ok" : "supplier-reply-bad"}`}>
       <span className="supplier-reply-icon">{o.ok ? "✓" : "⚠"}</span>
@@ -44,6 +49,11 @@ function SupplierReply(o: { ok: boolean; code?: string; text?: string; message?:
     </div>
   );
 }
+
+// When the reply was not cXML, the validator explains what it was (an HTML
+// page, plain text, …) and quotes it; that explanation is the message to show.
+const unreadableReply = (v?: ValidationResult): string | undefined =>
+  v?.issues.find((i) => i.code === "not-well-formed" || i.code === "not-cxml")?.message;
 
 const stepNum = (status: StepStatus, n: number) => (status === "done" ? "✓" : status === "error" ? "!" : String(n));
 
@@ -81,7 +91,8 @@ export function BuyerFlow({ connection, session, cart, operation, sourceItems, o
   const setupOk = !!session.setupResult && !session.setupResult.transportError && !!session.setupResult.startPage;
   const setupStatus: StepStatus = setupOk ? "done" : session.setupResult ? "error" : "active";
   const cartStatus: StepStatus = cart ? "done" : setupOk ? "active" : "pending";
-  const orderOk = !!session.orderResult && !session.orderResult.transportError;
+  // "Done" needs a cXML answer: an HTTP error page is not a processed order.
+  const orderOk = !!session.orderResult && !session.orderResult.transportError && !!session.orderResult.statusCode;
   const orderStatus: StepStatus = orderOk ? "done" : session.orderResult ? "error" : cart ? "active" : "pending";
 
   // Bring the cart into view the moment the punchback lands — it arrives from
@@ -242,7 +253,7 @@ export function BuyerFlow({ connection, session, cart, operation, sourceItems, o
             <span className={`step-status ${setupStatus === "done" ? "step-status-ok" : "step-status-err"}`}>
               {session.setupResult.transportError
                 ? "transport error"
-                : `HTTP ${session.setupResult.httpStatus} · Status ${session.setupResult.statusCode ?? "—"}`}
+                : `HTTP ${session.setupResult.httpStatus} · ${session.setupResult.statusCode ? `Status ${session.setupResult.statusCode}` : "no cXML reply"}`}
             </span>
           )}
         </h3>
@@ -308,12 +319,13 @@ export function BuyerFlow({ connection, session, cart, operation, sourceItems, o
                 <button className="btn-link" onClick={openEmbedded}>open embedded</button>
               </div>
             )}
-            {(session.setupResult.statusMessage || session.setupResult.transportError || (session.setupResult.statusCode && session.setupResult.statusCode !== "200")) && (
+            {(session.setupResult.statusMessage || session.setupResult.transportError || session.setupResult.statusCode !== "200") && (
               <SupplierReply
                 ok={setupOk && session.setupResult.statusCode === "200"}
                 code={session.setupResult.statusCode}
-                message={session.setupResult.statusMessage}
+                message={session.setupResult.statusMessage ?? unreadableReply(session.setupResult.response.validation)}
                 transportError={session.setupResult.transportError}
+                http={session.setupResult.httpStatus}
               />
             )}
             <ValidationSummary validations={[session.setupResult.request.validation, session.setupResult.response.validation]} />
@@ -354,7 +366,7 @@ export function BuyerFlow({ connection, session, cart, operation, sourceItems, o
             <span className={`step-status ${orderStatus === "done" ? "step-status-ok" : "step-status-err"}`}>
               {session.orderResult.transportError
                 ? "transport error"
-                : `HTTP ${session.orderResult.httpStatus} · Status ${session.orderResult.statusCode ?? "—"} ${session.orderResult.statusText ?? ""}`}
+                : `HTTP ${session.orderResult.httpStatus} · ${session.orderResult.statusCode ? `Status ${session.orderResult.statusCode} ${session.orderResult.statusText ?? ""}` : "no cXML reply"}`}
             </span>
           )}
         </h3>
@@ -490,8 +502,9 @@ export function BuyerFlow({ connection, session, cart, operation, sourceItems, o
               ok={orderStatus === "done" && session.orderResult.statusCode === "200"}
               code={session.orderResult.statusCode}
               text={session.orderResult.statusText}
-              message={session.orderResult.statusMessage}
+              message={session.orderResult.statusMessage ?? unreadableReply(session.orderResult.response.validation)}
               transportError={session.orderResult.transportError}
+              http={session.orderResult.httpStatus}
             />
             <ValidationSummary validations={[session.orderResult.request.validation, session.orderResult.response.validation]} />
             {orderOk && cart && cart.items.length > 0 && (

@@ -221,7 +221,7 @@ flowRoute.post("/:id/setup", async (c) => {
   const res = await sendCxml(ctx.punchoutUrl, xml);
   const respValidation = res.error
     ? undefined
-    : validateDocument(res.body, { expected: ctx.expected, forceDocType: "SetupResponse" });
+    : validateDocument(res.body, { expected: ctx.expected, forceDocType: "SetupResponse", http: { status: res.status, contentType: res.contentType, location: res.headers.location, url: ctx.punchoutUrl } });
   const respLog = appendLog({
     sessionId: buyerCookie,
     connectionId: ctx.connectionId,
@@ -478,7 +478,7 @@ flowRoute.post("/:id/order", async (c) => {
   const res = await sendCxml(ctx.orderUrl, wireBody, wireContentType);
   const respValidation = res.error
     ? undefined
-    : validateDocument(res.body, { expected: ctx.expected, forceDocType: "OrderResponse" });
+    : validateDocument(res.body, { expected: ctx.expected, forceDocType: "OrderResponse", http: { status: res.status, contentType: res.contentType, location: res.headers.location, url: ctx.orderUrl } });
   const respLog = appendLog({
     sessionId,
     connectionId: ctx.connectionId,

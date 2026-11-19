@@ -2,6 +2,7 @@ import {
   asArray,
   attr,
   collectCidReferences,
+  describeBody,
   getDocType,
   getHeaderCredentials,
   getPayloadId,
@@ -75,6 +76,12 @@ export interface ValidationContext {
    * supplier returns with its carts, to flag an edit/inspect it never permitted.
    */
   supplierOperationAllowed?: string;
+  /**
+   * For a document that arrived as an HTTP response: how it arrived. Lets a
+   * reply that is not cXML at all be explained (an HTTP 407 from a proxy, a
+   * login page, a 404) instead of merely being called not well-formed.
+   */
+  http?: { status: number; contentType?: string; location?: string; url?: string };
 }
 
 class Issues {
@@ -882,6 +889,62 @@ function checkOrderResponse(doc: ParsedDoc, issues: Issues) {
   }
 }
 
+// --- a body that is not cXML ---------------------------------------------------
+
+const httpSuffix = (ctx: ValidationContext): string =>
+  ctx.http ? ` (HTTP ${ctx.http.status}${ctx.http.contentType ? `, Content-Type ${ctx.http.contentType}` : ""})` : "";
+
+const quote = (b: { title?: string; excerpt: string }): string =>
+  [b.title ? `Page title: “${b.title}”.` : "", b.excerpt ? `It says: “${b.excerpt}”` : ""].filter(Boolean).join(" ");
+
+// Say what the body actually is. "char 'P' is not expected" is what an XML
+// checker reports for the plain text "Proxy Authentication Required"; the
+// person reading it needs the text, not the checker's first complaint.
+function explainUnreadable(doc: ParsedDoc, ctx: ValidationContext, issues: Issues): void {
+  const body = describeBody(doc.raw);
+  const http = httpSuffix(ctx);
+  const what =
+    body.kind === "empty"
+      ? `The body is empty${http} — there is no cXML document to read.`
+      : body.kind === "html"
+        ? `This is an HTML page, not cXML${http}. ${quote(body)}`
+        : body.kind === "json"
+          ? `This is JSON, not cXML${http}. ${quote(body)}`
+          : body.kind === "text"
+            ? `This is plain text, not cXML${http}. ${quote(body)}`
+            : `XML is not well-formed: ${doc.wellFormedError}${http}. The document starts: “${body.excerpt}”`;
+  issues.error("not-well-formed", what.trim());
+  addHttpHint(ctx, issues);
+}
+
+// What an HTTP status usually means when it comes instead of a cXML answer.
+// A cXML endpoint reports its own failures in a cXML Status, normally with
+// HTTP 200, so a bare HTTP error tends to come from something in front of it.
+function addHttpHint(ctx: ValidationContext, issues: Issues): void {
+  const s = ctx.http?.status;
+  if (s == null) return;
+  const at = ctx.http?.url ? ` (${ctx.http.url})` : "";
+  const hint =
+    s === 407
+      ? "A proxy between this tool and the endpoint demands authentication. Put the credentials in HTTPS_PROXY (http://user:password@proxy:port) and restart the tool."
+      : s === 401 || s === 403
+        ? "The endpoint refused the request before reading the cXML. Typical causes: the server expects HTTP authentication or an IP allow-list this machine is not on, or it rejects a request without valid credentials — check the connection's shared secret and the sender identity."
+        : s === 404
+          ? `Nothing answers at the URL this tool posted to${at}. Check the URL configured on the supplier: the path, the host, http vs https.`
+          : s === 405
+            ? `The URL${at} exists but does not accept POST — it is probably not the cXML endpoint.`
+            : s === 415
+              ? "The endpoint rejects the Content-Type (text/xml). It may expect a different one, or it is not the cXML endpoint."
+              : s >= 300 && s < 400
+                ? `The endpoint redirects${ctx.http?.location ? ` to ${ctx.http.location}` : ""}; this tool does not follow redirects. Use the final URL (often http → https, or a trailing slash).`
+                : s >= 500
+                  ? "The endpoint, or a gateway in front of it, failed while handling the request. The text above is its error message; its own logs will say more."
+                  : s >= 200 && s < 300
+                    ? `The server answered successfully but not with cXML — the URL${at} probably points at a web page (a login, landing or "not found" page) rather than the cXML endpoint.`
+                    : undefined;
+  if (hint) issues.info("http-hint", `HTTP ${s}: ${hint}`);
+}
+
 // --- entry point -------------------------------------------------------------
 
 export function validateDocument(raw: string, ctx: ValidationContext = {}): ValidationResult {
@@ -889,8 +952,19 @@ export function validateDocument(raw: string, ctx: ValidationContext = {}): Vali
   const issues = new Issues();
 
   if (!doc.wellFormed) {
-    issues.error("not-well-formed", `XML is not well-formed: ${doc.wellFormedError}`);
-    return { docType: "Unknown", wellFormed: false, ok: false, issues: issues.list };
+    explainUnreadable(doc, ctx, issues);
+    return { docType: ctx.forceDocType ?? "Unknown", wellFormed: false, ok: false, issues: issues.list };
+  }
+
+  // Well-formed XML that is not cXML at all (an XHTML error page, a SOAP fault).
+  if (root(doc) == null) {
+    const rootName = Object.keys(doc.tree ?? {}).find((k) => !k.startsWith("?") && !k.startsWith("!"));
+    issues.error(
+      "not-cxml",
+      `The document's root element is <${rootName ?? "?"}>, not <cXML>${httpSuffix(ctx)}. ${quote(describeBody(raw))}`.trim(),
+    );
+    addHttpHint(ctx, issues);
+    return { docType: ctx.forceDocType ?? "Unknown", wellFormed: true, ok: false, issues: issues.list };
   }
 
   const docType = ctx.forceDocType ?? getDocType(doc);
