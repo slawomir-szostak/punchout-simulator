@@ -1,0 +1,34 @@
+@startuml request-guards
+!theme plain
+title What a request passes through before it reaches a handler
+
+start
+:Request arrives;
+:Body larger than 24 MB?  → **413**;
+if (Path) then (/api/*)
+  partition "Control plane" {
+    :Host header is not loopback\nor the public URL's host?  → **403**;
+    :State-changing and marked cross-site\n(Sec-Fetch-Site / Origin)?  → **403**;
+    if (Token configured?\n(the tool is exposed)) then (yes)
+      :Client over the wrong-token limit?  → **429**;
+      :Token missing or wrong?  → **401**;
+    else (no — loopback only)
+    endif
+    :API handler;
+  }
+elseif () then (/sim/*  ·  /punchout/*)
+  partition "Inbound surface — open by design" {
+    :Over the request-rate limit?  → **429**;
+    :A write while over the disk budget?  → **507**;
+    if (POST /sim/:id/order\nand the tool is exposed?) then (yes)
+      :Client over the wrong-secret limit?  → **429**;
+    else (no)
+    endif
+    :Mock supplier / punchback handler;
+  }
+else (anything else)
+  :Static SPA files;
+endif
+:Response headers: nosniff everywhere;\napp pages also get CSP (script-src 'self'),\nno framing, no referrer;
+stop
+@enduml

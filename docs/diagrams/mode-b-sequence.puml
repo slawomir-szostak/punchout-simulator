@@ -7,7 +7,6 @@ participant "Browser" as Br
 participant "sim.ts (/sim)" as Sim
 participant "validate.ts" as Val
 database "session log" as Log
-participant "cart-store" as Cart
 
 Buyer -> Sim : POST PunchOutSetupRequest\n(credentials, BrowserFormPost URL)
 Sim -> Val : validate inbound request
@@ -17,10 +16,10 @@ Sim -> Buyer : PunchOutSetupResponse\n(StartPage = /sim/:id/catalog?cookie=...)
 Buyer -> Br : redirect to StartPage
 Br -> Sim : GET catalog (themed HTML)
 Br -> Sim : build cart (fractional qty allowed per item)
-Br -> Sim : POST /sim/:id/checkout (requires cookie)
-Sim -> Cart : store cart for session
+Br -> Sim : POST /sim/:id/checkout (cookie only)
+Sim -> Log : read the session's SetupRequest\n(return URL, buyer identity, operation)
 Sim -> Sim : build PunchOutOrderMessage
 Sim -> Log : append cart
-Sim -> Br : HTML page auto-submitting form\n(action = BrowserFormPost)
+Sim -> Br : HTML page auto-submitting form\n(action = the logged BrowserFormPost)
 Br -> Buyer : POST PunchOutOrderMessage
 @enduml

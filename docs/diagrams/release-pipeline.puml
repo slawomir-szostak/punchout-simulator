@@ -1,0 +1,38 @@
+@startuml release-pipeline
+!theme plain
+title From commit to npm
+
+|Developer|
+start
+:typecheck · test · build locally;
+:Push to main;
+
+|GitHub Actions — CI|
+fork
+  :build-test\n(Node 20 and Node 24);
+fork again
+  :audit\n(advisories in shipped dependencies);
+fork again
+  :docker-build\n(the Dockerfile still builds);
+end fork
+
+|Developer|
+:CI green → npm version, push the tag;
+:Create the GitHub Release;
+
+|GitHub Actions — publish|
+:Check out the tagged commit\n(actions pinned to commit SHAs);
+:npm ci --ignore-scripts;
+:typecheck · build · test again;
+:Exchange the job's OIDC token\nfor a short-lived npm credential;
+
+|npm registry|
+:Publish dist/ with provenance;
+stop
+
+|GitHub Actions — CI|
+floating note right
+  Also on a schedule: CI every Monday,
+  Dependabot PRs weekly (npm and actions).
+end note
+@enduml

@@ -1,0 +1,35 @@
+@startuml storage-layout
+!theme plain
+title The data directory
+
+folder "data/   (owner-only, 0700)" as Data {
+  file "config.json\nbuyers · suppliers · connections\nprofiles · product lists\n(shared secrets in plain text, 0600)" as Cfg
+  folder "sessions/" as Sess {
+    file "pos-A15Vdt1VKiWR7eI1.jsonl\na BuyerCookie that is safe\nas a file name is used as is" as S1
+    file "a_b~3f9c…e1.jsonl\nany other cookie:\nsanitized text ~ hash of the cookie" as S2
+  }
+  folder "attachments/" as Att {
+    file "<sha256 of the content>\none file per distinct content" as A1
+  }
+}
+
+S1 ..> A1 : records reference\nattachments by hash
+S2 ..> A1
+
+note bottom of Sess
+  One append-only log per session.
+  Each line is one request or response.
+  SharedSecret values are masked before writing.
+end note
+
+note bottom of Att
+  Shared between sessions; deleted when
+  no remaining session references it.
+end note
+
+note right of Data
+  Disk budget (--max-data-mb, default 2048):
+  sessions/ + attachments/ together.
+  Over it, inbound writes answer 507.
+end note
+@enduml

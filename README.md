@@ -380,11 +380,17 @@ cxml-urlencoded) — i.e. the tool's original behavior.
 - `*/api/product-lists` — CRUD for product lists · `GET /api/product-list-presets` — the built-in sample library
 - `*/api/connections` — CRUD for connection edges (reference a buyer + supplier)
 - `GET /api/config/export[?secrets=1]` · `POST /api/config/import?mode=merge|replace` — whole-config export / import (JSON)
-- `GET /api/connections/:id/setup/preview` · `POST …/setup` — preview / send the SetupRequest
+- `POST /api/connections/:id/setup/preview` · `POST …/setup` — preview / send the SetupRequest
 - `POST /api/connections/:id/order/preview` · `POST …/order` — preview / send the OrderRequest (multipart if attachments)
-- `POST /punchout/return` — callback receiving the punchback auto-submit
+- `POST /api/connections/:id/validate` — lint a cXML document against the connection without sending it
+- `GET /api/sessions` · `GET /api/sessions/:id` · `DELETE /api/sessions/:id` — list sessions, read one session's log, delete it
+- `GET /api/sessions/:id/records/:recordId/raw` — the full wire message of one logged record (headers + reassembled multipart)
+- `GET /api/recent` — the latest log records across sessions · `GET /api/cart/:sessionId` — the cart returned for a session
+- `GET /api/attachments/:hash` — download a stored attachment
+- `GET /api/runtime` — public URL, callback URL, version, proxy status · `GET /api/health` — liveness probe (never needs the token)
 - `GET /api/stream` — SSE live log
-- `/sim/:supplierId/*` — Mode B mock supplier (punchout · catalog · checkout · order)
+- `POST /punchout/return` — callback receiving the punchback auto-submit
+- `/sim/:supplierId/*` — Mode B mock supplier (`POST punchout` · `GET catalog` · `POST checkout` · `POST order`)
 
 ---
 
@@ -397,8 +403,16 @@ npm run build      # vite build -> dist/web ; tsup -> dist/server
 npm test           # vitest (unit + integration roundtrip)
 npm run typecheck
 node scripts/smoke.mjs       # full roundtrip over HTTP (server must be running)
-node scripts/verify-ui.mjs   # headless-browser end-to-end (needs `npx playwright install chromium`)
+node scripts/verify-ui.mjs   # headless-browser walk through a full session (server must be running)
 ```
+
+`verify-ui.mjs` drives the real UI in headless Chromium and fails on any console
+error or Content-Security-Policy violation. It needs a browser once:
+`npx playwright-core install chromium` (or point `CHROMIUM_PATH` at an existing
+Chrome/Chromium binary).
+
+Release history is in [CHANGELOG.md](CHANGELOG.md); the security policy is in
+[SECURITY.md](SECURITY.md).
 
 ---
 

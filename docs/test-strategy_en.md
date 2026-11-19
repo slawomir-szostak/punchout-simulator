@@ -32,7 +32,7 @@ call the real implementations on temporary data directories.
 
 All tests live in `test/**/*.test.ts` and run under **Vitest** (`environment:
 node`, 20-second timeout, one process-isolated environment per file). The suite
-is currently 19 files across four layers:
+is currently 22 files across four layers:
 
 ```plantuml
 @startuml test-layers
@@ -40,7 +40,7 @@ is currently 19 files across four layers:
 title Test layers (bottom = most tests, fastest)
 
 rectangle "Integration over real HTTP\nintegration.test.ts — full Mode-A roundtrip,\nephemeral port, seeded demo data" as L4
-rectangle "HTTP app-level (no sockets)\nsecurity / rate-limit / static / backup / hardening —\nHono app.request() against the real app" as L3
+rectangle "HTTP app-level (no sockets)\nsecurity / rate-limit / static / backup / hardening / duplicate —\nHono app.request() against the real app" as L3
 rectangle "Store & persistence\nmigrations / products / profiles /\nlog-dedup / log-summary / cart-store" as L2
 rectangle "Pure units\ncXML core: build / parse / validate / multipart / xml-format\nhelpers: csv / geo · proxy: proxy / proxy-detect (fixtures)" as L1
 
@@ -81,7 +81,12 @@ routing, no network:
 - `security.test.ts` — the token gate of an exposed deployment: `401` without
   the token, the accepted token carriers (Bearer, `x-pos-token`, `?token=`), the
   open `/api/health` probe and
-  the deliberately open `/sim` + `/punchout` surfaces. It runs in **its own
+  the deliberately open `/sim` + `/punchout` surfaces. It also holds the
+  regression tests for what an exposed instance must withstand: wrong tokens and
+  wrong shared secrets being throttled per client without one client being able
+  to lock out another, a forged `X-Forwarded-For` not changing who a client is,
+  secrets and the `?token=` value staying out of logs, and two different
+  BuyerCookies never sharing a log file. It runs in **its own
   file** so the global runtime token cannot leak into other suites (Vitest
   isolates files).
 - `rate-limit.test.ts` and `static.test.ts` — abuse limits (per-client and
@@ -136,8 +141,56 @@ The same three commands gate every path to a release:
 | Gate | What runs | When |
 |---|---|---|
 | Local | `npm run typecheck` · `npm test` | Before committing; also part of the release verify gate. |
-| CI (`ci.yml`) | `typecheck` → `build` → `test` on a **Node 20 + 24 matrix** | Every push and pull request on `main`. Node 20 is the declared minimum (`engines`), Node 24 the current runtime. |
-| Publish (`publish.yml`) | `typecheck` → `build` → `test`, then `npm publish --provenance` | On GitHub Release — the suite re-runs even though CI is green, so nothing unpublishable can ship. |
+| CI (`ci.yml`) — `build-test` | `typecheck` → `build` → `test` on a **Node 20 + 24 matrix** | Every push and pull request on `main`, and every Monday. Node 20 is the declared minimum (`engines`), Node 24 the current runtime. |
+| CI — `audit` | `npm audit --omit=dev --audit-level=moderate` | Same triggers. Fails on any moderate-or-higher advisory in the dependencies that ship to users; the weekly run surfaces a new advisory even when nothing is pushed. |
+| CI — `docker-build` | `docker build` | Same triggers. The image isn't published anywhere; this only keeps the `Dockerfile` building. |
+| Publish (`publish.yml`) | `npm ci --ignore-scripts` → `typecheck` → `build` → `test`, then `npm publish --provenance` | On GitHub Release — the suite re-runs even though CI is green, so nothing unpublishable can ship. No dependency install script runs in the job that can publish. |
+
+Dependabot opens weekly update PRs for npm packages and GitHub Actions, which
+then go through the same CI.
+
+```plantuml
+@startuml release-pipeline
+!theme plain
+title From commit to npm
+
+|Developer|
+start
+:typecheck · test · build locally;
+:Push to main;
+
+|GitHub Actions — CI|
+fork
+  :build-test\n(Node 20 and Node 24);
+fork again
+  :audit\n(advisories in shipped dependencies);
+fork again
+  :docker-build\n(the Dockerfile still builds);
+end fork
+
+|Developer|
+:CI green → npm version, push the tag;
+:Create the GitHub Release;
+
+|GitHub Actions — publish|
+:Check out the tagged commit\n(actions pinned to commit SHAs);
+:npm ci --ignore-scripts;
+:typecheck · build · test again;
+:Exchange the job's OIDC token\nfor a short-lived npm credential;
+
+|npm registry|
+:Publish dist/ with provenance;
+stop
+
+|GitHub Actions — CI|
+floating note right
+  Also on a schedule: CI every Monday,
+  Dependabot PRs weekly (npm and actions).
+end note
+@enduml
+```
+
+*Fig. 2: Local gates, three parallel CI jobs, and a publish job that repeats the suite before npm sees anything.*
 
 > [!NOTE]
 > The Node 20 leg of the matrix is what caught the `undici` 8 incompatibility
@@ -151,9 +204,13 @@ The same three commands gate every path to a release:
   highest-value SPA logic that *is* testable headlessly — XML formatting, the
   PDF report's HTML generation — lives in plain modules (`xml-format.ts`,
   `flow-pdf.ts`), and `xml-format` is unit-tested.
-- **No browser end-to-end automation** (Playwright or similar). The Mode-B
-  catalog and checkout are HTML served by the server and are covered at the
-  HTTP layer; scripting a real browser has not paid its maintenance cost yet.
+- **No browser end-to-end test in CI.** The Mode-B catalog and checkout are
+  HTML served by the server and are covered at the HTTP layer. There is a
+  headless-browser script, `scripts/verify-ui.mjs`, that walks one full session
+  through the real SPA — Monaco, the embedded catalog, the order, the PDF
+  export — and fails on any console error or Content-Security-Policy violation.
+  It is run by hand against a running server (after UI or CSP changes), not as a
+  gate: it needs a local Chromium.
 - **No coverage thresholds.** Coverage is not collected; the suite grows by
   "every bug fix and feature lands with a test", not by chasing a percentage.
 

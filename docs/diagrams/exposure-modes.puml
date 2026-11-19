@@ -1,0 +1,38 @@
+@startuml exposure-modes
+!theme plain
+title Four ways to run it — who can reach what
+
+rectangle "1. Localhost (default)" as M1 {
+  actor "You" as U1
+  node "punchout-simulator\n127.0.0.1:8080" as T1
+  U1 -right-> T1 : http · no token needed
+}
+
+rectangle "2. LAN  (--host 0.0.0.0)" as M2 {
+  actor "Colleague /\nbuyer system" as U2
+  node "punchout-simulator\n0.0.0.0:8080" as T2
+  U2 -right-> T2 : **plain http** on the network\n/api needs the token\n/sim, /punchout open
+}
+
+rectangle "3. Tunnel  (--public-url https://…)" as M3 {
+  actor "Buyer system\non the internet" as U3
+  cloud "Tunnel provider\n(ngrok / cloudflared)" as C3
+  node "Tunnel agent\n(this machine)" as A3
+  node "punchout-simulator\n127.0.0.1:8080" as T3
+  U3 -right-> C3 : https
+  C3 -right-> A3 : encrypted
+  A3 -right-> T3 : http on loopback\n/api needs the token
+}
+
+rectangle "4. Docker" as M4 {
+  actor "You" as U4
+  node "Host port\n-p 127.0.0.1:8080:8080" as P4
+  node "Container\n0.0.0.0:8080" as T4
+  U4 -right-> P4 : http
+  P4 -right-> T4 : /api always needs the token\n(the container counts as exposed)
+}
+
+M1 -[hidden]down- M2
+M2 -[hidden]down- M3
+M3 -[hidden]down- M4
+@enduml

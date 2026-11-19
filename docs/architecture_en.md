@@ -203,7 +203,12 @@ State lives in a single `data/` directory:
   the store's edited copies on merge.
 - **`data/sessions/<sessionId>.jsonl`** — append-only message logs, one file per
   PunchOut conversation (keyed by `BuyerCookie`). Each line is one record
-  (request or response, direction-tagged).
+  (request or response, direction-tagged). A `BuyerCookie` is text chosen by
+  whoever sends the cXML, so it is only used as the file name when it consists
+  of filename-safe characters; any other cookie is stored as
+  `<sanitized>~<hash of the cookie>.jsonl`. The `~` cannot occur in a safe id,
+  so two different cookies never share a log. Session listings key on the file
+  and take the real id from the records inside.
 - **Attachments** — stored as separate content-addressed files
   (`attachments/<sha256>`), referenced from records rather than inlined. Because
   they're shared, deleting a session prunes only attachments no remaining
@@ -213,6 +218,46 @@ State lives in a single `data/` directory:
   open inbound routes stop writing (see [Security posture](#security-posture)).
 - **Carts** — held in an in-memory `cart-store` keyed by `sessionId`; the
   durable record of a returned cart is the JSONL log.
+
+```plantuml
+@startuml storage-layout
+!theme plain
+title The data directory
+
+folder "data/   (owner-only, 0700)" as Data {
+  file "config.json\nbuyers · suppliers · connections\nprofiles · product lists\n(shared secrets in plain text, 0600)" as Cfg
+  folder "sessions/" as Sess {
+    file "pos-A15Vdt1VKiWR7eI1.jsonl\na BuyerCookie that is safe\nas a file name is used as is" as S1
+    file "a_b~3f9c…e1.jsonl\nany other cookie:\nsanitized text ~ hash of the cookie" as S2
+  }
+  folder "attachments/" as Att {
+    file "<sha256 of the content>\none file per distinct content" as A1
+  }
+}
+
+S1 ..> A1 : records reference\nattachments by hash
+S2 ..> A1
+
+note bottom of Sess
+  One append-only log per session.
+  Each line is one request or response.
+  SharedSecret values are masked before writing.
+end note
+
+note bottom of Att
+  Shared between sessions; deleted when
+  no remaining session references it.
+end note
+
+note right of Data
+  Disk budget (--max-data-mb, default 2048):
+  sessions/ + attachments/ together.
+  Over it, inbound writes answer 507.
+end note
+@enduml
+```
+
+*Fig. 3: The data directory — one config file, one log per session, and attachments stored once per distinct content.*
 
 ## Data model
 
@@ -293,7 +338,7 @@ Connection ||..o{ Session
 @enduml
 ```
 
-*Fig. 3: Buyer, Supplier, Connection, Profile and ProductList are normalized config entities; Sessions are append-only JSONL logs anchored to a Connection.*
+*Fig. 4: Buyer, Supplier, Connection, Profile and ProductList are normalized config entities; Sessions are append-only JSONL logs anchored to a Connection.*
 
 > [!TIP]
 > Endpoints (`punchoutUrl`, `orderUrl`) are *intrinsic to the Supplier* — they
@@ -352,7 +397,7 @@ Flow -> Log : append
 @enduml
 ```
 
-*Fig. 4: Mode A — the tool sends buyer documents, the real supplier responds, and the cart returns through the `/punchout` callback.*
+*Fig. 5: Mode A — the tool sends buyer documents, the real supplier responds, and the cart returns through the `/punchout` callback.*
 
 ### Mode B — virtual supplier serves a mock catalog
 
@@ -360,7 +405,10 @@ In Mode B a real procurement platform calls the tool. The tool answers the
 `PunchOutSetupRequest` with a StartPage, serves a themed HTML catalog at
 `/sim/:supplierId/*`, and when the operator checks out it builds the
 `PunchOutOrderMessage` and auto-POSTs it back to the buyer's `BrowserFormPost`
-URL. The mock supplier also **honours the setup `operation`**: for `edit` it
+URL. That URL, like the buyer's identity, is read back from the
+`PunchOutSetupRequest` logged for the session — the StartPage link carries only
+the `BuyerCookie`, so nothing in a link or a form can change where a cart goes.
+The mock supplier also **honours the setup `operation`**: for `edit` it
 re-reads the carried `ItemOut` from the session log and pre-fills the catalog
 quantities (items it doesn't list show as extra rows); for `inspect` it renders
 the carried item(s) read-only and returns them unchanged.
@@ -375,7 +423,6 @@ participant "Browser" as Br
 participant "sim.ts (/sim)" as Sim
 participant "validate.ts" as Val
 database "session log" as Log
-participant "cart-store" as Cart
 
 Buyer -> Sim : POST PunchOutSetupRequest\n(credentials, BrowserFormPost URL)
 Sim -> Val : validate inbound request
@@ -385,22 +432,24 @@ Sim -> Buyer : PunchOutSetupResponse\n(StartPage = /sim/:id/catalog?cookie=...)
 Buyer -> Br : redirect to StartPage
 Br -> Sim : GET catalog (themed HTML)
 Br -> Sim : build cart (fractional qty allowed per item)
-Br -> Sim : POST /sim/:id/checkout (requires cookie)
-Sim -> Cart : store cart for session
+Br -> Sim : POST /sim/:id/checkout (cookie only)
+Sim -> Log : read the session's SetupRequest\n(return URL, buyer identity, operation)
 Sim -> Sim : build PunchOutOrderMessage
 Sim -> Log : append cart
-Sim -> Br : HTML page auto-submitting form\n(action = BrowserFormPost)
+Sim -> Br : HTML page auto-submitting form\n(action = the logged BrowserFormPost)
 Br -> Buyer : POST PunchOutOrderMessage
 @enduml
 ```
 
-*Fig. 5: Mode B — the tool answers the buyer's setup, serves a catalog, and posts the cart back through the browser to the buyer's form-post URL.*
+*Fig. 6: Mode B — the tool answers the buyer's setup, serves a catalog, and posts the cart back through the browser to the buyer's form-post URL.*
 
 > [!IMPORTANT]
-> `/sim/:id/checkout` **requires a `BuyerCookie`**. A cookie-less checkout is
-> rejected with `400` and creates no session. This guards against a phantom
-> session being minted on every stray request — the catalog must be opened from
-> a real `PunchOutSetupResponse` StartPage for a checkout to count.
+> `/sim/:id/checkout` **requires a `BuyerCookie` with a `PunchOutSetupRequest`
+> on record**. A checkout without a cookie, for a cookie this supplier never
+> received a setup for, or for a setup that named no http(s) `BrowserFormPost`
+> URL is rejected with `400` and creates no session. This guards against a
+> phantom session being minted on every stray request, and it is what ties the
+> cart's destination to the buyer's own setup.
 
 ## Sessions
 
@@ -430,7 +479,7 @@ Historical --> Deleted
 @enduml
 ```
 
-*Fig. 6: A session moves from setup through shopping and cart return to order; historical Mode A sessions can be resumed, and any session can be deleted.*
+*Fig. 7: A session moves from setup through shopping and cart return to order; historical Mode A sessions can be resumed, and any session can be deleted.*
 
 The `operation` attribute (`create` / `edit` / `inspect`) is captured from the
 `PunchOutSetupRequest` and shown on the session row. It drives what the outbound
@@ -444,6 +493,45 @@ two surfaces with different rules: the **control plane** (`/api/*`, the SPA)
 and the **inbound surface** (`/sim/*`, `/punchout/*`), which must stay open
 because real buyer systems and supplier pages post to it.
 
+```plantuml
+@startuml request-guards
+!theme plain
+title What a request passes through before it reaches a handler
+
+start
+:Request arrives;
+:Body larger than 24 MB?  → **413**;
+if (Path) then (/api/*)
+  partition "Control plane" {
+    :Host header is not loopback\nor the public URL's host?  → **403**;
+    :State-changing and marked cross-site\n(Sec-Fetch-Site / Origin)?  → **403**;
+    if (Token configured?\n(the tool is exposed)) then (yes)
+      :Client over the wrong-token limit?  → **429**;
+      :Token missing or wrong?  → **401**;
+    else (no — loopback only)
+    endif
+    :API handler;
+  }
+elseif () then (/sim/*  ·  /punchout/*)
+  partition "Inbound surface — open by design" {
+    :Over the request-rate limit?  → **429**;
+    :A write while over the disk budget?  → **507**;
+    if (POST /sim/:id/order\nand the tool is exposed?) then (yes)
+      :Client over the wrong-secret limit?  → **429**;
+    else (no)
+    endif
+    :Mock supplier / punchback handler;
+  }
+else (anything else)
+  :Static SPA files;
+endif
+:Response headers: nosniff everywhere;\napp pages also get CSP (script-src 'self'),\nno framing, no referrer;
+stop
+@enduml
+```
+
+*Fig. 8: The checks in the order a request meets them. The control plane authenticates; the inbound surface is bounded instead.*
+
 **Control plane**
 
 - **Exposure gating.** `/api/*` (except `/api/health`) requires the token
@@ -451,7 +539,17 @@ because real buyer systems and supplier pages post to it.
   `--public-url` or `--host`. The token is accepted as a Bearer header, an
   `x-pos-token` header, or a `?token=` query (for EventSource and download links,
   which can't set headers). It is deliberately **not** accepted from a cookie,
-  which would travel with cross-site requests.
+  which would travel with cross-site requests. The request log masks the
+  `?token=` value.
+- **Token guessing is throttled.** A client that sends 30 wrong tokens in a
+  minute is refused (`429`) until the minute is up, without its token being
+  compared — otherwise a correct guess would still get through. Once 300 wrong
+  tokens have arrived from anyone, every client that has itself sent a wrong one
+  is refused too; a client with no failures is never affected, so a stranger
+  cannot lock the operator out. Clients are told apart by socket address
+  (IPv6 by /64); `X-Forwarded-For` is believed only when the peer is loopback —
+  a tunnel agent on the same machine — and then only its last hop. Startup warns
+  when a configured token is shorter than 16 characters.
 - **DNS-rebinding guard.** `/api/*` only answers when the `Host` header names
   loopback or the configured public URL's host.
 - **CSRF guard.** State-changing `/api/*` requests that the browser marks as
@@ -460,12 +558,22 @@ because real buyer systems and supplier pages post to it.
   reads JSON regardless of `Content-Type`, so without this any web page could
   drive it with a "simple" `text/plain` POST. Same-origin SPA calls and
   non-browser clients (no such headers) pass.
+- **Content-Security-Policy.** The app's own pages are served with
+  `script-src 'self'` (plus `object-src 'none'`, `base-uri 'none'`,
+  `form-action 'self'`). cXML bodies and imported configuration are
+  attacker-influenced text; if an escaping bug ever let some through as markup,
+  no injected inline script or event handler would run. The SPA therefore
+  carries no inline script: the theme bootstrap is a same-origin file and the
+  PDF export is printed by its opener. Styles allow `'unsafe-inline'` because
+  Monaco injects them; frames allow any http(s) origin for the embedded catalog.
 - **No framing.** The SPA and API send `X-Frame-Options: DENY` and CSP
   `frame-ancestors 'none'` (against clickjacking), plus `Referrer-Policy:
   no-referrer` so a `?token=` URL can't leak; `/sim` and `/punchout` are exempt
-  because buyer platforms embed the catalog in an iframe.
+  from both the framing rules and the CSP, because buyer platforms embed the
+  catalog in an iframe and those pages auto-submit with inline script.
 - **Shared secrets.** Masked on connection reads and redacted from every log,
-  stream and PDF export. They are *not* unreachable: the SetupRequest preview
+  stream and PDF export (the redaction matches the `SharedSecret` tag with or
+  without whitespace and attributes). They are *not* unreachable: the SetupRequest preview
   returns the real document (the cXML editor must show what will be sent), and
   an export can include them on request. Treat API access as secret access.
 - **Import is untrusted input.** Imported ids must match
@@ -486,10 +594,22 @@ because real buyer systems and supplier pages post to it.
   render from requests or config is HTML-escaped; `BrowserFormPost` URLs are
   restricted to http(s) and normalized before use; JSON embedded in scripts is
   escaped for `</script>` and line separators.
+- **The cart goes only where the setup said.** The checkout page posts the cart
+  to the `BrowserFormPost` URL of the SetupRequest logged for that session and
+  supplier. The URL is not taken from the catalog link or the checkout form, so
+  a crafted link cannot make the catalog post a cart to another site.
+- **Secret guessing is throttled.** An `OrderResponse` necessarily reveals
+  whether the sender's `SharedSecret` was accepted. When the tool is exposed, a
+  client that sends 30 OrderRequests with a wrong secret in a minute gets `429`
+  for the rest of it (same client identification as for tokens), and the
+  comparison is constant-time. Plain localhost runs are not throttled: sending
+  a bad secret repeatedly is a legitimate test there.
 - **Parsing.** `fast-xml-parser` does not expand nested entities, so
   entity-expansion ("billion laughs") documents stay small; XXE is not possible.
-- **Files.** Session ids and attachment hashes are sanitized before they become
-  paths, with a containment assertion before any delete.
+- **Files.** A session id becomes a file name only if it is filename-safe;
+  otherwise it is stored under a sanitized prefix plus a hash, so ids can
+  neither escape the sessions directory nor collide with each other. Attachment
+  hashes are reduced to hex before use, and deletes assert containment first.
 
 **Outbound calls** (Mode A to a supplier) allow only `http(s)`, reject
 credentials embedded in the URL, don't follow redirects to other hosts, time out
@@ -536,8 +656,17 @@ guide.
 | Server | Hono on `@hono/node-server` |
 | SPA | React + Vite + Monaco editor |
 | Dev | `npm run dev` — Vite (`:5173`) + `tsx watch` server concurrently |
-| Build | `vite build` (SPA) + `tsc` (server) into `dist/` |
+| Build | `vite build` (SPA) + `tsup` (server) into `dist/` |
 | Publish | Only `dist/` is published; `bin` → `dist/server/cli.js` |
 | Run | `npx punchout-simulator` (loopback, opens browser, seeds demo data) |
 
-CI publishes with `npm publish --provenance` (SLSA) on GitHub Release.
+A GitHub Release triggers the publish job, which authenticates to npm by
+trusted publishing (the job's OIDC token, no stored npm token) and publishes
+with provenance (SLSA). That job installs dependencies with `--ignore-scripts`
+and pins its actions to commit SHAs, so nothing third-party runs with the
+publish credential. The Test strategy shows the whole pipeline.
+
+A `Dockerfile` (two-stage build on `node:24-slim`, runs as the unprivileged
+`node` user, data in a `/data` volume) is provided for building an image
+yourself; no image is published to a registry. CI builds it on every push so it
+keeps working.

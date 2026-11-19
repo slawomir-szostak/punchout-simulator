@@ -1,110 +1,121 @@
-// Headless-browser verification of the full UI flow against a running server.
+// Headless-browser walk through one full session against a running server.
 //   node scripts/verify-ui.mjs [baseUrl]
-// Drives: select Demo Buyer -> send SetupRequest -> shop on the catalog ->
-// cart returns via SSE -> send OrderRequest. Fails on console/page errors.
-import { chromium } from "playwright";
+// Drives the real SPA: new session -> SetupRequest -> shop in the embedded
+// catalog (iframe) -> cart returns over SSE -> OrderRequest -> PDF export.
+// Fails on any console error, page error or Content-Security-Policy violation,
+// so it doubles as the check that the app still runs under its own CSP.
+//
+// Needs a Chromium: `npx playwright-core install chromium`, or set
+// CHROMIUM_PATH to an existing Chrome/Chromium binary.
+import { chromium } from "playwright-core";
 
 const BASE = process.argv[2] ?? "http://localhost:8099";
-const errors = [];
+const problems = [];
+let failed = false;
+const pass = (m) => console.log("PASS  " + m);
 const fail = (m) => {
   console.log("FAIL  " + m);
-  process.exitCode = 1;
+  failed = true;
 };
-const pass = (m) => console.log("PASS  " + m);
+const step = async (label, fn) => {
+  try {
+    await fn();
+    pass(label);
+  } catch (e) {
+    fail(`${label} — ${String(e.message).split("\n")[0]}`);
+  }
+};
 
-const browser = await chromium.launch();
-const ctx = await browser.newContext();
-const page = await ctx.newPage();
-page.on("console", (msg) => {
-  if (msg.type() === "error") errors.push(msg.text());
+const browser = await chromium.launch(
+  process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {},
+);
+const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+// Report CSP violations through the console so they are collected with the rest.
+await ctx.addInitScript(() => {
+  document.addEventListener("securitypolicyviolation", (e) =>
+    console.error(`CSP violation: ${e.violatedDirective} blocked ${e.blockedURI || "inline"}`),
+  );
 });
-page.on("pageerror", (e) => errors.push("pageerror: " + e.message));
+const watch = (p, name) => {
+  p.on("console", (m) => {
+    if (m.type() === "error") problems.push(`[${name}] ${m.text()}`);
+  });
+  p.on("pageerror", (e) => problems.push(`[${name}] pageerror: ${e.message}`));
+};
+const page = await ctx.newPage();
+watch(page, "app");
 
 try {
-  // Not networkidle: the SSE live-log stream keeps the connection open forever.
-  await page.goto(BASE, { waitUntil: "domcontentloaded" });
+  // Not networkidle: the SSE live-log stream keeps a connection open forever.
+  const res = await page.goto(BASE, { waitUntil: "domcontentloaded" });
 
-  // App shell renders
-  await page.getByText("punchout-simulator").first().waitFor({ timeout: 10000 });
-  pass("app shell rendered");
+  await step("app shell renders under a script-src 'self' policy", async () => {
+    const csp = res.headers()["content-security-policy"] ?? "";
+    if (!/script-src 'self'(;|$)/.test(csp)) throw new Error(`unexpected CSP: ${csp || "(none)"}`);
+    await page.getByText("punchout-simulator").first().waitFor({ timeout: 10000 });
+    const theme = await page.evaluate(() => document.documentElement.dataset.theme);
+    if (theme !== "dark" && theme !== "light") throw new Error("theme bootstrap did not run");
+  });
 
-  // Select the demo buyer connection
-  await page.getByText("Demo Buyer", { exact: false }).first().click();
-  await page.getByRole("heading", { name: "SetupRequest" }).waitFor({ timeout: 10000 });
-  pass("buyer flow opened");
+  await step("start a session on the demo connection", async () => {
+    await page.getByRole("button", { name: /New session/i }).first().click();
+    await page.getByRole("button", { name: "Start session" }).click();
+    await page.getByRole("button", { name: /Send SetupRequest/ }).waitFor({ timeout: 10000 });
+  });
 
-  // Monaco mounted
-  await page.locator(".monaco-editor").first().waitFor({ timeout: 15000 });
-  pass("Monaco editor mounted");
+  await step("Monaco editor mounts with its worker", async () => {
+    await page.getByText(/Edit cXML|Show cXML/).first().click();
+    await page.locator(".monaco-editor .view-line").first().waitFor({ timeout: 15000 });
+    await page.waitForTimeout(1000);
+    if (page.workers().length === 0) throw new Error("no editor worker started");
+  });
 
-  // Send SetupRequest
-  await page.getByRole("button", { name: /Send SetupRequest/ }).click();
-  const startLink = page.getByRole("link", { name: /open catalog/ });
-  await startLink.waitFor({ timeout: 10000 });
-  const startPage = await startLink.getAttribute("href");
-  pass("SetupRequest sent, StartPage returned");
+  await step("send the SetupRequest", async () => {
+    await page.getByRole("button", { name: /Send SetupRequest/ }).click();
+    await page.getByText(/open embedded/i).first().waitFor({ timeout: 10000 });
+  });
 
-  // Validation panels appear (either an issue list or the "no issues" line)
-  await page.locator(".validation-panel").first().waitFor({ timeout: 5000 });
-  pass("validation panels shown");
+  await step("shop in the embedded catalog; the cart returns over SSE", async () => {
+    await page.getByText(/open embedded/i).first().click();
+    const frame = page.frameLocator("iframe.catalog-frame-body");
+    await frame.locator('input[name="q_0"]').fill("2", { timeout: 10000 });
+    await frame.getByRole("button", { name: /Return cart/ }).click();
+    await page.getByRole("button", { name: /Build OrderRequest/ }).waitFor({ timeout: 15000 });
+  });
 
-  // Shop on the catalog in a second tab and return the cart
-  const shop = await ctx.newPage();
-  await shop.goto(startPage, { waitUntil: "load" });
-  await shop.locator('input[name="q_0"]').fill("2");
-  await shop.locator('input[name="q_1"]').fill("1");
-  await shop.getByRole("button", { name: /Return cart/ }).click();
-  await shop.getByText(/Cart returned/).waitFor({ timeout: 10000 });
-  pass("catalog checkout + punchback auto-submit");
+  await step("build and send the OrderRequest", async () => {
+    await page.getByRole("button", { name: /Build OrderRequest/ }).click();
+    await page.getByRole("button", { name: /Send OrderRequest/ }).click();
+    await page.getByText(/Order number SO-/).first().waitFor({ timeout: 10000 });
+  });
 
-  // Cart appears in the app via SSE
-  await page.locator(".cart-table tbody tr").first().waitFor({ timeout: 10000 });
-  const rows = await page.locator(".cart-table tbody tr").count();
-  rows === 2 ? pass("cart rendered live (2 items)") : fail(`cart rows = ${rows}`);
+  await step("PDF export opens a report and asks the browser to print it", async () => {
+    const [report] = await Promise.all([
+      ctx.waitForEvent("page"),
+      page.getByTitle("Export this flow as a PDF (print)").first().click(),
+    ]);
+    watch(report, "pdf");
+    // Stand in for the print dialog, which would block a headless run.
+    await report.evaluate(() => {
+      window.print = () => {
+        document.title = "PRINT-CALLED";
+      };
+    });
+    await report.waitForFunction(() => document.title === "PRINT-CALLED", null, { timeout: 5000 });
+    if ((await report.locator("pre").count()) < 3) throw new Error("report is missing message bodies");
+  });
 
-  // Session persists across Flow/Settings tab switches
-  await page.getByRole("button", { name: "Settings" }).click();
-  await page.getByText(/Shared Secret/).first().waitFor({ timeout: 5000 });
-  await page.getByRole("button", { name: "Flow" }).click();
-  const rowsAfter = await page.locator(".cart-table tbody tr").count();
-  rowsAfter === 2 ? pass("session survives Flow/Settings switch (cart still there)") : fail(`cart lost on tab switch: ${rowsAfter}`);
-
-  // Build the OrderRequest (editable), then send it
-  await page.getByRole("button", { name: /Build OrderRequest/ }).click();
-  await page.getByText(/This exact document is what gets sent/).waitFor({ timeout: 8000 });
-  pass("OrderRequest built and editable before send");
-
-  await page.getByRole("button", { name: /Send OrderRequest/ }).click();
-  await page.getByText(/Status 200/).waitFor({ timeout: 10000 });
-  pass("OrderRequest sent, supplier returned Status 200");
-
-  // Retry path: the editor stays and the button becomes Re-send
-  await page.getByRole("button", { name: /Re-send OrderRequest/ }).waitFor({ timeout: 5000 });
-  pass("retry available (Re-send OrderRequest)");
-
-  // Live log populated
-  const logRows = await page.locator(".log-row").count();
-  logRows >= 4 ? pass(`live log populated (${logRows} rows)`) : fail(`log rows = ${logRows}`);
-
-  // Open a message detail modal
-  await page.locator(".log-row").first().click();
-  await page.locator(".modal").waitFor({ timeout: 5000 });
-  pass("message detail modal opens");
-
-  await page.screenshot({ path: "/tmp/pos-ui.png", fullPage: true });
-  pass("screenshot saved to /tmp/pos-ui.png");
-} catch (e) {
-  fail("exception: " + (e instanceof Error ? e.message : String(e)));
-}
-
-if (errors.length) {
-  const benign = errors.filter((e) => !/favicon|the server responded with a status of 404/i.test(e));
-  if (benign.length) {
-    console.log("\nConsole errors:");
-    benign.forEach((e) => console.log("  - " + e));
-    fail(`${benign.length} console error(s)`);
+  if (problems.length > 0) {
+    fail(`console errors / CSP violations:\n      ${problems.join("\n      ")}`);
+  } else {
+    pass("no console errors or CSP violations");
   }
+} finally {
+  await browser.close();
 }
 
-await browser.close();
-console.log(process.exitCode ? "\nUI VERIFY FAILED" : "\nUI VERIFY OK — full flow works in a real browser");
+if (failed) {
+  console.log("\nUI VERIFY FAILED");
+  process.exit(1);
+}
+console.log("\nUI VERIFY OK — a full session works in a real browser");

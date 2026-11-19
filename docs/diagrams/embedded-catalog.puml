@@ -1,0 +1,31 @@
+@startuml embedded-catalog
+!theme plain
+title Mode A — shopping in the embedded catalog (iframe)
+
+actor Operator as Op
+participant "SPA\n(session view)" as SPA
+participant "Catalog iframe\n(supplier's pages)" as Frame
+participant "Real supplier" as Sup
+participant "/punchout/return" as Cb
+participant "SSE stream" as SSE
+
+Op -> SPA : open embedded
+SPA -> Frame : load the StartPage in an overlay iframe\n(not sandboxed; local-network access delegated)
+Frame -> Sup : GET StartPage
+note right of Sup
+  Fails here if the supplier forbids framing
+  (X-Frame-Options / CSP frame-ancestors) or
+  depends on third-party cookies.
+end note
+Op -> Frame : shop, check out
+Sup -> Frame : page that auto-submits the punchback
+Frame -> Cb : POST PunchOutOrderMessage
+note right of Frame
+  A form targeting _top would navigate
+  the whole buyer UI away instead.
+end note
+Cb -> Frame : receipt page (knows it is framed)
+Cb -> SSE : cart event
+SSE -> SPA : cart arrived
+SPA -> SPA : close the overlay after a moment,\nshow the cart in the session
+@enduml

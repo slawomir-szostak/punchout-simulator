@@ -45,6 +45,22 @@ product list on first run, and opens the browser. Useful flags:
 > have sent a wrong one), which slows guessing but does not make a short token
 > safe.
 
+### Running in Docker
+
+No image is published to a registry; build one from a clone of the repository:
+
+```bash
+docker build -t punchout-simulator .
+docker run -p 127.0.0.1:8080:8080 -v "$PWD/data:/data" punchout-simulator
+docker logs <container>   # → http://localhost:8080/?token=…
+```
+
+Inside the container the tool binds `0.0.0.0`, so it treats itself as exposed
+and **always requires the API token**, even when you publish the port only on
+`127.0.0.1` as above. A token is generated on each start and printed in the
+logs; pass `-e POS_TOKEN="$(openssl rand -hex 24)"` to keep one across restarts.
+Configuration and logs live in the `/data` volume.
+
 ### Environment variables
 
 Every flag default can also come from the environment, which is convenient for
@@ -203,11 +219,68 @@ mutates the logged document.
    it before sending.
 3. **Send** the `PunchOutSetupRequest`. The real supplier returns a
    `PunchOutSetupResponse` with a **StartPage** link.
-4. **Open the StartPage** and shop on the real supplier's site. On checkout the
-   supplier posts the cart back to the tool's `/punchout` callback; it appears in
-   the session as a `PunchOutOrderMessage`.
+4. **Open the StartPage** — in a new tab, or **embedded** in the tool (see
+   below) — and shop on the real supplier's site. On checkout the supplier posts
+   the cart back to the tool's `/punchout` callback; it appears in the session
+   as a `PunchOutOrderMessage`.
 5. Build and **Send the OrderRequest** (optionally with attachments). The
    supplier replies with an `OrderResponse`.
+
+### Shopping in the embedded catalog
+
+Some procurement systems (Coupa, Ariba Guided Buying) show the supplier's
+catalog inside a frame in their own page rather than in a new tab. **Open
+embedded** does the same: the StartPage loads in an iframe overlay on top of the
+session, and the overlay closes by itself a moment after the cart comes back.
+
+```plantuml
+@startuml embedded-catalog
+!theme plain
+title Mode A — shopping in the embedded catalog (iframe)
+
+actor Operator as Op
+participant "SPA\n(session view)" as SPA
+participant "Catalog iframe\n(supplier's pages)" as Frame
+participant "Real supplier" as Sup
+participant "/punchout/return" as Cb
+participant "SSE stream" as SSE
+
+Op -> SPA : open embedded
+SPA -> Frame : load the StartPage in an overlay iframe\n(not sandboxed; local-network access delegated)
+Frame -> Sup : GET StartPage
+note right of Sup
+  Fails here if the supplier forbids framing
+  (X-Frame-Options / CSP frame-ancestors) or
+  depends on third-party cookies.
+end note
+Op -> Frame : shop, check out
+Sup -> Frame : page that auto-submits the punchback
+Frame -> Cb : POST PunchOutOrderMessage
+note right of Frame
+  A form targeting _top would navigate
+  the whole buyer UI away instead.
+end note
+Cb -> Frame : receipt page (knows it is framed)
+Cb -> SSE : cart event
+SSE -> SPA : cart arrived
+SPA -> SPA : close the overlay after a moment,\nshow the cart in the session
+@enduml
+```
+
+*Fig. 2: The embedded run — the supplier's pages live in a frame, and the cart still returns through the normal callback.*
+
+Use it to find problems a new-tab run never shows:
+
+- **The catalog refuses to load.** The supplier sends `X-Frame-Options` or a
+  CSP `frame-ancestors` rule that forbids framing.
+- **The session is lost inside the frame.** The supplier depends on cookies that
+  browsers treat as third-party when framed.
+- **The whole tool navigates away on checkout.** The supplier's punchback form
+  targets `_top` instead of the frame.
+- **The cart never arrives.** With the tool on `localhost` and the supplier on a
+  public address, Chrome's Local Network Access rules apply to the punchback.
+  The frame delegates that permission, but a managed browser may still block it
+  by policy (`chrome://policy`).
 
 ### Mode B walk-through (virtual supplier)
 
@@ -221,10 +294,13 @@ mutates the logged document.
    auto-POSTs it to the platform's `BrowserFormPost` URL.
 
 > [!IMPORTANT]
-> A checkout against `/sim/:id/checkout` **requires a `BuyerCookie`**. Always
-> reach the catalog by opening the StartPage from a real
-> `PunchOutSetupResponse` — a cookie-less checkout is rejected (`400`) and is
-> never logged as a session.
+> A checkout against `/sim/:id/checkout` **requires a session opened by a
+> `PunchOutSetupRequest`**. Always reach the catalog by opening the StartPage
+> from a real `PunchOutSetupResponse`. The cart is returned to the
+> `BrowserFormPost` URL that setup named — the tool reads it back from the
+> session log, not from the link — so a checkout without a cookie, or for a
+> cookie with no setup on record, is rejected (`400`) and never logged as a
+> session.
 
 ## Operations explained
 
@@ -302,6 +378,21 @@ Connection. Many real Ariba/Coupa receivers expect `base64`; `binary` is more
 compact and valid over HTTP. Attachments are stored content-addressed and
 referenced from the session log rather than inlined.
 
+Each attachment is **scoped to the order or to one item**, which decides where
+its `cid:` reference lands: in `OrderRequestHeader/Comments` or in that
+`ItemOut/Comments`.
+
+**The dangling-`cid` test.** Tick *Dangling-cid test* before building the order
+and the OrderRequest references a `Content-ID` that is deliberately missing from
+the envelope. A correct receiver rejects it; one that answers `200` is not
+checking that referenced attachments actually arrived. The tool flags the
+dangling reference in its own validation as well, so you can see both sides.
+
+**Seeing what went over the wire.** Every logged message has a **cXML / Raw**
+toggle. *Raw* shows the headers and, for an order with attachments, the whole
+`multipart/related` envelope — boundaries, part headers, `Content-ID`s and each
+part. It is rebuilt on demand from the document and the stored attachments.
+
 ## Managing sessions
 
 - **Per-session log** — select a session to see only its messages.
@@ -321,6 +412,72 @@ referenced from the session log rather than inlined.
 > If a flood of empty sessions ever appears, the cause is almost always
 > cookie-less `/sim/:id/checkout` calls. Current builds reject these with `400`
 > and create no session; opening the catalog from a real StartPage is required.
+
+## Exposing the tool safely
+
+By default nothing outside your machine can reach the tool. The moment you let
+something else in — a colleague, a real buyer system, a container — the picture
+changes:
+
+```plantuml
+@startuml exposure-modes
+!theme plain
+title Four ways to run it — who can reach what
+
+rectangle "1. Localhost (default)" as M1 {
+  actor "You" as U1
+  node "punchout-simulator\n127.0.0.1:8080" as T1
+  U1 -right-> T1 : http · no token needed
+}
+
+rectangle "2. LAN  (--host 0.0.0.0)" as M2 {
+  actor "Colleague /\nbuyer system" as U2
+  node "punchout-simulator\n0.0.0.0:8080" as T2
+  U2 -right-> T2 : **plain http** on the network\n/api needs the token\n/sim, /punchout open
+}
+
+rectangle "3. Tunnel  (--public-url https://…)" as M3 {
+  actor "Buyer system\non the internet" as U3
+  cloud "Tunnel provider\n(ngrok / cloudflared)" as C3
+  node "Tunnel agent\n(this machine)" as A3
+  node "punchout-simulator\n127.0.0.1:8080" as T3
+  U3 -right-> C3 : https
+  C3 -right-> A3 : encrypted
+  A3 -right-> T3 : http on loopback\n/api needs the token
+}
+
+rectangle "4. Docker" as M4 {
+  actor "You" as U4
+  node "Host port\n-p 127.0.0.1:8080:8080" as P4
+  node "Container\n0.0.0.0:8080" as T4
+  U4 -right-> P4 : http
+  P4 -right-> T4 : /api always needs the token\n(the container counts as exposed)
+}
+
+M1 -[hidden]down- M2
+M2 -[hidden]down- M3
+M3 -[hidden]down- M4
+@enduml
+```
+
+*Fig. 3: What each way of running the tool makes reachable, and where the token and encryption come in.*
+
+Before exposing it:
+
+- **Prefer a tunnel to a LAN bind.** A tunnel gives you HTTPS; `--host 0.0.0.0`
+  sends the token and every shared secret across the network in plain HTTP.
+- **Let the tool generate the token**, or set one of at least 16 random
+  characters. Wrong tokens are throttled, but that only slows guessing.
+- **Treat API access as secret access.** Anyone with the token can read the
+  shared secrets through the SetupRequest preview or an export.
+- **Remember what stays open.** `/sim/*` and `/punchout/return` accept
+  unauthenticated cXML by design. They are bounded by a rate limit, the disk
+  budget and — for wrong shared secrets on orders — a per-client throttle.
+- **Don't leave it running.** It is a test tool; stop it, or close the tunnel,
+  when the test is over.
+
+To report a security problem, see
+[SECURITY.md](https://github.com/slawomir-szostak/punchout-simulator/blob/main/SECURITY.md).
 
 ## Data and storage
 
