@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { sessionForOrder } from "../cart-store.js";
 import { nanoid } from "nanoid";
 import {
@@ -15,6 +15,7 @@ import { getPublicUrl, getToken } from "../runtime.js";
 import { authClientKey, authThrottle } from "../rate-limit.js";
 import { resolveCharges } from "./charges.js";
 import {
+  buildProfileResponse,
   buildPunchOutOrderMessage,
   buildResponseStatus,
   buildSetupResponse,
@@ -25,14 +26,14 @@ import {
   makePayloadId,
   type OperationAllowed,
 } from "../cxml/build.js";
-import { getHeaderCredentials, getOrderInfo, parseSetupItems, parseXml, root, text, type SetupItems } from "../cxml/parse.js";
+import { getDocType, getHeaderCredentials, getOrderInfo, parseSetupItems, parseXml, root, text, type ParsedDoc, type SetupItems } from "../cxml/parse.js";
 import {
   isMultipart,
   normalizeContentId,
   parseMultipartRelated,
 } from "../cxml/multipart.js";
 import { validateDocument, type ExpectedCredentials } from "../cxml/validate.js";
-import type { AttachmentEncoding, AttachmentRef, CartItem, CatalogItem, Credential, Supplier } from "../cxml/types.js";
+import type { AttachmentEncoding, AttachmentRef, CartItem, CatalogItem, Credential, ProfileTransaction, Supplier } from "../cxml/types.js";
 
 // Mode B (virtual-supplier / mock catalog) — spec sections 4, 10, 14. Endpoints
 // are keyed by SUPPLIER id, because the PunchOut/Order URLs are intrinsic to the
@@ -175,6 +176,106 @@ function effFor(supplierId: string, from: Credential | Credential[] | undefined)
   return r ? effectiveProfile(r.connection, r.buyer) : undefined;
 }
 
+// The SharedSecret check answers "was this secret right?", which makes any
+// endpoint that performs it a way to test guesses at a connection's secret.
+// When the tool is exposed, bound that the same way as /api token guesses: a
+// client that keeps sending a wrong secret is refused for the rest of the
+// minute. (On a plain localhost run every client is the operator, and "send a
+// bad secret" is a legitimate thing to test repeatedly.)
+const wrongSecret = authThrottle();
+
+// --- 0. ProfileRequest in -> ProfileResponse out --------------------------------
+//
+// "The Profile transaction is the only transaction that all cXML servers must
+// support", and it doubles as a ping. The answer lists the requests this
+// supplier accepts and where to send them. A hub posts the request to whatever
+// URL it knows for the supplier, so besides the dedicated /profile endpoint the
+// punchout and order endpoints answer it too.
+
+function profileOf(supplier: Supplier): ProfileTransaction[] {
+  const base = `${getPublicUrl()}/sim/${encodeURIComponent(supplier.id)}`;
+  // operationAllowed here mirrors what the supplier grants on returned carts.
+  const granted = operationAllowedOf(supplier);
+  const operations = granted === "edit" ? "create inspect edit" : granted === "inspect" ? "create inspect" : "create";
+  return [
+    { requestName: "ProfileRequest", url: `${base}/profile`, options: [] },
+    { requestName: "PunchOutSetupRequest", url: `${base}/punchout`, options: [{ name: "operationAllowed", value: operations }] },
+    // "When OrderRequest is returned as a supported transaction, two options
+    // must be specified: attachments and changes." The mock accepts both.
+    { requestName: "OrderRequest", url: `${base}/order`, options: [{ name: "attachments", value: "Yes" }, { name: "changes", value: "Yes" }] },
+  ];
+}
+
+async function answerProfileRequest(c: Context, supplier: Supplier, reqXml: string, doc: ParsedDoc): Promise<Response> {
+  const exposed = !!getToken();
+  const client = authClientKey(c);
+  const wait = exposed ? wrongSecret.blockedFor(client) : 0;
+  if (wait > 0) {
+    c.header("Retry-After", String(wait));
+    return c.text("too many requests with a wrong SharedSecret — wait and retry", 429);
+  }
+
+  const from = getHeaderCredentials(doc).fromAll;
+  const eff = effFor(supplier.id, from);
+  const sessionId = `profile-${nanoid(10)}`;
+  const validation = validateDocument(reqXml, {
+    expected: expectedFor(supplier.id, from),
+    forceDocType: "ProfileRequest",
+    expectedDtdVersion: eff ? dtdVersionFor(eff, "SetupRequest") : undefined,
+  });
+  appendLog({
+    sessionId,
+    connectionId: supplier.id,
+    direction: "in",
+    docType: "ProfileRequest",
+    url: c.req.url,
+    headers: { "Content-Type": c.req.header("content-type") ?? "" },
+    body: reqXml,
+    validation,
+  });
+  const wrong = validation.issues.some((i) => i.code === "sharedsecret-mismatch");
+  if (exposed && wrong) wrongSecret.recordFailure(client);
+
+  const dtdVersion = eff ? dtdVersionFor(eff, "SetupResponse") : undefined;
+  const firstError = validation.issues.find((i) => i.severity === "error")?.message;
+  const respXml = validation.ok
+    ? buildProfileResponse({
+        payloadId: makePayloadId(host(), new Date().toISOString()),
+        timestamp: cxmlTimestamp(),
+        // "When these services were first available" — the supplier's creation.
+        effectiveDate: cxmlTimestamp(new Date(supplier.createdAt)),
+        transactions: profileOf(supplier),
+        dtdVersion,
+      })
+    : buildResponseStatus({
+        payloadId: makePayloadId(host(), new Date().toISOString()),
+        timestamp: cxmlTimestamp(),
+        statusCode: wrong ? "401" : "400",
+        statusText: wrong ? "Unauthorized" : "Bad Request",
+        message: firstError,
+        dtdVersion,
+      });
+  appendLog({
+    sessionId,
+    connectionId: supplier.id,
+    direction: "out",
+    docType: "ProfileResponse",
+    url: c.req.url,
+    headers: { "Content-Type": "text/xml; charset=UTF-8" },
+    body: respXml,
+    validation: validateDocument(respXml, { forceDocType: "ProfileResponse" }),
+  });
+  c.header("Content-Type", "text/xml; charset=UTF-8");
+  return c.body(respXml, validation.ok ? 200 : wrong ? 401 : 400);
+}
+
+simRoute.post("/:id/profile", async (c) => {
+  const supplier = getSupplier(c.req.param("id"));
+  if (!supplier) return c.text("supplier not found", 404);
+  const reqXml = await c.req.text();
+  return answerProfileRequest(c, supplier, reqXml, parseXml(reqXml));
+});
+
 // --- 1. PunchOutSetupRequest in -> PunchOutSetupResponse out ------------------
 
 simRoute.post("/:id/punchout", async (c) => {
@@ -183,6 +284,7 @@ simRoute.post("/:id/punchout", async (c) => {
 
   const reqXml = await c.req.text();
   const doc = parseXml(reqXml);
+  if (doc.wellFormed && getDocType(doc) === "ProfileRequest") return answerProfileRequest(c, supplier, reqXml, doc);
   const reqRoot = root(doc)?.Request?.PunchOutSetupRequest;
   const buyerCookie = text(reqRoot?.BuyerCookie) || `pos-${nanoid(16)}`;
   const from = getHeaderCredentials(doc).fromAll;
@@ -556,14 +658,6 @@ ${inner}
 
 // --- 4. OrderRequest in -> OrderResponse out ----------------------------------
 
-// The OrderResponse necessarily tells the sender whether its SharedSecret was
-// accepted, which makes this endpoint a way to test guesses at a connection's
-// secret. When the tool is exposed, bound that the same way as /api token
-// guesses: a client that keeps sending a wrong secret is refused for the rest
-// of the minute. (On a plain localhost run every client is the operator, and
-// "send a bad secret" is a legitimate thing to test repeatedly.)
-const wrongSecret = authThrottle();
-
 simRoute.post("/:id/order", async (c) => {
   const supplier = getSupplier(c.req.param("id"));
   if (!supplier) return c.text("supplier not found", 404);
@@ -603,6 +697,7 @@ simRoute.post("/:id/order", async (c) => {
   }
 
   const doc = parseXml(xml);
+  if (doc.wellFormed && getDocType(doc) === "ProfileRequest") return answerProfileRequest(c, supplier, xml, doc);
   const from = getHeaderCredentials(doc).fromAll;
   const sessionId = findSessionForOrder(doc) ?? `order-${nanoid(8)}`;
   const eff = effFor(supplier.id, from);

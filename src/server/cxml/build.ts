@@ -1,5 +1,5 @@
 import { nanoid } from "nanoid";
-import type { AccountingSettings, Address, AddressMode, CartItem, ChargeAmount, Contact, Credential, TaxSettings } from "./types.js";
+import type { AccountingSettings, Address, AddressMode, CartItem, ChargeAmount, Contact, Credential, ProfileOption, ProfileTransaction, TaxSettings } from "./types.js";
 
 // cXML document builders. We use template literals (not an XML library) so we
 // keep full control over element order, attributes and xml:lang — see spec
@@ -158,6 +158,67 @@ function extrinsicBlock(items: ExtrinsicVal[] | undefined, indent: string): stri
       .map((e) => `${indent}<Extrinsic name="${escapeXml(e.name)}">${escapeXml(e.value)}</Extrinsic>`)
       .join("\n")
   );
+}
+
+// --- Profile transaction -------------------------------------------------------
+//
+// "The Profile transaction is the only transaction that all cXML servers must
+// support." A ProfileRequest is an empty element routed by the Header; the
+// ProfileResponse lists the requests the server accepts and where:
+//   ProfileRequest  EMPTY
+//   ProfileResponse (Option*, Transaction+)   @effectiveDate #REQUIRED, @lastRefresh
+//   Transaction     (URL, Option*)            @requestName #REQUIRED
+//   Option          (#PCDATA)                 @name #REQUIRED
+
+export function buildProfileRequest(o: {
+  from: Credential;
+  to: Credential;
+  sender: Credential;
+  sharedSecret?: string;
+  payloadId: string;
+  timestamp: string;
+  lang?: string;
+  deploymentMode?: string;
+  dtdVersion?: string;
+  userAgent?: string;
+}): string {
+  const deployment = o.deploymentMode ? ` deploymentMode="${escapeXml(o.deploymentMode)}"` : "";
+  const inner = `${header({ from: o.from, to: o.to, sender: o.sender, sharedSecret: o.sharedSecret, userAgent: o.userAgent })}
+  <Request${deployment}>
+    <ProfileRequest/>
+  </Request>`;
+  return envelope(o.payloadId, o.timestamp, o.lang ?? "en-US", inner, o.dtdVersion);
+}
+
+const optionLines = (options: ProfileOption[] | undefined, indent: string): string =>
+  (options ?? []).map((opt) => `\n${indent}<Option name="${escapeXml(opt.name)}">${escapeXml(opt.value)}</Option>`).join("");
+
+export function buildProfileResponse(o: {
+  payloadId: string;
+  timestamp: string;
+  /** When these services became available; "should not be in the future". */
+  effectiveDate: string;
+  lastRefresh?: string;
+  options?: ProfileOption[];
+  transactions: ProfileTransaction[];
+  lang?: string;
+  dtdVersion?: string;
+}): string {
+  const refresh = o.lastRefresh ? ` lastRefresh="${escapeXml(o.lastRefresh)}"` : "";
+  const transactions = o.transactions
+    .map(
+      (t) => `      <Transaction requestName="${escapeXml(t.requestName)}">
+        <URL>${escapeXml(t.url)}</URL>${optionLines(t.options, "        ")}
+      </Transaction>`,
+    )
+    .join("\n");
+  const inner = `  <Response>
+    <Status code="200" text="OK" xml:lang="en"/>
+    <ProfileResponse effectiveDate="${escapeXml(o.effectiveDate)}"${refresh}>${optionLines(o.options, "      ")}
+${transactions}
+    </ProfileResponse>
+  </Response>`;
+  return envelope(o.payloadId, o.timestamp, o.lang ?? "en-US", inner, o.dtdVersion);
 }
 
 // --- Tax, Shipping, Distribution ----------------------------------------------

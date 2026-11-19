@@ -5,6 +5,34 @@ corresponding [GitHub Release](https://github.com/slawomir-szostak/punchout-simu
 Versions follow [Semantic Versioning](https://semver.org); while the project is
 pre-1.0, new features may arrive in patch releases.
 
+## v0.14.0 — Ask a supplier what it supports: the Profile transaction
+
+*Released 2026-11-19*
+
+Minor release. Adds the cXML Profile transaction — ProfileRequest and ProfileResponse — on both sides.
+
+The Profile transaction is the one request the cXML standard requires every server to answer: an empty question, "which requests do you accept, and where do I send them?". The tool neither asked it nor answered it. That left two gaps. A buyer system that sends a ProfileRequest to the mock supplier got nothing useful back. And when you set up a connection to a real supplier, the only way to find out that a URL or a shared secret was wrong was to start a session and read the failure — the question that would have told you in one click was not available.
+
+### Asking a supplier (virtual buyer)
+- A connection has a new **Supplier profile** panel. **Send ProfileRequest** shows the URL called, the HTTP and cXML status, and a table of the requests the supplier supports with the URL and options for each.
+- It works as a **ping**: before any session, it shows whether the endpoint speaks cXML and accepts the connection's credentials. A wrong URL appears as "not a cXML document" with the server's own message; a wrong shared secret as the supplier's `401`.
+- When the supplier advertises a different PunchOut or order URL than the one configured, both are shown, and **Use the advertised URLs** takes them over.
+- A supplier has a new optional **Profile URL** for where the request goes; without it the PunchOut URL is used.
+- Both messages are kept as a small session of their own, labelled *profile check*.
+
+### Answering as a supplier (mock supplier)
+- The mock supplier answers a ProfileRequest on `/sim/<id>/profile`, and also on its punchout and order endpoints, since a sender uses whichever URL it knows.
+- It advertises its three requests and their URLs, the operations its *Carts may later be* setting allows, and — as the standard requires for an OrderRequest — the `attachments` and `changes` options.
+- A wrong shared secret gets a cXML `401`. When the tool is exposed, those attempts count toward the same throttle as wrong secrets on orders.
+
+### Validation
+- A ProfileResponse must have an `effectiveDate`, at least one `Transaction`, and a request name and a valid URL on each.
+- Warnings for an `effectiveDate` in the future, and for an `OrderRequest` transaction that does not state `attachments` and `changes`.
+
+Both documents are valid for every DTD version a buyer profile declares (1.2.008 to 1.2.045) and for the current 1.2.072.
+
+**Full Changelog**: https://github.com/slawomir-szostak/punchout-simulator/compare/v0.13.2...v0.14.0
+
 ## v0.13.2 — Fix: a crafted body could stall the server
 
 *Released 2026-11-19*

@@ -1,4 +1,4 @@
-import type { Buyer, Connection, LogRecord, Supplier } from "../cxml/types.js";
+import type { Buyer, Connection, LogRecord, ServerProfile, Supplier } from "../cxml/types.js";
 import type { ProxyStatus } from "../proxy-detect.js";
 import type { SessionSummary as LogSessionSummary } from "../store/log.js";
 
@@ -43,6 +43,27 @@ export interface SetupResult {
   statusCode?: string;
   /** Human-readable Status body from the supplier, if any. */
   statusMessage?: string;
+  request: LogRecord;
+  response: LogRecord;
+}
+
+/** Result of POST /api/connections/:id/profile. */
+export interface ProfileResult {
+  /** The session the two documents were logged under. */
+  sessionId: string;
+  /** The URL the ProfileRequest was posted to. */
+  url: string;
+  transportError?: string;
+  httpStatus: number;
+  statusCode?: string;
+  statusMessage?: string;
+  /** The capabilities the supplier advertised, when it answered with a ProfileResponse. */
+  profile?: ServerProfile;
+  /**
+   * Where the profile and the supplier's configuration disagree: the URL the
+   * supplier advertises for a request versus the one configured in this tool.
+   */
+  differences: Array<{ field: "punchoutUrl" | "orderUrl"; requestName: string; configured?: string; advertised: string }>;
   request: LogRecord;
   response: LogRecord;
 }

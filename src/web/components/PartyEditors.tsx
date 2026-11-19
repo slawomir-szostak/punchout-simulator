@@ -335,6 +335,9 @@ export function SupplierEditor({
       <Field label={<>Order URL <span className="hint">(order endpoint)</span></>}>
         <input value={draft.orderUrl ?? ""} onChange={(e) => setDraft({ ...draft, orderUrl: e.target.value })} placeholder="https://supplier.example.com/order" />
       </Field>
+      <Field label={<>Profile URL <span className="hint">(optional — where a ProfileRequest goes; defaults to the PunchOut URL)</span></>}>
+        <input value={draft.profileUrl ?? ""} onChange={(e) => setDraft({ ...draft, profileUrl: e.target.value })} placeholder="https://supplier.example.com/cxml" />
+      </Field>
       <div className="form-row">
         <label className="check-row">
           <input

@@ -177,6 +177,7 @@ Document-specific:
 | **PunchOutOrderMessage** (punchback) | `BuyerCookie` matches the session; **`operationAllowed`** present and valid; header `Total`/`Money`+currency; each `ItemIn` has quantity, `SupplierPartID`, `UnitPrice`+currency, `Description`, `UnitOfMeasure`, `Classification`@domain; **single currency** (mixed-currency is an error unless the supplier allows it); **Total consistency** (sum of line totals); an **empty cart** is explained rather than flagged (cancelled, emptied, or unchanged with `Status 204`); items returned for an `inspect` session or beside a `204`; a `SharedSecret` travelling through the browser |
 | **OrderRequest** | `orderID`/`orderDate` (and its format)/`Total`; **`type`** is `new`/`update`/`delete`; an `update` or `delete` carries a **`DocumentReference`** to the previous OrderRequest and a rising **`orderVersion`**; `ShipTo`/`BillTo` present **and complete** (an `addressID` or a postal Street/City — an empty block is flagged); `Contact@role`; each `ItemOut`; **single currency** (as above); **attachment `cid:` resolution** (see below) |
 | **OrderResponse** | `Status` code present / not an error |
+| **ProfileResponse** | `Status`; `effectiveDate` present, well-formed and not in the future; at least one `Transaction`, each with a `requestName` and a valid URL; the `attachments` and `changes` options on an `OrderRequest` transaction |
 | **Tax, Shipping, Distribution** (order and punchback) | `Tax` and `Shipping` carry `Money` and a `Description`; `TaxDetail@category`; the tax **arithmetic** (rate × taxable amount, details vs. total, line taxes vs. header tax); `Shipping` at one level only; charge currency; a **Total that includes tax or shipping** (it must be goods only); each `Distribution` has `Accounting@name`, at least one `AccountingSegment` with an `id`, and charges that add up to the line amount |
 
 > Note: full cXML DTD validation would require a native validating XML parser,
@@ -215,6 +216,12 @@ receiver detects the missing attachment. `<Comments>` (and therefore
   `orderVersion`, and a `DocumentReference` to the previous document. Edit it
   like any other order before sending. The mock supplier checks the chain and
   answers under the order number it first acknowledged.
+- **Supplier profile (ProfileRequest).** From a connection you can ask the
+  supplier which requests it accepts and at which URLs — the one transaction
+  every cXML server must support, and a quick ping that proves the endpoint
+  speaks cXML and accepts your credentials before you open a session. URLs that
+  differ from what you configured are pointed out and can be taken over with one
+  click. The mock supplier answers a ProfileRequest too, on any of its endpoints.
 - **Tax, shipping and accounting.** A buyer can add tax (a rate, stated for the
   order or for every line as well), a flat shipping charge, and an accounting
   assignment sent as a `Distribution` on each line. Without buyer settings the
@@ -424,6 +431,7 @@ cxml-urlencoded) — i.e. the tool's original behavior.
 - `GET /api/config/export[?secrets=1]` · `POST /api/config/import?mode=merge|replace` — whole-config export / import (JSON)
 - `POST /api/connections/:id/setup/preview` · `POST …/setup` — preview / send the SetupRequest
 - `POST /api/connections/:id/order/preview` · `POST …/order` — preview / send the OrderRequest (multipart if attachments)
+- `POST /api/connections/:id/profile` — send a ProfileRequest to the supplier and return what it advertises
 - `POST /api/connections/:id/validate` — lint a cXML document against the connection without sending it
 - `GET /api/sessions` · `GET /api/sessions/:id` · `DELETE /api/sessions/:id` — list sessions, read one session's log, delete it
 - `GET /api/sessions/:id/records/:recordId/raw` — the full wire message of one logged record (headers + reassembled multipart)
@@ -432,7 +440,7 @@ cxml-urlencoded) — i.e. the tool's original behavior.
 - `GET /api/runtime` — public URL, callback URL, version, proxy status · `GET /api/health` — liveness probe (never needs the token)
 - `GET /api/stream` — SSE live log
 - `POST /punchout/return` — callback receiving the punchback auto-submit
-- `/sim/:supplierId/*` — Mode B mock supplier (`POST punchout` · `GET catalog` · `POST checkout` · `POST order`)
+- `/sim/:supplierId/*` — Mode B mock supplier (`POST profile` · `POST punchout` · `GET catalog` · `POST checkout` · `POST order`)
 
 ---
 

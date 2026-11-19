@@ -38,7 +38,7 @@ export type {
 
 // Response DTOs come from the same module the route handlers are typed with,
 // so a server-side rename breaks this build instead of the UI at runtime.
-export type { ConfigImportSummary, ConnectionWithParties, OrderResult, ProxyStatus, RuntimeInfo, SessionSummary, SetupResult } from "../server/routes/dto";
+export type { ConfigImportSummary, ConnectionWithParties, OrderResult, ProfileResult, ProxyStatus, RuntimeInfo, SessionSummary, SetupResult } from "../server/routes/dto";
 
 import type { SetupResult, OrderResult } from "../server/routes/dto";
 

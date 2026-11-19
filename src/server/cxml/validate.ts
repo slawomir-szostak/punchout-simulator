@@ -9,6 +9,7 @@ import {
   getStartPage,
   getStatus,
   getTimestamp,
+  parseProfileResponse,
   parseXml,
   root,
   text,
@@ -146,7 +147,7 @@ function checkGeneral(doc: ParsedDoc, ctx: ValidationContext, issues: Issues, do
   // Response documents (SetupResponse, OrderResponse) legitimately have no Header,
   // so don't flag missing credentials on them.
   const carriesHeader =
-    docType === "SetupRequest" || docType === "OrderRequest" || docType === "PunchOutOrderMessage";
+    docType === "SetupRequest" || docType === "OrderRequest" || docType === "PunchOutOrderMessage" || docType === "ProfileRequest";
   if (!carriesHeader) return;
   const exp = ctx.expected;
   const creds = getHeaderCredentials(doc);
@@ -877,6 +878,64 @@ function checkOrderType(header: any, ctx: ValidationContext, issues: Issues): vo
   }
 }
 
+// ProfileResponse (Option*, Transaction+): @effectiveDate is #REQUIRED and
+// "should not be in the future"; each Transaction needs @requestName and a URL.
+// "When OrderRequest is returned as a supported transaction, two options must
+// be specified: attachments and changes" (Reference Guide).
+function checkProfileResponse(doc: ParsedDoc, issues: Issues) {
+  const status = getStatus(doc);
+  if (!status.code) {
+    issues.error("missing-status", "Response/Status/@code is missing", "cXML/Response/Status");
+  } else if (Number(status.code) >= 400) {
+    issues.error("status-error", `Response Status is ${status.code} ${status.text ?? ""}`.trim(), "cXML/Response/Status");
+    return; // an error answer legitimately carries no profile
+  }
+  const profile = parseProfileResponse(doc);
+  const base = "cXML/Response/ProfileResponse";
+  if (!profile) {
+    issues.error("missing-profileresponse", "Response/ProfileResponse is missing", "cXML/Response");
+    return;
+  }
+  if (!profile.effectiveDate) {
+    issues.error("profile-missing-effectivedate", "ProfileResponse/@effectiveDate is missing", `${base}/@effectiveDate`);
+  } else {
+    checkDateTime(profile.effectiveDate, "effectivedate", "ProfileResponse/@effectiveDate", issues);
+    const at = Date.parse(profile.effectiveDate);
+    if (!Number.isNaN(at) && at > Date.now() + 60_000) {
+      issues.warn("profile-effectivedate-future", `ProfileResponse/@effectiveDate (${profile.effectiveDate}) is in the future; it should be when the services became available`, `${base}/@effectiveDate`);
+    }
+  }
+  if (profile.lastRefresh) checkDateTime(profile.lastRefresh, "lastrefresh", "ProfileResponse/@lastRefresh", issues);
+  if (profile.transactions.length === 0) {
+    issues.error("profile-no-transactions", "ProfileResponse lists no Transaction (at least one is required)", base);
+  }
+  profile.transactions.forEach((t, i) => {
+    const tp = `${base}/Transaction[${i + 1}]`;
+    if (!t.requestName) issues.error("transaction-missing-requestname", `Transaction[${i + 1}] is missing @requestName`, tp);
+    if (!t.url) {
+      issues.error("transaction-missing-url", `Transaction[${i + 1}]${t.requestName ? ` (${t.requestName})` : ""} has no URL`, `${tp}/URL`);
+    } else if (!isValidUrl(t.url)) {
+      issues.error("transaction-invalid-url", `Transaction ${t.requestName || i + 1}: URL is not a valid http(s) URL: ${t.url}`, `${tp}/URL`);
+    }
+    if (t.requestName === "OrderRequest") {
+      const missing = ["attachments", "changes"].filter((n) => !t.options.some((o) => o.name === n));
+      if (missing.length > 0) {
+        issues.warn(
+          "profile-order-options",
+          `The OrderRequest transaction does not state the ${missing.join(" and ")} option${missing.length > 1 ? "s" : ""}; both must be specified, and an unstated one counts as No`,
+          tp,
+        );
+      }
+    }
+  });
+  for (const o of [...profile.options, ...profile.transactions.flatMap((t) => t.options)]) {
+    if (!o.name) {
+      issues.error("option-missing-name", "An Option is missing the required @name", base);
+      break;
+    }
+  }
+}
+
 function checkOrderResponse(doc: ParsedDoc, issues: Issues) {
   const status = getStatus(doc);
   if (!status.code) {
@@ -1020,6 +1079,12 @@ export function validateDocument(raw: string, ctx: ValidationContext = {}): Vali
       break;
     case "OrderResponse":
       checkOrderResponse(doc, issues);
+      break;
+    case "ProfileRequest":
+      checkSharedSecret(doc, ctx, issues);
+      break;
+    case "ProfileResponse":
+      checkProfileResponse(doc, issues);
       break;
     default:
       issues.warn("unknown-doctype", "Could not classify the cXML document type");

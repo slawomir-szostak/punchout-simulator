@@ -111,6 +111,7 @@ function normalizeSupplier(body: any): SupplierInput {
     identity: cred(body?.identity),
     punchoutUrl: body?.punchoutUrl ? String(body.punchoutUrl) : undefined,
     orderUrl: body?.orderUrl ? String(body.orderUrl) : undefined,
+    profileUrl: body?.profileUrl ? String(body.profileUrl) : undefined,
     productListIds,
     allowMixedCurrency: Boolean(body?.allowMixedCurrency),
     operationAllowed:

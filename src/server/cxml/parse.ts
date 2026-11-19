@@ -1,5 +1,5 @@
 import { XMLParser, XMLValidator } from "fast-xml-parser";
-import type { Cart, CartItem, ChargeAmount, Credential, DocType } from "./types.js";
+import type { Cart, CartItem, ChargeAmount, Credential, DocType, ProfileOption, ServerProfile } from "./types.js";
 
 // fast-xml-parser configuration. We keep all tag/attribute values as raw
 // strings (no number coercion) so money amounts like "100.00" survive intact;
@@ -139,11 +139,13 @@ export function getDocType(doc: ParsedDoc): DocType {
   if (req && typeof req === "object") {
     if ("PunchOutSetupRequest" in req) return "SetupRequest";
     if ("OrderRequest" in req) return "OrderRequest";
+    if ("ProfileRequest" in req) return "ProfileRequest";
   }
   if (resp && typeof resp === "object") {
     // SetupResponse and OrderResponse both live under <Response>; distinguish
     // by the presence of the PunchOut payload.
     if ("PunchOutSetupResponse" in resp) return "SetupResponse";
+    if ("ProfileResponse" in resp) return "ProfileResponse";
     return "OrderResponse";
   }
   if (msg && typeof msg === "object" && "PunchOutOrderMessage" in msg) {
@@ -225,6 +227,38 @@ export function getStatus(doc: ParsedDoc): StatusInfo {
   if (!status) return {};
   const message = text(status)?.trim();
   return { code: attr(status, "code"), text: attr(status, "text"), message: message || undefined };
+}
+
+// --- Profile transaction -------------------------------------------------------
+
+const optionsOf = (node: any): ProfileOption[] =>
+  asArray(node?.Option)
+    .filter((o) => o != null)
+    .map((o) => ({ name: attr(o, "name") ?? "", value: (text(o) ?? "").trim() }));
+
+/** The capabilities advertised in a ProfileResponse, or undefined when there is none. */
+export function parseProfileResponse(doc: ParsedDoc): ServerProfile | undefined {
+  const resp = root(doc)?.Response;
+  if (!resp || typeof resp !== "object" || !("ProfileResponse" in resp)) return undefined;
+  const pr = resp.ProfileResponse;
+  return {
+    effectiveDate: attr(pr, "effectiveDate"),
+    lastRefresh: attr(pr, "lastRefresh"),
+    options: optionsOf(pr),
+    transactions: asArray(pr?.Transaction)
+      .filter((t) => t != null)
+      .map((t) => ({ requestName: attr(t, "requestName") ?? "", url: (text(t?.URL) ?? "").trim(), options: optionsOf(t) })),
+  };
+}
+
+/**
+ * The URL a profile gives for a request. When several Transactions carry the
+ * same requestName they are variations told apart by a `service` Option; with
+ * no service asked for, "use the first transaction with no option name".
+ */
+export function profileUrlFor(profile: ServerProfile, requestName: string): string | undefined {
+  const matches = profile.transactions.filter((t) => t.requestName === requestName && t.url);
+  return (matches.find((t) => !t.options.some((o) => o.name === "service")) ?? matches[0])?.url;
 }
 
 export function getStartPage(doc: ParsedDoc): string | undefined {

@@ -20,6 +20,7 @@ import {
   type Supplier,
 } from "./types";
 import { ConnectionEditor, type ConnectionPayload, type SecretSource } from "./components/ConnectionEditor";
+import { SupplierProfileCheck } from "./components/SupplierProfileCheck";
 import { BuyerEditor, ConfirmButton, SupplierEditor } from "./components/PartyEditors";
 import { ProfileEditor } from "./components/ProfileEditor";
 import { ProductListEditor } from "./components/ProductListEditor";
@@ -95,6 +96,12 @@ export function App() {
   const [flows, setFlows] = useState<Record<string, Flow>>({});
   const [sessionSummaries, setSessionSummaries] = useState<SessionSummary[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  // Jump to a session's message log from elsewhere (e.g. a supplier profile check).
+  const openSession = (sessionId: string) => {
+    void reloadSessions();
+    setSelectedSessionId(sessionId);
+    setView("sessions");
+  };
   // Truthy = dialog open; may carry the connection to pre-select.
   const [showNewSession, setShowNewSession] = useState<false | { connectionId?: string }>(false);
   const flowSeq = useRef(0);
@@ -618,7 +625,8 @@ export function App() {
                     </div>
                   </div>
                   {(() => {
-                    const resumable = !serverSel.inbound
+                    // Only a PunchOut session can be continued; a profile check is complete as it is.
+                    const resumable = !serverSel.inbound && serverSel.docTypes.includes("SetupRequest")
                       ? connections.find((c) => c.id === serverSel.connectionId && c.mode === "virtual-buyer")
                       : undefined;
                     return (
@@ -671,6 +679,19 @@ export function App() {
                   <ConnectionEditor connection={selectedConn} buyers={buyers} suppliers={suppliers}
                     onSave={saveConnection} onDelete={deleteConnection}
                     onDuplicate={() => duplicate("connections", selectedConn, connections)} />
+                  {selectedConn.mode === "virtual-buyer" && (
+                    <div className="editor-form" style={{ marginTop: "1.25rem" }}>
+                    <SupplierProfileCheck
+                      key={selectedConn.id}
+                      connectionId={selectedConn.id}
+                      supplier={suppliers.find((s) => s.id === selectedConn.supplierId)}
+                      onSupplierChanged={async () => {
+                        await Promise.all([reloadSuppliers(), reloadConnections()]);
+                      }}
+                      onOpenSession={openSession}
+                    />
+                    </div>
+                  )}
                   {selectedConn.mode === "virtual-supplier" && <SupplierPanel supplier={selectedConn.supplier} publicUrl={publicUrl} />}
                 </>
               )}
@@ -786,6 +807,7 @@ function phaseOfSummary(s: SessionSummary): string {
     if (has("OrderRequest")) return "order received";
     if (has("PunchOutOrderMessage")) return "cart returned";
     if (has("SetupRequest")) return "setup received";
+    if (has("ProfileRequest")) return "profile requested";
     return "inbound";
   }
   if (has("OrderResponse")) return s.hasErrors ? "order sent (errors)" : "order accepted";
@@ -793,6 +815,8 @@ function phaseOfSummary(s: SessionSummary): string {
   if (has("PunchOutOrderMessage")) return "cart received";
   if (has("SetupResponse")) return "catalog open";
   if (has("SetupRequest")) return "setup sent";
+  if (has("ProfileResponse")) return s.hasErrors ? "profile check (errors)" : "profile check";
+  if (has("ProfileRequest")) return "profile check";
   return "empty";
 }
 

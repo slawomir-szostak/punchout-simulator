@@ -333,6 +333,7 @@ figure.diagram figcaption {
 <li><a href="#duplicating-an-entity">Duplicating an entity</a></li>
 </ul>
 </li>
+<li><a href="#checking-a-supplier-before-you-start-profilerequest">Checking a supplier before you start (ProfileRequest)</a></li>
 <li><a href="#running-a-session">Running a session</a><ul>
 <li><a href="#mode-a-walk-through-virtual-buyer">Mode A walk-through (virtual buyer)</a></li>
 <li><a href="#shopping-in-the-embedded-catalog">Shopping in the embedded catalog</a></li>
@@ -582,6 +583,36 @@ the buyer, supplier, connection, product list or buyer profile and click
   are connected to the same supplier, the mock supplier (Mode B) can't tell
   them apart. Give the copy its own identity, or point it at another supplier.</li>
 </ul>
+<h2 id="checking-a-supplier-before-you-start-profilerequest">Checking a supplier before you start (ProfileRequest)</h2>
+<p>Every cXML server must answer a <strong>ProfileRequest</strong>: an empty request that asks
+"which requests do you accept, and where do I send them?". On a virtual-buyer
+connection, the <strong>Supplier profile</strong> panel under the connection's settings sends
+one and shows the answer.</p>
+<p>Use it for two things:</p>
+<ul>
+<li><strong>As a ping.</strong> It tells you, in one click and before any session, whether the
+  endpoint speaks cXML at all and whether it accepts this connection's
+  credentials. A wrong URL shows up here as "not a cXML document" with the
+  server's own message; a wrong shared secret as the supplier's <code>401</code>.</li>
+<li><strong>To find the right URLs.</strong> The answer lists each supported request with the
+  URL to send it to. If the URL the supplier advertises for the
+  PunchOutSetupRequest or the OrderRequest differs from the one configured on
+  the supplier, the panel shows both and offers <strong>Use the advertised URLs</strong>.</li>
+</ul>
+<p>The request goes to the supplier's <strong>Profile URL</strong> if you set one (Suppliers →
+<em>Profile URL</em>), otherwise to its PunchOut URL. Both messages are kept as a small
+session of their own, labelled <em>profile check</em>; <strong>show the two messages</strong> opens
+it.</p>
+<p>The table also shows each request's options. For an <code>OrderRequest</code> the standard
+requires two — <code>attachments</code> and <code>changes</code> — which say whether the supplier
+accepts attachments and change or cancel orders; when one is not stated it
+counts as <em>No</em>.</p>
+<p><strong>The mock supplier</strong> answers a ProfileRequest as well, on <code>/sim/:supplierId/profile</code>
+and also on its punchout and order endpoints, since a buyer system sends it to
+whichever URL it knows. It advertises its three requests, the operations its
+<em>Carts may later be</em> setting allows, and that it accepts attachments and change
+orders. Point a real buyer system at it to check that the buyer handles a
+profile correctly.</p>
 <h2 id="running-a-session">Running a session</h2>
 <p>A <strong>session</strong> is one PunchOut conversation. Start one from the <strong>Sessions</strong> tab
 with <strong>New session</strong>, which asks for:</p>

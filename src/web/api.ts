@@ -6,6 +6,7 @@ import type {
   ConnectionWithParties,
   LogRecord,
   OrderResult,
+  ProfileResult,
   ProductList,
   Profile,
   RuntimeInfo,
@@ -118,6 +119,12 @@ export const api = {
     }).then((r) => jsonOrThrow<{ buyerCookie: string; xml: string; browserFormPostUrl: string }>(r)),
 
   // Validate the current cXML against its document rules without sending it.
+  /** Send a ProfileRequest over a connection and get the supplier's advertised capabilities. */
+  sendProfile: (id: string) =>
+    authFetch(`/api/connections/${encodeURIComponent(id)}/profile`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }).then((r) =>
+      jsonOrThrow<ProfileResult>(r),
+    ),
+
   validate: (id: string, body: { docType: string; xml: string }) =>
     authFetch(`/api/connections/${encodeURIComponent(id)}/validate`, {
       method: "POST",

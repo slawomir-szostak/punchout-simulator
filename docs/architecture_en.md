@@ -195,6 +195,11 @@ consequences shape the code:
   `BuyerCookie, Extrinsic*, BrowserFormPost, Contact*, ShipTo, ItemOut*`;
   item-level `Comments` after `ItemDetail` inside `ItemOut`; a `TelephoneNumber`
   as `CountryCode, AreaOrCityCode, Number`. A `Response` carries no `Header`.
+- **Every server answers a ProfileRequest.** The Profile transaction is the one
+  the standard makes mandatory. `sim.ts` answers it on `/profile` and on the
+  punchout and order endpoints (a sender uses whichever URL it knows);
+  `flow.ts` sends one on request and compares the advertised URLs with the
+  supplier's configuration. Both documents are logged as a `profile-…` session.
 - **Totals exclude charges.** `Tax`, `Shipping` and `Distribution` are emitted
   from one place in `build.ts` in the DTD's positions (header: after `BillTo`;
   line: after `ItemDetail`, before `Comments`), using only the parts of their

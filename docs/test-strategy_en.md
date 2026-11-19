@@ -32,14 +32,14 @@ call the real implementations on temporary data directories.
 
 All tests live in `test/**/*.test.ts` and run under **Vitest** (`environment:
 node`, 20-second timeout, one process-isolated environment per file). The suite
-is currently 25 files across four layers, one of them opt-in:
+is currently 26 files across four layers, one of them opt-in:
 
 ```plantuml
 @startuml test-layers
 !theme plain
 title Test layers (bottom = most tests, fastest)
 
-rectangle "Integration over real HTTP\nintegration.test.ts — full Mode-A roundtrip,\nephemeral port, seeded demo data" as L4
+rectangle "Integration over real HTTP\nintegration.test.ts, profile.test.ts — full Mode-A roundtrip,\nephemeral port, seeded demo data" as L4
 rectangle "HTTP app-level (no sockets)\nsecurity / rate-limit / static / backup / hardening /\nduplicate / standard / charges —\nHono app.request() against the real app" as L3
 rectangle "Store & persistence\nmigrations / products / profiles /\nlog-dedup / log-summary / cart-store" as L2
 rectangle "Pure units\ncXML core: build / parse / validate / multipart / xml-format\nhelpers: csv / geo · proxy: proxy / proxy-detect (fixtures)" as L1
@@ -100,6 +100,10 @@ routing, no network:
   structure checks (including the "Total includes tax and shipping" case), and
   the round trip — the mock supplier quoting charges, the cart reading them
   back, and an order carrying either the quote or the buyer's own figures.
+- `profile.test.ts` — the Profile transaction: both documents, the validation
+  of a ProfileResponse, and — over real HTTP — the tool as buyer asking the tool
+  as supplier, including a wrong shared secret, URLs that differ from the
+  configuration, and an endpoint that does not speak cXML.
 - `rate-limit.test.ts` and `static.test.ts` — abuse limits (per-client and
   global when exposed, the looser global cap on localhost) and SPA serving.
 - `backup.test.ts` — configuration export/import: secrets blanked unless asked

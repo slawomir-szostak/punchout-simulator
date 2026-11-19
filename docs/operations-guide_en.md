@@ -168,6 +168,41 @@ the buyer, supplier, connection, product list or buyer profile and click
   are connected to the same supplier, the mock supplier (Mode B) can't tell
   them apart. Give the copy its own identity, or point it at another supplier.
 
+## Checking a supplier before you start (ProfileRequest)
+
+Every cXML server must answer a **ProfileRequest**: an empty request that asks
+"which requests do you accept, and where do I send them?". On a virtual-buyer
+connection, the **Supplier profile** panel under the connection's settings sends
+one and shows the answer.
+
+Use it for two things:
+
+- **As a ping.** It tells you, in one click and before any session, whether the
+  endpoint speaks cXML at all and whether it accepts this connection's
+  credentials. A wrong URL shows up here as "not a cXML document" with the
+  server's own message; a wrong shared secret as the supplier's `401`.
+- **To find the right URLs.** The answer lists each supported request with the
+  URL to send it to. If the URL the supplier advertises for the
+  PunchOutSetupRequest or the OrderRequest differs from the one configured on
+  the supplier, the panel shows both and offers **Use the advertised URLs**.
+
+The request goes to the supplier's **Profile URL** if you set one (Suppliers →
+*Profile URL*), otherwise to its PunchOut URL. Both messages are kept as a small
+session of their own, labelled *profile check*; **show the two messages** opens
+it.
+
+The table also shows each request's options. For an `OrderRequest` the standard
+requires two — `attachments` and `changes` — which say whether the supplier
+accepts attachments and change or cancel orders; when one is not stated it
+counts as *No*.
+
+**The mock supplier** answers a ProfileRequest as well, on `/sim/:supplierId/profile`
+and also on its punchout and order endpoints, since a buyer system sends it to
+whichever URL it knows. It advertises its three requests, the operations its
+*Carts may later be* setting allows, and that it accepts attachments and change
+orders. Point a real buyer system at it to check that the buyer handles a
+profile correctly.
+
 ## Running a session
 
 A **session** is one PunchOut conversation. Start one from the **Sessions** tab

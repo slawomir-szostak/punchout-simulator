@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildOrderRequest, buildPunchOutOrderMessage, buildResponseStatus, buildSetupRequest, buildSetupResponse, computeTax, cxmlTimestamp } from "../src/server/cxml/build.js";
+import { buildOrderRequest, buildProfileRequest, buildProfileResponse, buildPunchOutOrderMessage, buildResponseStatus, buildSetupRequest, buildSetupResponse, computeTax, cxmlTimestamp } from "../src/server/cxml/build.js";
 
 // Validates every document the tool can build against the real cXML DTD.
 //
@@ -59,6 +59,20 @@ const documents: Record<string, string> = {
     operationAllowed: "edit",
     shipping: { amount: 5, currency: "USD", description: "Ground" },
     tax: computeTax({ ratePercent: 23, category: "vat", description: "VAT 23%" }, 25, "USD"),
+  }),
+  "ProfileRequest": buildProfileRequest({ ...base, sharedSecret: "s", deploymentMode: "test" }),
+  "ProfileResponse": buildProfileResponse({
+    dtdVersion,
+    payloadId: "p@host",
+    timestamp: cxmlTimestamp(),
+    effectiveDate: cxmlTimestamp(new Date("2024-01-01T00:00:00Z")),
+    lastRefresh: cxmlTimestamp(),
+    options: [{ name: "Locale", value: "1" }],
+    transactions: [
+      { requestName: "ProfileRequest", url: "http://supplier/profile", options: [] },
+      { requestName: "PunchOutSetupRequest", url: "http://supplier/punchout", options: [{ name: "operationAllowed", value: "create inspect edit" }] },
+      { requestName: "OrderRequest", url: "http://supplier/order", options: [{ name: "attachments", value: "Yes" }, { name: "changes", value: "Yes" }] },
+    ],
   }),
   "PunchOutSetupResponse": buildSetupResponse({ dtdVersion, payloadId: "p@host", timestamp: cxmlTimestamp(), startPageUrl: "http://supplier/catalog?cookie=c1" }),
   "OrderResponse (accepted)": buildResponseStatus({ dtdVersion, payloadId: "p@host", timestamp: cxmlTimestamp(), statusCode: "200", statusText: "OK", message: "OK. Order number SO-1 received." }),

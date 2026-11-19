@@ -253,6 +253,11 @@ export interface Supplier {
   punchoutUrl?: string; // the supplier's PunchOut setup endpoint
   orderUrl?: string; // the supplier's order endpoint
   /**
+   * Where to send a ProfileRequest — the supplier's "root" cXML URL, when it
+   * has one distinct from the PunchOut endpoint. Defaults to `punchoutUrl`.
+   */
+  profileUrl?: string;
+  /**
    * Product Lists this supplier serves as its Mode-B catalog. The served catalog
    * is the union of these lists' items (in order).
    */
@@ -345,6 +350,8 @@ export type DocType =
   | "PunchOutOrderMessage"
   | "OrderRequest"
   | "OrderResponse"
+  | "ProfileRequest"
+  | "ProfileResponse"
   | "Unknown";
 
 export type ValidationSeverity = "error" | "warning" | "info";
@@ -424,6 +431,27 @@ export interface CartItem {
   classification?: string;
   manufacturerPartId?: string;
   manufacturerName?: string;
+}
+
+/** One `<Option name>` of a ProfileResponse or of one of its Transactions. */
+export interface ProfileOption {
+  name: string;
+  value: string;
+}
+
+/** A `<Transaction requestName>`: a request the server accepts, and where. */
+export interface ProfileTransaction {
+  requestName: string;
+  url: string;
+  options: ProfileOption[];
+}
+
+/** A parsed ProfileResponse: the capabilities a cXML server advertises. */
+export interface ServerProfile {
+  effectiveDate?: string;
+  lastRefresh?: string;
+  options: ProfileOption[];
+  transactions: ProfileTransaction[];
 }
 
 /**

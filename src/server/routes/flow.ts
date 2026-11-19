@@ -17,6 +17,7 @@ import { browserFormPostUrl, getPublicUrl } from "../runtime.js";
 import {
   applyExtrinsicTokens,
   buildOrderRequest,
+  buildProfileRequest,
   buildSetupRequest,
   lineItemsTotal,
   makePayloadId,
@@ -27,10 +28,10 @@ import {
   type OrderType,
 } from "../cxml/build.js";
 import { buildMultipartRelated, type MultipartAttachment } from "../cxml/multipart.js";
-import { getOrderInfo, getStartPage, getStatus, parseXml } from "../cxml/parse.js";
+import { getOrderInfo, getStartPage, getStatus, parseProfileResponse, parseXml, profileUrlFor } from "../cxml/parse.js";
 import { validateDocument, type ExpectedCredentials } from "../cxml/validate.js";
 import type { Address, AddressMode, AttachmentEncoding, AttachmentRef, CartItem, Contact, Credential, DocType, ResolvedConnection, SetupOperation, AccountingSettings, ShippingSettings, TaxSettings, ChargeAmount } from "../cxml/types.js";
-import type { OrderResult, SetupResult } from "./dto.js";
+import type { OrderResult, ProfileResult, SetupResult } from "./dto.js";
 
 const coerceOperation = (v: unknown): SetupOperation | undefined =>
   v === "create" || v === "edit" || v === "inspect" ? v : undefined;
@@ -58,6 +59,8 @@ interface BuyerContext {
   sharedSecret: string;
   punchoutUrl?: string;
   orderUrl?: string;
+  /** Where a ProfileRequest goes: the supplier's profile URL, else its PunchOut URL. */
+  profileUrl?: string;
   deploymentMode: string;
   connectionId: string;
   attachmentEncoding: AttachmentEncoding;
@@ -96,6 +99,7 @@ function buyerContext(r: ResolvedConnection): BuyerContext {
     sharedSecret: connection.sharedSecret,
     punchoutUrl: supplier.punchoutUrl,
     orderUrl: supplier.orderUrl,
+    profileUrl: supplier.profileUrl || supplier.punchoutUrl || supplier.orderUrl,
     deploymentMode: connection.deploymentMode,
     connectionId: connection.id,
     attachmentEncoding: eff.attachmentEncoding,
@@ -144,6 +148,92 @@ function resolveVirtualBuyer(id: string): Resolved {
   if (r.connection.mode !== "virtual-buyer") return { error: "connection is not in virtual-buyer mode" };
   return { ctx: buyerContext(r) };
 }
+
+// --- ProfileRequest -------------------------------------------------------------
+//
+// Ask the supplier what it supports and where: "To obtain information about
+// where to send any document, send a ProfileRequest document to the server."
+// It is also the cheapest way to check that an endpoint is reachable and that
+// the credentials are accepted, before a session is opened.
+
+flowRoute.post("/:id/profile", async (c) => {
+  const r = resolveVirtualBuyer(c.req.param("id"));
+  if ("error" in r) return c.json({ error: r.error }, 400);
+  const { ctx } = r;
+  if (!ctx.profileUrl) return c.json({ error: "supplier has no profile, PunchOut or order URL configured" }, 400);
+
+  const xml = buildProfileRequest({
+    from: ctx.from,
+    to: ctx.to,
+    sender: ctx.sender,
+    sharedSecret: ctx.sharedSecret,
+    payloadId: makePayloadId(host(), new Date().toISOString()),
+    timestamp: cxmlTimestamp(),
+    deploymentMode: ctx.deploymentMode,
+    dtdVersion: dtdVersionFor(ctx.eff, "SetupRequest"),
+    userAgent: ctx.eff.userAgent,
+  });
+  const sessionId = `profile-${nanoid(10)}`;
+  rememberSessionConnection(sessionId, ctx.connectionId);
+  const request = appendLog({
+    sessionId,
+    connectionId: ctx.connectionId,
+    direction: "out",
+    docType: "ProfileRequest",
+    url: ctx.profileUrl,
+    headers: { "Content-Type": "text/xml; charset=UTF-8" },
+    body: xml,
+    contentType: "text/xml",
+    validation: validateDocument(xml, { expected: ctx.expected, forceDocType: "ProfileRequest" }),
+  });
+
+  const res = await sendCxml(ctx.profileUrl, xml);
+  const response = appendLog({
+    sessionId,
+    connectionId: ctx.connectionId,
+    direction: "in",
+    docType: "ProfileResponse",
+    status: res.status,
+    url: ctx.profileUrl,
+    headers: res.headers,
+    body: res.error ? `<!-- transport error: ${res.error} -->` : res.body,
+    contentType: res.contentType,
+    validation: res.error
+      ? undefined
+      : validateDocument(res.body, {
+          forceDocType: "ProfileResponse",
+          http: { status: res.status, contentType: res.contentType, location: res.headers.location, url: ctx.profileUrl },
+        }),
+  });
+
+  const doc = res.error ? undefined : parseXml(res.body);
+  const status = doc ? getStatus(doc) : undefined;
+  const profile = doc ? parseProfileResponse(doc) : undefined;
+  // Where the supplier says to send a request versus where this tool would.
+  const differences: ProfileResult["differences"] = [];
+  if (profile) {
+    for (const [field, requestName, configured] of [
+      ["punchoutUrl", "PunchOutSetupRequest", ctx.punchoutUrl],
+      ["orderUrl", "OrderRequest", ctx.orderUrl],
+    ] as const) {
+      const advertised = profileUrlFor(profile, requestName);
+      if (advertised && advertised !== configured) differences.push({ field, requestName, configured, advertised });
+    }
+  }
+  const result: ProfileResult = {
+    sessionId,
+    url: ctx.profileUrl,
+    transportError: res.error,
+    httpStatus: res.status,
+    statusCode: status?.code,
+    statusMessage: status?.message,
+    profile,
+    differences,
+    request,
+    response,
+  };
+  return c.json(result);
+});
 
 // --- SetupRequest preview -----------------------------------------------------
 
