@@ -28,6 +28,26 @@ export interface CatalogRow {
   fractional: boolean;
   /** Marks a line that is not part of this catalog, e.g. "from cart". */
   tag?: string;
+  /** True for the product the buyer punched out to (SelectedItem), exactly. */
+  focused?: boolean;
+}
+
+/**
+ * Where the buyer asked the catalog to open (PunchOutSetupRequest/SelectedItem).
+ * A supplier decides what an item ID stands for; this catalog reads it as
+ *  - `product` — it is exactly one of the catalog's part numbers: show that product;
+ *  - `aisle`   — it matches several products (a common prefix, a maker, a
+ *                classification code): show those;
+ *  - `none`    — nothing matches: say so and show the whole store.
+ */
+export interface CatalogFocus {
+  level: "product" | "aisle" | "none";
+  /** The SelectedItem's ID as the buyer sent it (part, plus auxiliary ID if any). */
+  label: string;
+  /** What the search box starts with (empty for `none`). */
+  term: string;
+  /** How many products are shown for it. */
+  matches: number;
 }
 
 export interface CatalogPageOptions {
@@ -42,15 +62,43 @@ export interface CatalogPageOptions {
   /** How the buyer identified itself, e.g. "DUNS 123456789". */
   buyerLabel?: string;
   rows: CatalogRow[];
+  /** Where to open, when the buyer named a SelectedItem. */
+  focus?: CatalogFocus;
   /** Charges this supplier adds for this buyer, so the cart can preview them. */
   quote?: { taxRatePercent?: number; taxLabel?: string; shippingAmount?: number; shippingLabel?: string };
 }
 
 const e = escapeXml;
+
+/**
+ * A value as a JavaScript literal that is safe inside an inline <script>.
+ * JSON.stringify alone is not: "</script>" would end the script element, and
+ * U+2028 / U+2029 end a line in older engines. Each is written as a \uXXXX
+ * escape, which JavaScript reads back as the same character.
+ */
+export function scriptJson(value: unknown): string {
+  return JSON.stringify(value)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+}
 const money = (n: number): string => n.toFixed(2);
 
+/** The text a product is searched by — the same on the page and on the server. */
+export const rowSearchText = (r: Pick<CatalogRow, "description" | "partId" | "auxId" | "manufacturer" | "classification">): string =>
+  [r.description, r.partId, r.auxId, r.manufacturer, r.classification].filter(Boolean).join(" ").toLowerCase();
+
+/** True when every word of `term` occurs in the product's search text (the page's search rule). */
+export const rowMatches = (r: Parameters<typeof rowSearchText>[0], term: string): boolean => {
+  const text = rowSearchText(r);
+  const words = term.toLowerCase().split(/\s+/).filter(Boolean);
+  return words.length > 0 && words.every((w) => text.includes(w));
+};
+
 function row(r: CatalogRow, index: number): string {
-  const search = [r.description, r.partId, r.auxId, r.manufacturer, r.classification].filter(Boolean).join(" ").toLowerCase();
+  const search = rowSearchText(r);
   const facts = [
     r.manufacturer ? `<span>${e(r.manufacturer)}</span>` : "",
     r.classification ? `<span>${e(r.classification)}</span>` : "",
@@ -63,7 +111,7 @@ function row(r: CatalogRow, index: number): string {
           <button type="button" class="step" data-step="1" aria-label="One more ${e(r.description)}">+</button>
         </div>`
     : `<div class="fixed-qty"><span>${e(r.quantity)}</span> ${e(r.uom)}</div>`;
-  return `<li class="product${r.quantity > 0 ? " in-cart" : ""}" data-index="${index}" data-search="${e(search)}" data-price="${e(r.price)}" data-currency="${e(r.currency)}" data-name="${e(r.description)}" data-part="${e(r.partId)}">
+  return `<li class="product${r.quantity > 0 ? " in-cart" : ""}"${r.focused ? ' data-focus="1"' : ""} data-index="${index}" data-search="${e(search)}" data-price="${e(r.price)}" data-currency="${e(r.currency)}" data-name="${e(r.description)}" data-part="${e(r.partId)}">
         <div class="bin">
           <span class="part">${e(r.partId)}</span>${r.auxId ? `<span class="aux">${e(r.auxId)}</span>` : ""}
         </div>
@@ -87,6 +135,16 @@ export function catalogPage(o: CatalogPageOptions): string {
       : edit
         ? `<p class="notice">Edit. The buyer's cart is loaded below. Change the quantities, then return the cart.</p>`
         : "";
+  // Level 2 PunchOut: the buyer named the item it punched out from.
+  const focus = inspect ? undefined : o.focus;
+  const showAll = `<button type="button" class="linkish" id="show-all">Show the whole catalog</button>`;
+  const focusNotice = !focus
+    ? ""
+    : focus.level === "product"
+      ? `<p class="notice" id="focus-notice">The buyer punched out to <strong>${e(focus.label)}</strong>. Showing that product. ${showAll}</p>`
+      : focus.level === "aisle"
+        ? `<p class="notice" id="focus-notice">The buyer punched out to <strong>${e(focus.label)}</strong>. Showing the ${focus.matches} products that match. ${showAll}</p>`
+        : `<p class="notice plain">The buyer punched out to <strong>${e(focus.label)}</strong>, which this catalog does not have. Showing the whole catalog.</p>`;
   const returnLabel = inspect ? "Return to buyer" : "Return cart to buyer";
 
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -136,6 +194,8 @@ export function catalogPage(o: CatalogPageOptions): string {
 
   .notice{margin:16px 0 0;padding:11px 14px;background:var(--signal);color:var(--on-signal);font-weight:600;border-radius:3px}
   .notice.plain{background:var(--raised);color:var(--ink);font-weight:400;border:1px solid var(--rule)}
+  .notice .linkish{color:inherit;font-weight:600;margin-left:6px}
+  .notice .linkish:hover{color:inherit;text-decoration-thickness:2px}
 
   .layout{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:24px;align-items:start;margin-top:18px}
   .tools{display:flex;gap:10px;align-items:center;margin-bottom:10px}
@@ -225,6 +285,7 @@ export function catalogPage(o: CatalogPageOptions): string {
     <p>${o.buyerLabel ? `Shopping for <strong>${e(o.buyerLabel)}</strong><br>` : ""}Prices exclude tax and shipping</p>
   </header>
   ${notice}
+  ${focusNotice}
   <div class="layout">
     <section aria-label="Products">
       ${
@@ -232,7 +293,7 @@ export function catalogPage(o: CatalogPageOptions): string {
           ? ""
           : `<div class="tools">
         <label class="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-          <input type="search" id="search" placeholder="Search ${count} products by name, part number or maker" aria-label="Search products" autocomplete="off"></label>
+          <input type="search" id="search" value="${e(focus && focus.level !== "none" ? focus.term : "")}" placeholder="Search ${count} products by name, part number or maker" aria-label="Search products" autocomplete="off"></label>
         <select id="sort" aria-label="Sort products">
           <option value="index">Catalog order</option>
           <option value="name">Name A to Z</option>
@@ -269,7 +330,7 @@ export function catalogPage(o: CatalogPageOptions): string {
 ${inspect ? "" : `<div class="dock" id="dock"><div><strong id="dock-total">0 items</strong><span id="dock-sub"></span></div><a href="#cart">View cart</a></div>`}
 <script>
 (function () {
-  var quote = ${JSON.stringify(o.quote ?? {}).replace(/</g, "\\u003c")};
+  var quote = ${scriptJson(o.quote ?? {})};
   var list = document.getElementById("products");
   var products = Array.prototype.slice.call(list.querySelectorAll(".product"));
   var lines = document.getElementById("lines");
@@ -379,10 +440,15 @@ ${inspect ? "" : `<div class="dock" id="dock"><div><strong id="dock-total">0 ite
   var search = document.getElementById("search");
   var count = document.getElementById("count");
   var none = document.getElementById("none");
+  // A product-level punchout opens on exactly that product: while the search
+  // box still holds the buyer's item ID, only the matching part is shown, not
+  // everything that happens to contain the same text.
+  var focusTerm = ${scriptJson(focus && focus.level === "product" ? focus.term : "")};
   function filter() {
     var words = search.value.toLowerCase().split(/\\s+/).filter(Boolean), shown = 0;
+    var exact = focusTerm !== "" && search.value === focusTerm;
     products.forEach(function (p) {
-      var hit = words.every(function (w) { return p.dataset.search.indexOf(w) !== -1; });
+      var hit = exact ? p.dataset.focus === "1" : words.every(function (w) { return p.dataset.search.indexOf(w) !== -1; });
       p.hidden = !hit;
       if (hit) shown++;
     });
@@ -411,6 +477,17 @@ ${inspect ? "" : `<div class="dock" id="dock"><div><strong id="dock-total">0 ite
     products.slice().sort(function (a, b) { var x = key(a), y = key(b); return x < y ? -1 : x > y ? 1 : 0; }).forEach(function (p) { list.appendChild(p); });
   }
   sortBy.addEventListener("change", sort);
+
+  var showAll = document.getElementById("show-all");
+  if (showAll) {
+    showAll.addEventListener("click", function () {
+      search.value = "";
+      filter();
+      document.getElementById("focus-notice").hidden = true;
+      search.focus();
+    });
+  }
+  if (search.value) filter();
 
   render();
 })();

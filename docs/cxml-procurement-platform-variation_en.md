@@ -246,6 +246,27 @@ buyer cookies, UNSPSC hints, tax/compliance data, etc. The **set and naming of
 extrinsics is the least standardized part of cXML** — every buyer adds its own,
 and suppliers must ignore unknown ones gracefully.
 
+### 9. Optional parts of the exchange
+
+Beyond the four core documents, cXML defines parts that a given buyer may or
+may not use. Unlike the points above, these vary less by platform than by how
+each customer has configured it and what was agreed commercially — so they are
+questions for onboarding, not something to infer from the platform's name:
+
+- **`SelectedItem`** — whether users punch out from individual catalog entries
+  (product or aisle level) or always to the whole store.
+- **Tax and shipping** — whether the buyer wants them in the returned cart, and
+  whether it sends its own in the order. The `Total` excludes both either way.
+- **Accounting (`Distribution`)** — whether orders carry cost-allocation data
+  the supplier must tolerate and return on invoices.
+- **Change and cancel orders** — whether the buyer sends `type="update"` /
+  `type="delete"` OrderRequests, or handles changes outside the integration.
+- **The Profile transaction** — whether anything asks the supplier for a
+  ProfileResponse (a network typically does; a direct connection often not).
+
+A supplier should ask each customer about these, and can test every one of them
+with the simulator before the customer's platform is involved.
+
 ## Per-platform snapshot
 
 A high-level comparison of the major platforms a supplier integrates with.

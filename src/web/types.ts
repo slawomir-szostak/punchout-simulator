@@ -27,6 +27,7 @@ export type {
   ProductList,
   Profile,
   ProfileExtrinsic,
+  SelectedItem,
   SetupOperation,
   ShippingSettings,
   Supplier,

@@ -1,0 +1,17 @@
+@startuml order-lifecycle
+!theme plain
+title One purchase order, several documents
+
+[*] --> Ordered : OrderRequest\ntype="new" (version 1)
+Ordered --> Changed : OrderRequest\ntype="update" (version 2)\nrefers to the previous document
+Changed --> Changed : another update\n(version 3, 4, …)
+Ordered --> Cancelled : OrderRequest\ntype="delete"
+Changed --> Cancelled : OrderRequest\ntype="delete"\nrefers to the latest update
+Cancelled --> [*]
+
+note right of Changed
+  Every later document names the one
+  before it, so the supplier can follow
+  the chain back to the original order.
+end note
+@enduml

@@ -173,7 +173,7 @@ Document-specific:
 | Document | Checks |
 |---|---|
 | **PunchOutSetupResponse** | `Status` present & `200`; valid `StartPage/URL` |
-| **PunchOutSetupRequest** | `operation` is one of `create`/`inspect`/`edit`/`source`; `BrowserFormPost`; items present for `edit`/`inspect` and absent for `create`; an `edit`/`inspect` the supplier's `operationAllowed` never permitted |
+| **PunchOutSetupRequest** | `operation` is one of `create`/`inspect`/`edit`/`source`; `BrowserFormPost`; a `SelectedItem` has its `SupplierPartID` and is not used with `source`; items present for `edit`/`inspect` and absent for `create`; an `edit`/`inspect` the supplier's `operationAllowed` never permitted |
 | **PunchOutOrderMessage** (punchback) | `BuyerCookie` matches the session; **`operationAllowed`** present and valid; header `Total`/`Money`+currency; each `ItemIn` has quantity, `SupplierPartID`, `UnitPrice`+currency, `Description`, `UnitOfMeasure`, `Classification`@domain; **single currency** (mixed-currency is an error unless the supplier allows it); **Total consistency** (sum of line totals); an **empty cart** is explained rather than flagged (cancelled, emptied, or unchanged with `Status 204`); items returned for an `inspect` session or beside a `204`; a `SharedSecret` travelling through the browser |
 | **OrderRequest** | `orderID`/`orderDate` (and its format)/`Total`; **`type`** is `new`/`update`/`delete`; an `update` or `delete` carries a **`DocumentReference`** to the previous OrderRequest and a rising **`orderVersion`**; `ShipTo`/`BillTo` present **and complete** (an `addressID` or a postal Street/City — an empty block is flagged); `Contact@role`; each `ItemOut`; **single currency** (as above); **attachment `cid:` resolution** (see below) |
 | **OrderResponse** | `Status` code present / not an error |
@@ -216,6 +216,11 @@ receiver detects the missing attachment. `<Comments>` (and therefore
   `orderVersion`, and a `DocumentReference` to the previous document. Edit it
   like any other order before sending. The mock supplier checks the chain and
   answers under the order number it first acknowledged.
+- **Level 2 PunchOut (`SelectedItem`).** Start a session from a specific
+  catalog item, the way a user clicks an entry in the buyer's own catalog, and
+  see whether the supplier opens on that product. The mock catalog honours it
+  too: it opens on the product, on the group of products the ID matches, or on
+  the whole store with a note when it does not know the item.
 - **A mock catalog that behaves like a shop.** Search, sort, big quantity
   steppers and a live cart with the shipping and tax the supplier will quote —
   so shopping in a test takes seconds. It works framed inside a buyer platform,

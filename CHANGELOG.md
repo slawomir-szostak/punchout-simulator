@@ -5,6 +5,34 @@ corresponding [GitHub Release](https://github.com/slawomir-szostak/punchout-simu
 Versions follow [Semantic Versioning](https://semver.org); while the project is
 pre-1.0, new features may arrive in patch releases.
 
+## v0.16.0 — Level 2 PunchOut: start from a catalog item
+
+*Released 2026-11-19*
+
+Minor release. Adds Level 2 PunchOut — punching out from a specific catalog item — on both sides.
+
+A user does not always enter a supplier's site through its front door. A buyer's own catalog can list entries for the supplier's whole store, for groups of products, or for single products, and each one is a doorway. When a user clicks one, the PunchOutSetupRequest names it in a `SelectedItem`, and the supplier decides what to open. The tool could neither send that nor act on it, so the question "does the supplier land the user on the right product?" could not be tested, and a buyer system that sends a `SelectedItem` found a mock supplier that ignored it.
+
+### Punching out from an item (virtual buyer)
+- The New session dialog has **Punch out from an item**: a part ID and an optional auxiliary ID. For a supplier the tool mocks, the field suggests its part numbers.
+- The SetupRequest carries the `SelectedItem`, placed where the DTD requires it, and the session shows which item it punches out from.
+
+### The mock catalog opens where the buyer asked (virtual supplier)
+- A part number the catalog lists: it opens on **that product**.
+- Text that matches several products — a shared prefix, a maker, a classification code: it opens on **those products**.
+- Nothing it knows: the **whole catalog**, with a note that the item was not found.
+- A banner says which item the buyer punched out to, and *Show the whole catalog* lifts the restriction.
+
+### Validation
+- A `SelectedItem` must contain an `ItemID` with a `SupplierPartID` (error), and should not be sent with `operation="source"` (warning).
+
+### Documentation
+- The **PunchOut business primer** now covers the business side of everything added since June: store / aisle / product-level punchout, how a session ends (cancelled, emptied, what may be done with a cart later), totals, tax, shipping and cost allocation, change and cancel orders, and the Profile transaction.
+
+The document is valid for every DTD version a buyer profile declares (1.2.008 to 1.2.045) and for the current 1.2.072.
+
+**Full Changelog**: https://github.com/slawomir-szostak/punchout-simulator/compare/v0.15.0...v0.16.0
+
 ## v0.15.0 — A mock catalog you can actually shop in
 
 *Released 2026-11-19*

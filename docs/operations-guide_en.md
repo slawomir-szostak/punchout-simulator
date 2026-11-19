@@ -377,6 +377,36 @@ light or dark theme and needs no network: no external fonts, images or scripts.
 > cookie with no setup on record, is rejected (`400`) and never logged as a
 > session.
 
+## Punching out from a catalog item (Level 2 PunchOut)
+
+A buyer's own catalog often lists a supplier's items, or groups of them, as
+entries that each lead into the supplier's site. When a user clicks one, the
+`PunchOutSetupRequest` names it in a **`SelectedItem`** — a part number, with an
+auxiliary ID if the entry has one — and the supplier decides what to open: one
+product, an "aisle" of related products, or its whole store. Without a
+`SelectedItem` the supplier shows everything.
+
+**As the buyer.** The New session dialog has *Punch out from an item*. Type the
+part ID a user would have clicked; for a supplier this tool mocks, the field
+suggests its part numbers and fills in the auxiliary ID. The session then says
+which item it punches out from, and the SetupRequest carries the `SelectedItem`.
+Use it to check that a real supplier lands the user in the right place rather
+than on its home page. For an `edit` or `inspect` session, name an item only
+when the user is coming from a catalog entry rather than from the cart.
+
+**As the supplier.** The mock catalog reads the item ID the way a supplier
+would, and tells you what it did:
+
+| The ID sent | The catalog opens on |
+|---|---|
+| A part number it lists (and the auxiliary ID, if one was sent) | That one product. |
+| Text that matches several products — a shared prefix, a maker, a classification code | Those products. |
+| Nothing it knows | The whole catalog, with a note that the item was not found. |
+
+A banner states which item the buyer punched out to, and *Show the whole
+catalog* lifts the restriction. Point a real buyer system at the mock supplier
+to confirm that it sends the `SelectedItem` you expect.
+
 ## Operations explained
 
 The operation you choose sets the `operation` attribute on the outbound
@@ -461,6 +491,7 @@ field-level; it surfaces typed **errors** and **warnings**:
 | Single currency | Mixed currencies in one cart are an **error** (and the total emits `0`), unless the supplier's `allowMixedCurrency` is set, which downgrades it to a **warning**. |
 | Address completeness | Incomplete ship-to / bill-to (per the buyer profile's address mode) is flagged. |
 | Operation / items coherence | `edit`/`inspect` with no items, or `create` with unexpected items, is flagged. |
+| `SelectedItem` | Must contain an `ItemID` with a `SupplierPartID` (**error**); should not be sent with `operation="source"` (**warning**). |
 | Dates | `timestamp` and `orderDate` must be ISO 8601 with a numeric UTC offset (`2026-01-01T10:00:00+01:00`). Not a date is an **error**; no time zone, or the `Z` designator cXML doesn't allow, a **warning**. |
 | DOCTYPE | A missing declaration, or one that doesn't name a cXML DTD, is a **warning**; a version other than the buyer profile's is noted. |
 | `xml:lang` | Required on `Description` and `Name` (**error** when missing); recommended on `Comments`, `Status` and the root. |

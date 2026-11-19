@@ -1,5 +1,5 @@
 import { nanoid } from "nanoid";
-import type { AccountingSettings, Address, AddressMode, CartItem, ChargeAmount, Contact, Credential, ProfileOption, ProfileTransaction, TaxSettings } from "./types.js";
+import type { AccountingSettings, Address, AddressMode, CartItem, ChargeAmount, Contact, Credential, ProfileOption, ProfileTransaction, SelectedItem, TaxSettings } from "./types.js";
 
 // cXML document builders. We use template literals (not an XML library) so we
 // keep full control over element order, attributes and xml:lang — see spec
@@ -330,6 +330,12 @@ export interface SetupRequestOptions {
   addressMode?: AddressMode;
   /** Prior cart/items carried in an `edit`/`inspect` setup (emitted as ItemOut). */
   items?: OrderRequestItem[];
+  /**
+   * The catalog item the user punched out from. "PunchOut sites can use it to
+   * determine which products to display"; without it the supplier presents its
+   * whole store.
+   */
+  selectedItem?: SelectedItem;
 }
 
 // A compact ItemOut for the PunchOutSetupRequest (edit/inspect): no attachments,
@@ -367,6 +373,18 @@ export function buildSetupRequest(o: SetupRequestOptions): string {
   const shipTo = o.shipTo ? `\n${addressBlock("ShipTo", o.shipTo, mode, o.dtdVersion)}` : "";
   const contact = o.contact ? `\n${contactBlock(o.contact, mode, "      ", o.dtdVersion)}` : "";
   const items = o.items && o.items.length > 0 ? `\n${o.items.map((it, i) => setupItemOut(it, i + 1)).join("\n")}` : "";
+  // SelectedItem (ItemID), placed after ShipTo and before any ItemOut.
+  const selected = o.selectedItem?.supplierPartId
+    ? `\n      <SelectedItem>
+        <ItemID>
+          <SupplierPartID>${escapeXml(o.selectedItem.supplierPartId)}</SupplierPartID>${
+            o.selectedItem.supplierPartAuxiliaryId
+              ? `\n          <SupplierPartAuxiliaryID>${escapeXml(o.selectedItem.supplierPartAuxiliaryId)}</SupplierPartAuxiliaryID>`
+              : ""
+          }
+        </ItemID>
+      </SelectedItem>`
+    : "";
   const inner = `${header({
     from: o.from,
     to: o.to,
@@ -379,7 +397,7 @@ export function buildSetupRequest(o: SetupRequestOptions): string {
       <BuyerCookie>${escapeXml(o.buyerCookie)}</BuyerCookie>${extrinsicBlock(o.extrinsics, "      ")}
       <BrowserFormPost>
         <URL>${escapeXml(o.browserFormPostUrl)}</URL>
-      </BrowserFormPost>${contact}${shipTo}${items}
+      </BrowserFormPost>${contact}${shipTo}${selected}${items}
     </PunchOutSetupRequest>
   </Request>`;
   return envelope(o.payloadId, o.timestamp, lang, inner, o.dtdVersion);

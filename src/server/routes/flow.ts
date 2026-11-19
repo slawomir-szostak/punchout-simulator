@@ -30,11 +30,18 @@ import {
 import { buildMultipartRelated, type MultipartAttachment } from "../cxml/multipart.js";
 import { getOrderInfo, getStartPage, getStatus, parseProfileResponse, parseXml, profileUrlFor } from "../cxml/parse.js";
 import { validateDocument, type ExpectedCredentials } from "../cxml/validate.js";
-import type { Address, AddressMode, AttachmentEncoding, AttachmentRef, CartItem, Contact, Credential, DocType, ResolvedConnection, SetupOperation, AccountingSettings, ShippingSettings, TaxSettings, ChargeAmount } from "../cxml/types.js";
+import type { Address, AddressMode, AttachmentEncoding, AttachmentRef, CartItem, Contact, Credential, DocType, ResolvedConnection, SetupOperation, AccountingSettings, ShippingSettings, TaxSettings, ChargeAmount, SelectedItem } from "../cxml/types.js";
 import type { OrderResult, ProfileResult, SetupResult } from "./dto.js";
 
 const coerceOperation = (v: unknown): SetupOperation | undefined =>
   v === "create" || v === "edit" || v === "inspect" ? v : undefined;
+// The catalog item to punch out from (SelectedItem): kept when it names a part.
+const selectedItem = (body: any): SelectedItem | undefined => {
+  const part = typeof body?.selectedItem?.supplierPartId === "string" ? body.selectedItem.supplierPartId.trim() : "";
+  if (!part) return undefined;
+  const aux = typeof body.selectedItem.supplierPartAuxiliaryId === "string" ? body.selectedItem.supplierPartAuxiliaryId.trim() : "";
+  return { supplierPartId: part, supplierPartAuxiliaryId: aux || undefined };
+};
 const setupItems = (body: any): CartItem[] | undefined =>
   Array.isArray(body?.items) && body.items.length > 0 ? (body.items as CartItem[]) : undefined;
 
@@ -267,6 +274,7 @@ flowRoute.post("/:id/setup/preview", async (c) => {
     extrinsics: setupExtrinsics(ctx, buyerCookie),
     ...setupAddresses(ctx),
     items: setupItems(body),
+    selectedItem: selectedItem(body),
   });
   return c.json({ buyerCookie, xml, browserFormPostUrl: browserFormPostUrl() });
 });
@@ -298,6 +306,7 @@ flowRoute.post("/:id/setup", async (c) => {
       extrinsics: setupExtrinsics(ctx, buyerCookie),
       ...setupAddresses(ctx),
       items: setupItems(body),
+      selectedItem: selectedItem(body),
     });
 
   rememberSessionConnection(buyerCookie, ctx.connectionId);

@@ -14,7 +14,7 @@ import { saveAttachment } from "../store/attachments.js";
 import { getPublicUrl, getToken } from "../runtime.js";
 import { authClientKey, authThrottle } from "../rate-limit.js";
 import { resolveCharges } from "./charges.js";
-import { catalogPage, type CatalogRow } from "./catalog-page.js";
+import { catalogPage, rowMatches, type CatalogFocus, type CatalogRow } from "./catalog-page.js";
 import {
   buildProfileResponse,
   buildPunchOutOrderMessage,
@@ -384,9 +384,10 @@ simRoute.get("/:id/catalog", (c) => {
     shipping: supplier.cartShipping,
   });
   const buyer = ctx.found ? buyerCredential(supplier.id, ctx.buyerAll) : undefined;
-  const page = (operation: string, rows: CatalogRow[]) =>
+  const page = (operation: string, rows: CatalogRow[], focus?: CatalogFocus) =>
     c.html(
       catalogPage({
+        focus,
         supplierName: supplier.name,
         checkoutUrl: `${getPublicUrl()}/sim/${encodeURIComponent(supplier.id)}/checkout`,
         cookie,
@@ -416,10 +417,30 @@ simRoute.get("/:id/catalog", (c) => {
   const prefill = (it: CatalogItem): number =>
     isEdit ? (ctx.items.find((p) => sameProduct(p, it))?.quantity ?? 0) : 0;
   const extras = isEdit ? ctx.items.filter((p) => !items.some((it) => sameProduct(p, it))) : [];
-  return page(isEdit ? "edit" : "create", [
-    ...items.map((it, i) => catalogRow(it, `q_${i}`, prefill(it))),
-    ...extras.map((p, j) => carriedRow(p, `qx_${j}`, "from cart")),
-  ]);
+  const rows = items.map((it, i) => catalogRow(it, `q_${i}`, prefill(it)));
+
+  // Level 2 PunchOut. "PunchOut sites can use [SelectedItem] to determine which
+  // products to display"; what an item ID stands for is the supplier's call. An
+  // ID that is one of this catalog's part numbers opens on that product; one
+  // that matches several products (a shared prefix, a maker, a classification
+  // code) opens on those — an aisle; anything else gets the whole store, with a
+  // note that the item was not found.
+  let focus: CatalogFocus | undefined;
+  const selected = ctx.selectedItem;
+  if (selected) {
+    const label = selected.supplierPartAuxiliaryId ? `${selected.supplierPartId} / ${selected.supplierPartAuxiliaryId}` : selected.supplierPartId;
+    const exact = rows.filter(
+      (r) => r.partId === selected.supplierPartId && (!selected.supplierPartAuxiliaryId || r.auxId === selected.supplierPartAuxiliaryId),
+    );
+    if (exact.length > 0) {
+      for (const r of exact) r.focused = true;
+      focus = { level: "product", label, term: selected.supplierPartId, matches: exact.length };
+    } else {
+      const matches = rows.filter((r) => rowMatches(r, selected.supplierPartId)).length;
+      focus = matches > 0 ? { level: "aisle", label, term: selected.supplierPartId, matches } : { level: "none", label, term: "", matches: 0 };
+    }
+  }
+  return page(isEdit ? "edit" : "create", [...rows, ...extras.map((p, j) => carriedRow(p, `qx_${j}`, "from cart"))], focus);
 });
 
 // --- 3. Checkout -> auto-submit punchback ------------------------------------

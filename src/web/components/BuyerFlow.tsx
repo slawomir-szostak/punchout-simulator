@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
-import type { AttachmentDraft, Cart, CartItem, Connection, FlowSession, ValidationResult } from "../types";
+import type { AttachmentDraft, Cart, CartItem, Connection, FlowSession, SelectedItem, ValidationResult } from "../types";
 import { CxmlEditor } from "./CxmlEditor";
 import { CartView } from "./CartView";
 import { CatalogFrame } from "./CatalogFrame";
@@ -65,12 +65,14 @@ interface Props {
   operation?: string;
   /** Prior items carried in an edit/inspect setup. */
   sourceItems?: CartItem[];
+  /** The catalog item to punch out from (SelectedItem). */
+  selectedItem?: SelectedItem;
   onChange: (patch: Partial<FlowSession>) => void;
 }
 
 // The Mode A driver UI for a single session. Session state lives in App so it
 // survives tab switches and supports editing + retrying the OrderRequest.
-export function BuyerFlow({ connection, session, cart, operation, sourceItems, onChange }: Props) {
+export function BuyerFlow({ connection, session, cart, operation, sourceItems, selectedItem, onChange }: Props) {
   const theme = useTheme();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -118,10 +120,10 @@ export function BuyerFlow({ connection, session, cart, operation, sourceItems, o
   useEffect(() => {
     if (session.buyerCookie || session.setupXml) return;
     api
-      .setupPreview(connection.id, { operation, items: sourceItems })
+      .setupPreview(connection.id, { operation, items: sourceItems, selectedItem })
       .then((p) => onChange({ buyerCookie: p.buyerCookie, setupXml: p.xml }))
       .catch((e) => setError(String(e)));
-  }, [connection.id, session.buyerCookie, session.setupXml, operation, sourceItems]);
+  }, [connection.id, session.buyerCookie, session.setupXml, operation, sourceItems, selectedItem]);
 
   const closeEmbedded = useCallback(() => setEmbedded(null), []);
 
@@ -260,6 +262,11 @@ export function BuyerFlow({ connection, session, cart, operation, sourceItems, o
         <div className="step-meta">
           Session (BuyerCookie): <code>{session.buyerCookie || "…"}</code>
           {operation && operation !== "create" && <span className="badge badge-warn" style={{ marginLeft: ".5rem" }}>{operation}</span>}
+          {selectedItem && (
+            <span className="hint" style={{ marginLeft: ".75rem" }}>
+              punching out from <code>{selectedItem.supplierPartId}</code>
+            </span>
+          )}
         </div>
         <CxmlSummary xml={session.setupXml} open={setupOpen} onToggle={() => setSetupOpen((o) => !o)} />
         {setupOpen && (

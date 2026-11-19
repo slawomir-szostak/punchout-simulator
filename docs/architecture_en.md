@@ -195,6 +195,11 @@ consequences shape the code:
   `BuyerCookie, Extrinsic*, BrowserFormPost, Contact*, ShipTo, ItemOut*`;
   item-level `Comments` after `ItemDetail` inside `ItemOut`; a `TelephoneNumber`
   as `CountryCode, AreaOrCityCode, Number`. A `Response` carries no `Header`.
+- **`SelectedItem` decides where the catalog opens.** The buyer names the item
+  a user punched out from; "PunchOut sites can use it to determine which
+  products to display". `sim.ts` reads it back from the logged SetupRequest and
+  resolves it to a product, a group of products or the whole store, and the
+  catalog page starts filtered accordingly.
 - **Every server answers a ProfileRequest.** The Profile transaction is the one
   the standard makes mandatory. `sim.ts` answers it on `/profile` and on the
   punchout and order endpoints (a sender uses whichever URL it knows);

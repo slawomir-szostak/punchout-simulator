@@ -433,6 +433,16 @@ export interface CartItem {
   manufacturerName?: string;
 }
 
+/**
+ * `PunchOutSetupRequest/SelectedItem`: the catalog item the user punched out
+ * from. The supplier uses it "to determine which products to display" — its
+ * whole store, an aisle, or a single product (Level 2 PunchOut).
+ */
+export interface SelectedItem {
+  supplierPartId: string;
+  supplierPartAuxiliaryId?: string;
+}
+
 /** One `<Option name>` of a ProfileResponse or of one of its Transactions. */
 export interface ProfileOption {
   name: string;

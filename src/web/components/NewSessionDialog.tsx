@@ -2,13 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { useModalFocus } from "../hooks/useModalFocus";
 import { Field } from "./Field";
-import type { CartItem, ConnectionWithParties, SessionSummary } from "../types";
+import type { CartItem, ConnectionWithParties, SessionSummary, ProductList, SelectedItem } from "../types";
 
 export interface NewSessionChoice {
   connectionId: string;
   operation: "create" | "edit" | "inspect";
   /** Prior items carried into an edit/inspect setup. */
   items?: CartItem[];
+  /** The catalog item to punch out from (SelectedItem), when one was named. */
+  selectedItem?: SelectedItem;
 }
 
 // Modal for starting a Mode-A session: pick the connection, the SetupRequest
@@ -18,11 +20,14 @@ export function NewSessionDialog({
   connections,
   sessions,
   initialConnectionId,
+  productLists,
   onCancel,
   onCreate,
 }: {
   connections: ConnectionWithParties[];
   sessions: SessionSummary[];
+  /** Product lists, to suggest part numbers when the supplier is one this tool mocks. */
+  productLists?: ProductList[];
   /** Pre-select this connection (e.g. opened from its editor). */
   initialConnectionId?: string;
   onCancel: () => void;
@@ -38,6 +43,9 @@ export function NewSessionDialog({
   // operationAllowed the supplier returned with the source cart, if any.
   const [sourceAllows, setSourceAllows] = useState<string | undefined>(undefined);
   const [itemIdx, setItemIdx] = useState<number>(-1); // -1 = all items
+  // Level 2 PunchOut: the catalog item the user "clicked" in the buyer's own catalog.
+  const [selectedPart, setSelectedPart] = useState("");
+  const [selectedAux, setSelectedAux] = useState("");
   const ref = useRef<HTMLDivElement>(null);
 
   // Only sessions from the chosen connection can supply a source cart, so the
@@ -80,12 +88,26 @@ export function NewSessionDialog({
   const canCreate =
     !!connectionId && (!needsSource || (!!sourceId && (sourceCart?.length ?? 0) > 0));
 
+  // Part numbers this tool knows for the chosen supplier (its mock catalog), as
+  // suggestions; any ID can be typed, since a real supplier defines its own.
+  const supplier = buyerConns.find((c) => c.id === connectionId)?.supplier;
+  const knownParts = (productLists ?? [])
+    .filter((l) => supplier?.productListIds?.includes(l.id))
+    .flatMap((l) => l.items)
+    .filter((it) => it.supplierPartId);
+
   const create = () => {
     let items: CartItem[] | undefined;
     if (needsSource && sourceCart) {
       items = operation === "inspect" && itemIdx >= 0 ? [sourceCart[itemIdx]] : sourceCart;
     }
-    onCreate({ connectionId, operation, items });
+    const part = selectedPart.trim();
+    onCreate({
+      connectionId,
+      operation,
+      items,
+      selectedItem: part ? { supplierPartId: part, supplierPartAuxiliaryId: selectedAux.trim() || undefined } : undefined,
+    });
   };
 
   return (
@@ -178,6 +200,40 @@ export function NewSessionDialog({
               )}
             </>
           )}
+
+          <Field
+            label={<>Punch out from an item <span className="hint">(optional — sent as <code>SelectedItem</code>)</span></>}
+            after={
+              <span className="hint">
+                The item a user clicked in the buyer's catalog. The supplier decides what to open for it: one product, a
+                group of products, or its whole store. Leave empty to punch out to the whole store.
+              </span>
+            }
+          >
+            <div>
+            <div className="charge-row shipping">
+              <span className="charge-label">Part ID</span>
+              <input
+                list="known-parts"
+                value={selectedPart}
+                onChange={(e) => {
+                  setSelectedPart(e.target.value);
+                  // Picking a known part fills in its auxiliary ID.
+                  const known = knownParts.find((it) => it.supplierPartId === e.target.value);
+                  if (known) setSelectedAux(known.supplierPartAuxiliaryId ?? "");
+                }}
+                placeholder="SupplierPartID"
+                aria-label="SelectedItem SupplierPartID"
+              />
+              <input value={selectedAux} onChange={(e) => setSelectedAux(e.target.value)} placeholder="SupplierPartAuxiliaryID (optional)" aria-label="SelectedItem SupplierPartAuxiliaryID" />
+            </div>
+            <datalist id="known-parts">
+              {knownParts.map((it, i) => (
+                <option key={i} value={it.supplierPartId}>{it.description}</option>
+              ))}
+            </datalist>
+            </div>
+          </Field>
 
           <div className="form-actions">
             <button className="btn-primary" onClick={create} disabled={!canCreate}>Start session</button>

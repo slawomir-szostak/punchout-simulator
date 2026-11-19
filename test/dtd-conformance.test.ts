@@ -38,6 +38,7 @@ const pom = { from: cred("DUNS", "222"), to: cred("DUNS", "111"), sender: cred("
 const documents: Record<string, string> = {
   "SetupRequest (create)": buildSetupRequest({ ...base, sharedSecret: "s", buyerCookie: "c1", browserFormPostUrl: "http://buyer/return", operation: "create" }),
   "SetupRequest (edit: extrinsics, contact, ship-to, items)": buildSetupRequest({ ...base, sharedSecret: "s", buyerCookie: "c1", browserFormPostUrl: "http://buyer/return", operation: "edit", extrinsics: [{ name: "User", value: "jo" }], shipTo: addr, contact: { ...addr, role: "endUser" }, addressMode: "both", items: [item], deploymentMode: "test" }),
+  "SetupRequest (SelectedItem with ship-to and items)": buildSetupRequest({ ...base, sharedSecret: "s", buyerCookie: "c1", browserFormPostUrl: "http://buyer/return", operation: "edit", shipTo: addr, contact: { ...addr, role: "endUser" }, selectedItem: { supplierPartId: "P1", supplierPartAuxiliaryId: "AUX" }, items: [item] }),
   "SetupRequest (inspect)": buildSetupRequest({ ...base, sharedSecret: "s", buyerCookie: "c1", browserFormPostUrl: "http://buyer/return", operation: "inspect", items: [item] }),
   "OrderRequest (new)": buildOrderRequest(order),
   "OrderRequest (contact, extrinsics, attachments at both levels)": buildOrderRequest({ ...order, contact: { ...addr, role: "buyer" }, addressMode: "both", extrinsics: [{ name: "CostCenter", value: "42" }], attachments: [{ contentId: "a@x", scope: "order" }, { contentId: "b@x", scope: { itemIndex: 1 } }] }),

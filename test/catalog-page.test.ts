@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { catalogPage, type CatalogRow } from "../src/server/routes/catalog-page.js";
+import { catalogPage, scriptJson, type CatalogRow } from "../src/server/routes/catalog-page.js";
 
 // The mock supplier's webshop page. The form is its state — every product keeps
 // a real quantity input that /checkout reads — so these check the markup the
@@ -65,5 +65,23 @@ describe("mock catalog page", () => {
     expect(html).not.toContain("<b>x</b>");
     // Exactly the two scripts the page ships: the theme bootstrap and the shop.
     expect(html.match(/<script>/g)).toHaveLength(2);
+  });
+
+  it("writes values into its script as literals that cannot end the script", () => {
+    // A part number is operator data, and for a product-level punchout it is
+    // also echoed into the page's script as the initial search term.
+    const hostile = `</script><script>alert(7)</script>`;
+    expect(scriptJson(hostile)).toBe('"\\u003c/script\\u003e\\u003cscript\\u003ealert(7)\\u003c/script\\u003e"');
+    expect(scriptJson("a & b \u2028")).toBe('"a \\u0026 b \\u2028"');
+    // Round-trips to the same value when evaluated as JavaScript.
+    expect(JSON.parse(scriptJson(hostile))).toBe(hostile);
+
+    const html = page({
+      rows: [product({ partId: hostile, focused: true })],
+      focus: { level: "product", label: hostile, term: hostile, matches: 1 },
+    });
+    expect(html).not.toContain("alert(7)</script>");
+    expect(html.match(/<script>/g)).toHaveLength(2);
+    expect(html).toContain('var focusTerm = "\\u003c/script\\u003e');
   });
 });

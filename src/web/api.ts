@@ -111,7 +111,7 @@ export const api = {
       jsonOrThrow<{ ok: boolean }>(r),
     ),
 
-  setupPreview: (id: string, body: { buyerCookie?: string; operation?: string; items?: unknown[] } = {}) =>
+  setupPreview: (id: string, body: { buyerCookie?: string; operation?: string; items?: unknown[]; selectedItem?: unknown } = {}) =>
     authFetch(`/api/connections/${encodeURIComponent(id)}/setup/preview`, {
       method: "POST",
       headers: { "content-type": "application/json" },

@@ -1,10 +1,10 @@
 ---
 title: PunchOut — A Business Primer
 subtitle: What PunchOut is, who the actors are, and where punchout-simulator fits in the procurement process
-version: v1.0 — June 2026
+version: v1.1 — November 2026
 lang: en
 toc_title: Contents
-footer: "punchout-simulator · business primer · June 2026"
+footer: "punchout-simulator · business primer · November 2026"
 ---
 
 ## What problem PunchOut solves
@@ -128,6 +128,147 @@ business-complete supplier honours those by restoring the cart to that state.
 > items shown as extra rows) and an `inspect` by showing the item read-only. See
 > the Operations & usage guide for the details.
 
+## Where the user starts: store, aisle or product
+
+A user does not always enter a supplier's site through its front door. The
+buyer's own catalog can list entries published by the supplier — one for the
+whole store, one per product group, or one per product — and each entry is a
+doorway into the supplier's site. The standard calls this the granularity of a
+PunchOut item:
+
+| Level | What the buyer's catalog lists | What the user does at the supplier |
+|---|---|---|
+| **Store** | One entry for everything the supplier sells. | Searches the supplier's site for what they need. |
+| **Aisle** | Several entries, each for a group of related products. | Lands in the right section and picks from it. |
+| **Product** | One entry per product or service. | Lands on that product; no searching. |
+
+When the user clicks an entry, the `PunchOutSetupRequest` names it in a
+**`SelectedItem`**, and the supplier decides what to show. Without one, the
+supplier presents its whole store. This is often called *Level 2 PunchOut*.
+
+The business trade-off is the supplier's: the better its own search and
+configuration tools, the broader the entries can be; a supplier with a thin site
+serves users better with product-level entries. For the buyer the benefit is
+that users search in one familiar place — their own catalog — and still get live
+prices and availability from the supplier.
+
+> [!TIP]
+> In the simulator, a session can be started *from a catalog item*, to check
+> that a real supplier lands the user on that item rather than on its home page.
+> The mock supplier honours a `SelectedItem` as well, opening on the product, on
+> the group it matches, or on the whole store with a note when it does not know
+> the item.
+
+## How a session ends
+
+Clicking "transfer cart" is one way out of the supplier's site, not the only
+one, and what comes back does not always mean "add these items".
+
+- **A cart with items** replaces what the session had.
+- **A cancelled session.** A supplier can offer a *Cancel* button; it returns an
+  empty cart, telling the buyer's system that nothing is coming and the user is
+  back.
+- **An empty cart after an edit** means the opposite of nothing: the items the
+  user went in to change are to be **removed** from the requisition. If the user
+  simply backed out, the supplier says so explicitly (a "no change" status) and
+  the requisition is left as it was.
+- **After an inspect**, whatever comes back is ignored. The user was only
+  looking.
+
+A supplier also states, with every cart, **what the buyer may do with it
+later**: nothing more than order it, reopen it to look, or reopen it to change
+it. A buyer system is expected to respect that — not to offer "edit" on a cart
+the supplier marked as final.
+
+> [!IMPORTANT]
+> These cases are where integrations quietly go wrong: a buyer system that
+> treats a cancelled session as an error, or one that keeps items a user deleted
+> on the supplier's site. Each is easy to produce in the simulator and worth
+> testing before go-live.
+
+## The money: totals, tax, shipping and who pays
+
+A cart and an order both carry a **total**, and the standard is specific about
+what it is: the cost of the items, *excluding any tax and shipping*. Tax and
+shipping are stated beside it, never folded in. A total that silently includes
+them is one of the most common integration mistakes, because the two systems
+then disagree by exactly the amount nobody thought to check.
+
+Who supplies those figures is a business decision, and it differs from customer
+to customer:
+
+- **Tax** may be computed by the buying organization — it knows its own tax
+  position — or quoted by the supplier with the cart. Some buyers want tax in
+  the returned cart; others insist on none and add their own.
+- **Shipping** is typically quoted by the supplier, since it knows what delivery
+  costs, and carried into the order.
+- **Cost allocation.** A buyer may attach accounting to each order line — cost
+  centre, general-ledger account, project — saying who inside the organization
+  pays. The supplier does not act on it, but returns it on the invoice so the
+  buyer can reconcile.
+
+Because these are agreed per customer rather than fixed by the standard,
+suppliers configure them customer by customer in practice.
+
+> [!TIP]
+> The simulator mirrors that. A buyer and a supplier each have defaults for tax
+> and shipping, and every buyer–supplier connection can override them — switch
+> them off, or set figures specific to that pair. The validator checks the
+> arithmetic and names a total that includes charges.
+
+## After the order: changes and cancellations
+
+A purchase order is not always final. Quantities change, a line is dropped, a
+project is cancelled. cXML handles all of this with the same document that
+placed the order:
+
+- a **change order** is an `OrderRequest` marked as an update,
+- a **cancellation** is one marked as a delete.
+
+Both keep the original order number, carry a rising version, and name the
+document they follow, so a supplier can always reconstruct the history of an
+order from the first version to the last.
+
+```plantuml
+@startuml order-lifecycle
+!theme plain
+title One purchase order, several documents
+
+[*] --> Ordered : OrderRequest\ntype="new" (version 1)
+Ordered --> Changed : OrderRequest\ntype="update" (version 2)\nrefers to the previous document
+Changed --> Changed : another update\n(version 3, 4, …)
+Ordered --> Cancelled : OrderRequest\ntype="delete"
+Changed --> Cancelled : OrderRequest\ntype="delete"\nrefers to the latest update
+Cancelled --> [*]
+
+note right of Changed
+  Every later document names the one
+  before it, so the supplier can follow
+  the chain back to the original order.
+end note
+@enduml
+```
+
+*Fig. 2: An order's life — the original, any number of changes, and possibly a cancellation, each referring to the one before.*
+
+Suppliers differ in what they accept: some take change orders automatically,
+some only before shipping, some not at all. A supplier can advertise this (see
+the next section), and it is worth establishing during onboarding rather than
+with the first real change.
+
+## Finding out what a supplier supports
+
+Before any of this, one system can simply ask the other what it can do. The
+**Profile** transaction is a standard question — "which requests do you accept,
+and where do I send them?" — and the answer lists them: PunchOut setup, orders,
+whether attachments and change orders are accepted, and the address for each.
+
+Where buyer and supplier are connected through a network hub, the hub asks
+suppliers this periodically and keeps the answers, so buyers rarely see it. In a direct connection it is used less — the
+addresses are usually exchanged by hand at onboarding — and not every supplier
+answers it. Where it is supported, it is the quickest check that an endpoint is
+alive, speaks cXML and accepts your credentials.
+
 ## cXML versus OCI
 
 "Supporting PunchOut" is not a single target. The protocol family matters:
@@ -152,7 +293,7 @@ end
 @enduml
 ```
 
-*Fig. 2: cXML returns a structured XML document; OCI returns flat form fields. They are different protocols, not versions of one.*
+*Fig. 3: cXML returns a structured XML document; OCI returns flat form fields. They are different protocols, not versions of one.*
 
 - **cXML** returns a structured XML document and is the dominant family (Ariba,
   Coupa, Jaggaer, Oracle, Workday).
@@ -197,7 +338,7 @@ rectangle "Mode B — virtual supplier" as B {
 @enduml
 ```
 
-*Fig. 3: Mode A tests a real supplier by simulating the buyer; Mode B tests a real procurement platform by simulating the supplier.*
+*Fig. 4: Mode A tests a real supplier by simulating the buyer; Mode B tests a real procurement platform by simulating the supplier.*
 
 ### Two modes, two questions
 
@@ -221,7 +362,14 @@ rectangle "Mode B — virtual supplier" as B {
   `OrderResponse` is captured per session and viewable as raw cXML.
 - **Validate-before-send.** Outbound documents can be checked against
   expectations (credentials, currency, address completeness, operation/item
-  coherence) before they leave the tool.
+  coherence) before they leave the tool. The rules follow the published cXML
+  standard, and say plainly what a problem means for the business flow.
+- **The whole life of a purchase, not just the happy path.** Punching out from
+  a catalog item; a cancelled session; an emptied cart; tax, shipping and cost
+  allocation, per customer; change orders and cancellations; asking a supplier
+  what it supports.
+- **A mock catalog that behaves like a shop,** so a test walks through the
+  session the way a buyer user would.
 - **Profiles and product lists.** Platform-specific quirks (cXML version,
   address mode, extrinsics) are captured as reusable buyer profiles; mock
   catalogs are reusable product lists shared across suppliers.
@@ -241,6 +389,19 @@ questions can be tackled independently:
    catalog, shops the sample assortment, and returns a cart into Coupa —
    confirming the platform's connection, credentials, and cart handling against a
    known-good supplier.
+
+With the basics passing, each side can go on to the cases that usually surface
+only in production:
+
+3. **The awkward endings.** The distributor cancels a session, empties a cart in
+   an edit, and returns a cart marked as not editable — and the customer checks
+   that Coupa does the right thing with each.
+4. **The money.** The connection for this customer is set to return carts
+   without tax, because this customer computes its own; the order that comes
+   back carries the customer's tax and cost centre, and the totals agree.
+5. **A change of mind.** The customer changes a quantity on an approved order
+   and later cancels it; the distributor confirms its system follows the order
+   through all three documents.
 
 When both halves pass against the simulator, the only remaining variable is the
 real-to-real handshake — and both sides already know their own end is correct.

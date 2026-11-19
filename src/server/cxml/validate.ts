@@ -1058,6 +1058,17 @@ export function validateDocument(raw: string, ctx: ValidationContext = {}): Vali
           "cXML/.../PunchOutSetupRequest/@operation",
         );
       }
+      // SelectedItem (ItemID): the ItemID needs its SupplierPartID. "SelectedItem
+      // should not be used in a source operation."
+      if (setup != null && typeof setup === "object" && "SelectedItem" in setup) {
+        const sp = "cXML/.../PunchOutSetupRequest/SelectedItem";
+        if (!text(setup.SelectedItem?.ItemID?.SupplierPartID)?.trim()) {
+          issues.error("selecteditem-missing-id", "SelectedItem must contain ItemID/SupplierPartID", `${sp}/ItemID`);
+        }
+        if (op === "source") {
+          issues.warn("selecteditem-in-source", 'SelectedItem should not be used with operation="source"', sp);
+        }
+      }
       const hasItems = asArray(setup?.ItemOut).length > 0;
       if ((op === "edit" || op === "inspect") && !hasItems) {
         issues.warn("setup-missing-items", `operation="${op}" usually carries the prior item(s) as ItemOut, but none are present`, "cXML/.../PunchOutSetupRequest");

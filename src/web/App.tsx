@@ -18,6 +18,7 @@ import {
   type ProxyStatus,
   type SessionSummary,
   type Supplier,
+  type SelectedItem,
 } from "./types";
 import { ConnectionEditor, type ConnectionPayload, type SecretSource } from "./components/ConnectionEditor";
 import { SupplierProfileCheck } from "./components/SupplierProfileCheck";
@@ -63,6 +64,8 @@ interface Flow {
   connectionId: string;
   operation: string;
   sourceItems?: CartItem[];
+  /** The catalog item this session punches out from (SelectedItem). */
+  selectedItem?: SelectedItem;
   session: FlowSession;
 }
 
@@ -283,7 +286,7 @@ export function App() {
 
   const startSession = (choice: NewSessionChoice) => {
     const key = `flow-${++flowSeq.current}`;
-    setFlows((f) => ({ ...f, [key]: { connectionId: choice.connectionId, operation: choice.operation, sourceItems: choice.items, session: emptySession() } }));
+    setFlows((f) => ({ ...f, [key]: { connectionId: choice.connectionId, operation: choice.operation, sourceItems: choice.items, selectedItem: choice.selectedItem, session: emptySession() } }));
     setSelectedSessionId(key);
     setShowNewSession(false);
     setView("sessions");
@@ -586,6 +589,7 @@ export function App() {
                       cart={activeFlow.session.buyerCookie ? carts[activeFlow.session.buyerCookie] ?? null : null}
                       operation={activeFlow.operation}
                       sourceItems={activeFlow.sourceItems}
+                      selectedItem={activeFlow.selectedItem}
                       onChange={(patch) => patchFlowSession(selectedSessionId!, patch)}
                     />
                     <SessionLog records={sessionRecords} connections={connections} suppliers={suppliers} onSelect={setDetail} />
@@ -765,7 +769,7 @@ export function App() {
       </div>
 
       {showNewSession && (
-        <NewSessionDialog connections={connections} sessions={sessionSummaries} initialConnectionId={showNewSession.connectionId} onCancel={() => setShowNewSession(false)} onCreate={startSession} />
+        <NewSessionDialog connections={connections} sessions={sessionSummaries} productLists={productLists} initialConnectionId={showNewSession.connectionId} onCancel={() => setShowNewSession(false)} onCreate={startSession} />
       )}
       {detail && <MessageDetail record={detail} onClose={() => setDetail(null)} />}
       {showBackup && (

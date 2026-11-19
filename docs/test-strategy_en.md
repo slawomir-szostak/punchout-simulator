@@ -32,7 +32,7 @@ call the real implementations on temporary data directories.
 
 All tests live in `test/**/*.test.ts` and run under **Vitest** (`environment:
 node`, 20-second timeout, one process-isolated environment per file). The suite
-is currently 27 files across four layers, one of them opt-in:
+is currently 28 files across four layers, one of them opt-in:
 
 ```plantuml
 @startuml test-layers
@@ -104,6 +104,9 @@ routing, no network:
   of a ProfileResponse, and — over real HTTP — the tool as buyer asking the tool
   as supplier, including a wrong shared secret, URLs that differ from the
   configuration, and an endpoint that does not speak cXML.
+- `selected-item.test.ts` — Level 2 PunchOut: where `SelectedItem` sits in the
+  SetupRequest and its validation, and the mock catalog opening on a product, a
+  group, or the whole store for an unknown item.
 - `catalog-page.test.ts` — the mock supplier's webshop page: the quantity
   inputs the checkout reads, the edit / inspect / preview variants, and that
   nothing a catalog or a buyer supplies is rendered unescaped.

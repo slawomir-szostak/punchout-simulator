@@ -340,6 +340,7 @@ figure.diagram figcaption {
 <li><a href="#mode-b-walk-through-virtual-supplier">Mode B walk-through (virtual supplier)</a></li>
 </ul>
 </li>
+<li><a href="#punching-out-from-a-catalog-item-level-2-punchout">Punching out from a catalog item (Level 2 PunchOut)</a></li>
 <li><a href="#operations-explained">Operations explained</a><ul>
 <li><a href="#what-edit-actually-does-both-ends">What "edit" actually does — both ends</a></li>
 <li><a href="#how-a-returned-cart-is-read">How a returned cart is read</a></li>
@@ -751,6 +752,47 @@ session log, not from the link — so a checkout without a cookie, or for a
 cookie with no setup on record, is rejected (<code>400</code>) and never logged as a
 session.</p>
 </div>
+<h2 id="punching-out-from-a-catalog-item-level-2-punchout">Punching out from a catalog item (Level 2 PunchOut)</h2>
+<p>A buyer's own catalog often lists a supplier's items, or groups of them, as
+entries that each lead into the supplier's site. When a user clicks one, the
+<code>PunchOutSetupRequest</code> names it in a <strong><code>SelectedItem</code></strong> — a part number, with an
+auxiliary ID if the entry has one — and the supplier decides what to open: one
+product, an "aisle" of related products, or its whole store. Without a
+<code>SelectedItem</code> the supplier shows everything.</p>
+<p><strong>As the buyer.</strong> The New session dialog has <em>Punch out from an item</em>. Type the
+part ID a user would have clicked; for a supplier this tool mocks, the field
+suggests its part numbers and fills in the auxiliary ID. The session then says
+which item it punches out from, and the SetupRequest carries the <code>SelectedItem</code>.
+Use it to check that a real supplier lands the user in the right place rather
+than on its home page. For an <code>edit</code> or <code>inspect</code> session, name an item only
+when the user is coming from a catalog entry rather than from the cart.</p>
+<p><strong>As the supplier.</strong> The mock catalog reads the item ID the way a supplier
+would, and tells you what it did:</p>
+<table>
+<thead>
+<tr>
+<th>The ID sent</th>
+<th>The catalog opens on</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A part number it lists (and the auxiliary ID, if one was sent)</td>
+<td>That one product.</td>
+</tr>
+<tr>
+<td>Text that matches several products — a shared prefix, a maker, a classification code</td>
+<td>Those products.</td>
+</tr>
+<tr>
+<td>Nothing it knows</td>
+<td>The whole catalog, with a note that the item was not found.</td>
+</tr>
+</tbody>
+</table>
+<p>A banner states which item the buyer punched out to, and <em>Show the whole
+catalog</em> lifts the restriction. Point a real buyer system at the mock supplier
+to confirm that it sends the <code>SelectedItem</code> you expect.</p>
 <h2 id="operations-explained">Operations explained</h2>
 <p>The operation you choose sets the <code>operation</code> attribute on the outbound
 <code>PunchOutSetupRequest</code> and what it carries:</p>
@@ -890,6 +932,10 @@ field-level; it surfaces typed <strong>errors</strong> and <strong>warnings</str
 <tr>
 <td>Operation / items coherence</td>
 <td><code>edit</code>/<code>inspect</code> with no items, or <code>create</code> with unexpected items, is flagged.</td>
+</tr>
+<tr>
+<td><code>SelectedItem</code></td>
+<td>Must contain an <code>ItemID</code> with a <code>SupplierPartID</code> (<strong>error</strong>); should not be sent with <code>operation="source"</code> (<strong>warning</strong>).</td>
 </tr>
 <tr>
 <td>Dates</td>

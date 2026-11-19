@@ -1,5 +1,5 @@
 import { XMLParser, XMLValidator } from "fast-xml-parser";
-import type { Cart, CartItem, ChargeAmount, Credential, DocType, ProfileOption, ServerProfile } from "./types.js";
+import type { Cart, CartItem, ChargeAmount, Credential, DocType, ProfileOption, SelectedItem, ServerProfile } from "./types.js";
 
 // fast-xml-parser configuration. We keep all tag/attribute values as raw
 // strings (no number coercion) so money amounts like "100.00" survive intact;
@@ -379,13 +379,20 @@ function itemFromNode(it: any): CartItem {
 export interface SetupItems {
   operation: string;
   items: CartItem[];
+  /** The catalog item the user punched out from, when the buyer named one. */
+  selectedItem?: SelectedItem;
 }
 
 export function parseSetupItems(doc: ParsedDoc): SetupItems {
   const sr = root(doc)?.Request?.PunchOutSetupRequest;
+  const selectedId = sr?.SelectedItem?.ItemID;
+  const selectedPart = text(selectedId?.SupplierPartID)?.trim();
   return {
     operation: attr(sr, "operation") ?? "create",
     items: asArray(sr?.ItemOut).map(itemFromNode),
+    selectedItem: selectedPart
+      ? { supplierPartId: selectedPart, supplierPartAuxiliaryId: text(selectedId?.SupplierPartAuxiliaryID)?.trim() || undefined }
+      : undefined,
   };
 }
 
