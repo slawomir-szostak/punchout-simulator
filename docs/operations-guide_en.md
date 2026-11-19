@@ -187,7 +187,28 @@ Use it for two things:
   the supplier, the panel shows both and offers **Use the advertised URLs**.
 
 The request goes to the supplier's **Profile URL** if you set one (Suppliers →
-*Profile URL*), otherwise to its PunchOut URL. Both messages are kept as a small
+*Profile URL*). The standard has a ProfileRequest sent to a server's stable
+"root" URL, from which the other URLs are learned — it is not meant to go to
+the PunchOut URL. In practice, though, suppliers differ:
+
+- one cXML endpoint for everything — it answers a ProfileRequest at the same URL
+  as a setup request;
+- a separate endpoint per request — the PunchOut endpoint accepts only a
+  `PunchOutSetupRequest` and refuses anything else;
+- no Profile transaction at all, despite the standard requiring it — common in
+  direct connections, where the URLs are simply exchanged at onboarding.
+
+So with no Profile URL set the tool tries the PunchOut URL, says so before you
+send, and reads the answer accordingly:
+
+| Answer | Meaning |
+|---|---|
+| A profile | The supplier supports the transaction; you see its requests and URLs. |
+| A cXML error (e.g. `Status 400`, "setup request must not be empty") | **Reachable and speaks cXML, but no profile at this URL.** Not a connection problem: the endpoint only serves another request. Set a Profile URL if the supplier has one; otherwise just open a session. |
+| `Status 401` / `403` | The endpoint speaks cXML but refused the credentials. |
+| Not cXML, or no answer | A real problem: wrong URL, not a cXML endpoint, or the network. |
+
+Both messages are kept as a small
 session of their own, labelled *profile check*; **show the two messages** opens
 it.
 

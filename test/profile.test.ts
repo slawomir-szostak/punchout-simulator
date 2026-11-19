@@ -175,6 +175,37 @@ describe("over HTTP: the tool as buyer asking the tool as supplier", () => {
     ]);
   });
 
+  it("reports a setup-only endpoint as reachable but without a profile, and says which URL was tried", async () => {
+    // Many suppliers expose one endpoint per request. Asked for its profile, a
+    // PunchOut endpoint answers in cXML — with an error about the missing setup.
+    const { createServer } = await import("node:http");
+    const setupOnly = createServer((_req, res) => {
+      res.writeHead(400, { "content-type": "text/xml" });
+      res.end(`<?xml version="1.0"?><cXML payloadID="x@s" timestamp="2026-01-01T10:00:00Z"><Response><Status code="400" text="BadRequest">'Punch Out Setup Request' must not be empty.</Status></Response></cXML>`);
+    });
+    await new Promise<void>((r) => setupOnly.listen(0, "127.0.0.1", r));
+    const url = `http://127.0.0.1:${(setupOnly.address() as AddressInfo).port}/punchout/setup`;
+    try {
+      const supplier = await post("/api/suppliers", { name: "Setup-only Supplier", identity: cred("DUNS", "888"), punchoutUrl: url });
+      const conn = await post("/api/connections", { buyerId: "demo-buyer", supplierId: supplier.id, mode: "virtual-buyer", sharedSecret: "x" });
+      const result = await post(`/api/connections/${conn.id}/profile`);
+      expect(result.url).toBe(url);
+      expect(result.urlSource).toBe("punchoutUrl"); // a fallback: no Profile URL was set
+      expect(result.statusCode).toBe("400"); // it answered in cXML…
+      expect(result.statusMessage).toContain("must not be empty");
+      expect(result.profile).toBeUndefined(); // …but not with a profile
+      expect(result.transportError).toBeUndefined();
+
+      // With a Profile URL configured, that is the URL asked — and reported as such.
+      await fetch(`${base}/api/suppliers/${supplier.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...supplier, profileUrl: `${base}/sim/demo-supplier/profile` }) });
+      const asked = await post(`/api/connections/${conn.id}/profile`);
+      expect(asked.urlSource).toBe("profileUrl");
+      expect(asked.url).toBe(`${base}/sim/demo-supplier/profile`);
+    } finally {
+      setupOnly.close();
+    }
+  });
+
   it("explains an endpoint that does not speak cXML", async () => {
     const copy = await post("/api/suppliers", { name: "Not cXML", identity: cred("DUNS", "555"), punchoutUrl: `${base}/api/health` });
     const conn = await post("/api/connections", { buyerId: "demo-buyer", supplierId: copy.id, mode: "virtual-buyer", sharedSecret: "x" });

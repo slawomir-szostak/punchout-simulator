@@ -5,6 +5,22 @@ corresponding [GitHub Release](https://github.com/slawomir-szostak/punchout-simu
 Versions follow [Semantic Versioning](https://semver.org); while the project is
 pre-1.0, new features may arrive in patch releases.
 
+## v0.14.1 — Profile check: a setup-only endpoint is not a failure
+
+*Released 2026-11-19*
+
+Patch release. The supplier profile check no longer reports a setup-only endpoint as a failure.
+
+With no Profile URL set on a supplier, the profile check introduced in v0.14.0 sends its ProfileRequest to the PunchOut URL. That works for a supplier with one cXML endpoint for everything. Many suppliers instead have a separate endpoint per request, and their PunchOut endpoint accepts only a PunchOutSetupRequest: asked for a profile, it answers in cXML with an error such as "setup request must not be empty". The panel showed that in red, as if the connection were broken — when in fact it proves the URL is right, the server is up and it speaks cXML. The panel also never said which URL it was about to use.
+
+### Changes
+- **The panel says where the request goes before you send it**, and, when it is falling back to the PunchOut URL, what kind of answer to expect from a supplier with separate endpoints.
+- **A cXML error without a profile is shown as information, not failure:** "The endpoint is reachable and speaks cXML, but it did not return a profile", with the supplier's own message and what to do — set a Profile URL if the supplier has one, otherwise simply open a session.
+- **Refused credentials** (`Status 401` / `403`) get their own message. No cXML answer at all stays a failure.
+- The operations guide explains where a ProfileRequest is meant to go — the standard has it sent to a server's stable "root" URL, not the PunchOut URL — and how each kind of answer is read.
+
+**Full Changelog**: https://github.com/slawomir-szostak/punchout-simulator/compare/v0.14.0...v0.14.1
+
 ## v0.14.0 — Ask a supplier what it supports: the Profile transaction
 
 *Released 2026-11-19*

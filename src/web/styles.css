@@ -243,6 +243,9 @@ a.btn-primary { text-decoration: none; display: inline-block; }
 .supplier-reply { display: flex; gap: .7rem; align-items: flex-start; border-radius: 8px; padding: .7rem .9rem; margin: .2rem 0 .6rem; border: 1px solid var(--border); background: var(--panel-2); }
 .supplier-reply-ok { border-color: color-mix(in srgb, var(--ok) 45%, var(--border)); }
 .supplier-reply-bad { border-color: color-mix(in srgb, var(--error) 55%, var(--border)); }
+.supplier-reply-partial { border-color: color-mix(in srgb, var(--warn) 55%, var(--border)); }
+.supplier-reply-partial .supplier-reply-icon { color: var(--warn); }
+.supplier-reply-note { font-size: .85rem; color: var(--muted); margin-top: .35rem; line-height: 1.45; }
 .supplier-reply-icon { font-size: 1.1rem; line-height: 1.2; }
 .supplier-reply-ok .supplier-reply-icon { color: var(--ok); }
 .supplier-reply-bad .supplier-reply-icon { color: var(--error); }

@@ -55,8 +55,35 @@ export function SupplierProfileCheck({
     }
   };
 
-  const ok = !!result && !result.transportError && !!result.profile;
+  // Where the request will go. Only a Profile URL is a place the supplier was
+  // asked on purpose; without one the PunchOut (else the order) URL is tried.
+  const target = supplier?.profileUrl
+    ? { url: supplier.profileUrl, source: "profileUrl" as const }
+    : supplier?.punchoutUrl
+      ? { url: supplier.punchoutUrl, source: "punchoutUrl" as const }
+      : supplier?.orderUrl
+        ? { url: supplier.orderUrl, source: "orderUrl" as const }
+        : undefined;
+  const sourceName = { profileUrl: "Profile URL", punchoutUrl: "PunchOut URL", orderUrl: "order URL" };
+
+  // Four outcomes, and only two of them are bad news:
+  //  profile    — the supplier answered with its profile;
+  //  no-profile — it answered in cXML, but with an error instead of a profile.
+  //               The endpoint is reachable and speaks cXML; it just does not
+  //               serve a ProfileRequest (there, or at all). Common in practice.
+  //  rejected   — it answered 401/403: the credentials were refused;
+  //  failed     — no cXML answer at all (wrong URL, not a cXML endpoint, network).
   const unreadable = result?.response.validation?.issues.find((i) => i.code === "not-well-formed" || i.code === "not-cxml")?.message;
+  const outcome = !result
+    ? undefined
+    : result.transportError || !result.statusCode
+      ? "failed"
+      : result.profile
+        ? "profile"
+        : result.statusCode === "401" || result.statusCode === "403"
+          ? "rejected"
+          : "no-profile";
+  const fallback = !!result && result.urlSource !== "profileUrl";
 
   return (
     <fieldset>
@@ -65,6 +92,20 @@ export function SupplierProfileCheck({
         Asks the supplier which requests it accepts and at which URLs. It also works as a ping: a quick check that the
         endpoint answers cXML and accepts this connection's credentials, before you open a session.
       </p>
+      {target && (
+        <p className="hint">
+          {target.source === "profileUrl" ? (
+            <>Goes to the supplier's Profile URL: <code>{target.url}</code></>
+          ) : (
+            <>
+              No Profile URL is set on the supplier, so this goes to its {sourceName[target.source]}:{" "}
+              <code>{target.url}</code>. A supplier with one cXML endpoint for everything will answer there. One with a
+              separate endpoint per request usually will not — it will reply with an error, which still tells you the
+              endpoint is reachable.
+            </>
+          )}
+        </p>
+      )}
       <div className="step-actions" style={{ marginTop: 0 }}>
         <button className="btn-secondary" onClick={send} disabled={busy}>
           {busy ? "Working…" : result ? "Send ProfileRequest again ↻" : "Send ProfileRequest →"}
@@ -79,8 +120,8 @@ export function SupplierProfileCheck({
 
       {result && (
         <div className="result">
-          <div className={`supplier-reply ${ok ? "supplier-reply-ok" : "supplier-reply-bad"}`}>
-            <span className="supplier-reply-icon">{ok ? "✓" : "⚠"}</span>
+          <div className={`supplier-reply ${outcome === "profile" ? "supplier-reply-ok" : outcome === "no-profile" ? "supplier-reply-partial" : "supplier-reply-bad"}`}>
+            <span className="supplier-reply-icon">{outcome === "profile" ? "✓" : outcome === "no-profile" ? "ℹ" : "⚠"}</span>
             <div>
               <div className="supplier-reply-head">
                 {result.transportError
@@ -88,10 +129,36 @@ export function SupplierProfileCheck({
                   : `${result.url} · HTTP ${result.httpStatus} · ${result.statusCode ? `Status ${result.statusCode}` : "not a cXML document"}`}
               </div>
               <div className="supplier-reply-msg">
-                {ok
-                  ? `The supplier answered with its profile: ${result.profile!.transactions.length} supported request type(s).`
-                  : (result.statusMessage ?? unreadable ?? (result.statusCode ? "The supplier answered, but without a profile." : ""))}
+                {outcome === "profile" && `The supplier answered with its profile: ${result.profile!.transactions.length} supported request type(s).`}
+                {outcome === "no-profile" && "The endpoint is reachable and speaks cXML, but it did not return a profile."}
+                {outcome === "rejected" && "The endpoint speaks cXML, but refused this connection's credentials."}
+                {outcome === "failed" && (unreadable ?? "No cXML answer.")}
               </div>
+              {(outcome === "no-profile" || outcome === "rejected") && result.statusMessage && (
+                <div className="supplier-reply-note">It said: “{result.statusMessage}”</div>
+              )}
+              {outcome === "no-profile" && (
+                <div className="supplier-reply-note">
+                  {fallback ? (
+                    <>
+                      That is the usual answer from an endpoint that accepts only a{" "}
+                      {result.urlSource === "punchoutUrl" ? "PunchOutSetupRequest" : "OrderRequest"}: the request was sent
+                      to the supplier's {sourceName[result.urlSource]} because no Profile URL is set. So the URL is right
+                      and the server is up — this is not a connection problem. If the supplier has a separate profile
+                      URL, set it under Suppliers → Profile URL; many suppliers have none, and then you can simply open a
+                      session.
+                    </>
+                  ) : (
+                    <>
+                      This is the supplier's Profile URL, so it was expected to answer. Its message above says why it
+                      did not; the supplier may not implement the Profile transaction.
+                    </>
+                  )}
+                </div>
+              )}
+              {outcome === "rejected" && (
+                <div className="supplier-reply-note">Check the connection's shared secret and the sender identity.</div>
+              )}
             </div>
           </div>
 

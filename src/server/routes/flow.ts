@@ -59,8 +59,14 @@ interface BuyerContext {
   sharedSecret: string;
   punchoutUrl?: string;
   orderUrl?: string;
-  /** Where a ProfileRequest goes: the supplier's profile URL, else its PunchOut URL. */
+  /**
+   * Where a ProfileRequest goes. The standard has it sent to a server's "root"
+   * URL, from which the URLs of the other requests are learned; when the
+   * supplier has no such URL configured the PunchOut (else the order) URL is
+   * tried, which works for a supplier with one cXML endpoint for everything.
+   */
   profileUrl?: string;
+  profileUrlSource: "profileUrl" | "punchoutUrl" | "orderUrl";
   deploymentMode: string;
   connectionId: string;
   attachmentEncoding: AttachmentEncoding;
@@ -100,6 +106,7 @@ function buyerContext(r: ResolvedConnection): BuyerContext {
     punchoutUrl: supplier.punchoutUrl,
     orderUrl: supplier.orderUrl,
     profileUrl: supplier.profileUrl || supplier.punchoutUrl || supplier.orderUrl,
+    profileUrlSource: supplier.profileUrl ? "profileUrl" : supplier.punchoutUrl ? "punchoutUrl" : "orderUrl",
     deploymentMode: connection.deploymentMode,
     connectionId: connection.id,
     attachmentEncoding: eff.attachmentEncoding,
@@ -223,6 +230,7 @@ flowRoute.post("/:id/profile", async (c) => {
   const result: ProfileResult = {
     sessionId,
     url: ctx.profileUrl,
+    urlSource: ctx.profileUrlSource,
     transportError: res.error,
     httpStatus: res.status,
     statusCode: status?.code,

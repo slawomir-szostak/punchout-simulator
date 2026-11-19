@@ -53,6 +53,12 @@ export interface ProfileResult {
   sessionId: string;
   /** The URL the ProfileRequest was posted to. */
   url: string;
+  /**
+   * Which of the supplier's URLs that was. Only `profileUrl` is a URL the
+   * supplier was asked a ProfileRequest at on purpose; the other two are a
+   * fallback, and an endpoint dedicated to another request may well refuse it.
+   */
+  urlSource: "profileUrl" | "punchoutUrl" | "orderUrl";
   transportError?: string;
   httpStatus: number;
   statusCode?: string;
