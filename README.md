@@ -216,6 +216,10 @@ receiver detects the missing attachment. `<Comments>` (and therefore
   `orderVersion`, and a `DocumentReference` to the previous document. Edit it
   like any other order before sending. The mock supplier checks the chain and
   answers under the order number it first acknowledged.
+- **A mock catalog that behaves like a shop.** Search, sort, big quantity
+  steppers and a live cart with the shipping and tax the supplier will quote —
+  so shopping in a test takes seconds. It works framed inside a buyer platform,
+  on a phone-sized frame, in light or dark, and without any network access.
 - **Supplier profile (ProfileRequest).** From a connection you can ask the
   supplier which requests it accepts and at which URLs — the one transaction
   every cXML server must support, and a quick ping that proves the endpoint

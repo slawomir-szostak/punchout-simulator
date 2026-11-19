@@ -723,6 +723,24 @@ session, and the overlay closes by itself a moment after the cart comes back.</p
 <li>The user shops and checks out; the tool builds a <code>PunchOutOrderMessage</code> and
    auto-POSTs it to the platform's <code>BrowserFormPost</code> URL.</li>
 </ol>
+<p><strong>The mock catalog</strong> is a small webshop, so a test feels like the real thing
+and adding items is quick:</p>
+<ul>
+<li><strong>Search</strong> by name, part number or maker (press <code>/</code> to jump to it), and
+  <strong>sort</strong> by name, price, or with the cart's items first.</li>
+<li><strong>Quantity steppers</strong> on every product — large − and + buttons, or type the
+  number. Products that allow fractional quantities accept decimals.</li>
+<li><strong>A live cart</strong> beside the list (docked to the bottom on a narrow screen or in
+  a small procurement frame) with its own steppers, <em>Remove</em>, and the totals:
+  goods, plus the shipping and tax this supplier quotes this buyer, and the
+  amount to pay. A mixed-currency cart shows one goods figure per currency.</li>
+<li><strong>Return cart to buyer</strong> and <strong>Cancel</strong> at the bottom of the cart.</li>
+</ul>
+<p>In an <code>edit</code> session the buyer's cart is loaded into it, including lines the
+catalog doesn't list (marked <em>from cart</em>); in an <code>inspect</code> session the items are
+shown without any controls. Opened without a PunchOut session — the <em>Catalog
+(preview)</em> link — it says so and cannot return a cart. It follows the app's
+light or dark theme and needs no network: no external fonts, images or scripts.</p>
 <div class="alert alert-important">
 <div class="alert-label">Important</div>
 <p>A checkout against <code>/sim/:id/checkout</code> <strong>requires a session opened by a

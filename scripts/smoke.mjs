@@ -29,7 +29,7 @@ async function main() {
 
   // 3. Browse the catalog page
   const catalogHtml = await fetch(setup.startPage).then((r) => r.text());
-  ok("catalog page served", catalogHtml.includes("mock catalog") || catalogHtml.includes("virtual supplier"));
+  ok("catalog page served", catalogHtml.includes('name="q_0"') && catalogHtml.includes("Return cart to buyer"));
 
   // 4. Checkout -> auto-submit punchback HTML
   const form = new URLSearchParams();

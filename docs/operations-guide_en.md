@@ -349,6 +349,25 @@ Use it to find problems a new-tab run never shows:
 4. The user shops and checks out; the tool builds a `PunchOutOrderMessage` and
    auto-POSTs it to the platform's `BrowserFormPost` URL.
 
+**The mock catalog** is a small webshop, so a test feels like the real thing
+and adding items is quick:
+
+- **Search** by name, part number or maker (press `/` to jump to it), and
+  **sort** by name, price, or with the cart's items first.
+- **Quantity steppers** on every product — large − and + buttons, or type the
+  number. Products that allow fractional quantities accept decimals.
+- **A live cart** beside the list (docked to the bottom on a narrow screen or in
+  a small procurement frame) with its own steppers, *Remove*, and the totals:
+  goods, plus the shipping and tax this supplier quotes this buyer, and the
+  amount to pay. A mixed-currency cart shows one goods figure per currency.
+- **Return cart to buyer** and **Cancel** at the bottom of the cart.
+
+In an `edit` session the buyer's cart is loaded into it, including lines the
+catalog doesn't list (marked *from cart*); in an `inspect` session the items are
+shown without any controls. Opened without a PunchOut session — the *Catalog
+(preview)* link — it says so and cannot return a cart. It follows the app's
+light or dark theme and needs no network: no external fonts, images or scripts.
+
 > [!IMPORTANT]
 > A checkout against `/sim/:id/checkout` **requires a session opened by a
 > `PunchOutSetupRequest`**. Always reach the catalog by opening the StartPage

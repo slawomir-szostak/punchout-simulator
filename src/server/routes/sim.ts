@@ -14,6 +14,7 @@ import { saveAttachment } from "../store/attachments.js";
 import { getPublicUrl, getToken } from "../runtime.js";
 import { authClientKey, authThrottle } from "../rate-limit.js";
 import { resolveCharges } from "./charges.js";
+import { catalogPage, type CatalogRow } from "./catalog-page.js";
 import {
   buildProfileResponse,
   buildPunchOutOrderMessage,
@@ -332,122 +333,42 @@ simRoute.post("/:id/punchout", async (c) => {
 });
 
 // --- 2. Catalog UI ------------------------------------------------------------
+//
+// The page itself lives in catalog-page.ts; this builds its lines from the
+// supplier's catalog and, for edit / inspect, from the cart the buyer carried in.
 
-// A normalized view of one row (a catalog item or a carried buyer-cart item).
-interface RowView {
-  description?: string;
-  supplierPartId?: string;
-  supplierPartAuxiliaryId?: string;
-  uom?: string;
-  currency?: string;
-  price?: number;
-  classifications?: { domain: string; value: string }[];
-}
-const catalogView = (it: CatalogItem): RowView => ({
-  description: it.description,
-  supplierPartId: it.supplierPartId,
-  supplierPartAuxiliaryId: it.supplierPartAuxiliaryId,
-  uom: it.uom,
-  currency: it.currency,
-  price: it.unitPrice,
-  classifications: it.classifications,
-});
-const cartView = (it: CartItem): RowView => ({
-  description: it.description,
-  supplierPartId: it.supplierPartId,
-  supplierPartAuxiliaryId: it.supplierPartAuxiliaryId,
-  uom: it.uom,
-  currency: it.currency,
-  price: it.unitPriceAmount,
-  classifications: it.classifications,
+const classificationLabel = (list?: { domain: string; value: string }[]): string | undefined =>
+  list && list.length > 0 ? list.map((c) => `${c.domain} ${c.value}`).join(", ") : undefined;
+
+const catalogRow = (it: CatalogItem, field: string, quantity: number): CatalogRow => ({
+  field,
+  description: it.description ?? "",
+  partId: it.supplierPartId ?? "",
+  auxId: it.supplierPartAuxiliaryId,
+  manufacturer: it.manufacturerName,
+  uom: it.uom ?? "EA",
+  currency: it.currency ?? "USD",
+  price: it.unitPrice ?? 0,
+  classification: classificationLabel(it.classifications),
+  quantity,
+  fractional: !!it.allowFractional,
 });
 
-function rowLabelCells(v: RowView): string {
-  const partId =
-    escapeXml(v.supplierPartId ?? "") +
-    (v.supplierPartAuxiliaryId ? ` / ${escapeXml(v.supplierPartAuxiliaryId)}` : "");
-  const cls = (v.classifications ?? []).map((c) => `${escapeXml(c.domain)} ${escapeXml(c.value)}`).join(" · ");
-  return `<td><strong>${escapeXml(v.description ?? "")}</strong><br><small>${partId} · ${escapeXml(v.uom ?? "")}${cls ? ` · ${cls}` : ""}</small></td>
-      <td class="price">${escapeXml(v.currency ?? "")} ${(v.price ?? 0).toFixed(2)}</td>`;
-}
-
-// An editable quantity row. `fractional` controls the input step; `value` is the
-// initial quantity (pre-filled from a carried edit cart, else 0).
-function qtyRow(v: RowView, name: string, value: number, fractional: boolean, tag?: string): string {
-  return `<tr>
-      ${rowLabelCells(v)}
-      <td><input type="number" name="${name}" value="${escapeXml(value)}" min="0" step="${fractional ? "any" : "1"}" inputmode="${fractional ? "decimal" : "numeric"}">${tag ? ` <span class="tag">${tag}</span>` : ""}</td>
-    </tr>`;
-}
-
-// A read-only row (inspect): the quantity is shown but cannot be changed.
-function readonlyRow(v: RowView, qty: number): string {
-  return `<tr>
-      ${rowLabelCells(v)}
-      <td class="ro">${escapeXml(qty)}</td>
-    </tr>`;
-}
-
-interface CatalogPageOpts {
-  supplier: Supplier;
-  banner: string;
-  rows: string;
-  submitLabel: string;
-  cookie: string;
-}
-
-function catalogPage(o: CatalogPageOpts): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeXml(o.supplier.name)} — mock catalog</title>
-<script>
-  // Match the main app's theme. The app appends ?theme= to the catalog link
-  // (works even when the SPA is on a different origin, e.g. the Vite dev server);
-  // otherwise fall back to a same-origin 'pos-theme' in localStorage, then the OS
-  // preference. Set before paint to avoid a flash.
-  (function () {
-    try {
-      var q = new URLSearchParams(location.search).get("theme");
-      var t = (q === "light" || q === "dark") ? q : localStorage.getItem("pos-theme");
-      if (t !== "light" && t !== "dark") {
-        t = (window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches) ? "light" : "dark";
-      }
-      document.documentElement.dataset.theme = t;
-    } catch (e) {}
-  })();
-</script>
-<style>
-  :root{--bg:#0f172a;--text:#e2e8f0;--muted:#94a3b8;--panel:#1e293b;--th:#0b1220;--border:#334155;--field:#0b1220;--price:#fbbf24;--accent:#6366f1;--accent-hover:#4f46e5;--banner:#1e293b}
-  :root[data-theme="light"]{--bg:#f5f7fb;--text:#1e293b;--muted:#4b5a73;--panel:#ffffff;--th:#eef1f7;--border:#d4dae8;--field:#ffffff;--price:#b45309;--accent:#6366f1;--accent-hover:#4f46e5;--banner:#eef1f7}
-  body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);margin:0;padding:2rem}
-  .wrap{max-width:720px;margin:0 auto}
-  h1{font-size:1.4rem}.sub{color:var(--muted);margin-bottom:1.5rem}
-  .banner{background:var(--banner);border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:8px;padding:.7rem 1rem;margin-bottom:1.25rem;font-size:.95rem}
-  .banner.inspect{border-left-color:var(--price)}
-  table{width:100%;border-collapse:collapse;background:var(--panel);border-radius:12px;overflow:hidden}
-  th,td{padding:.75rem 1rem;text-align:left;border-bottom:1px solid var(--border)}
-  th{background:var(--th);font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
-  .price{white-space:nowrap;color:var(--price)}
-  .ro{color:var(--muted)}
-  .tag{font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-left:.4rem}
-  input[type=number]{width:5rem;background:var(--field);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:.35rem .5rem}
-  button{margin-top:1.5rem;background:var(--accent);color:#fff;border:0;border-radius:8px;padding:.7rem 1.4rem;font-size:1rem;cursor:pointer}
-  button:hover{background:var(--accent-hover)}
-  button.cancel{background:transparent;color:var(--muted);border:1px solid var(--border);margin-left:.6rem}
-  button.cancel:hover{background:var(--panel);color:var(--text)}
-</style></head><body><div class="wrap">
-  <h1>${escapeXml(o.supplier.name)} <small>(virtual supplier)</small></h1>
-  <div class="sub">Mock catalog served by punchout-simulator. Set quantities and return the cart.</div>
-  ${o.banner}
-  <form method="post" action="${escapeXml(`${getPublicUrl()}/sim/${encodeURIComponent(o.supplier.id)}/checkout`)}">
-    <input type="hidden" name="cookie" value="${escapeXml(o.cookie)}">
-    <table><thead><tr><th>Item</th><th>Price</th><th>Qty</th></tr></thead>
-    <tbody>${o.rows}</tbody></table>
-    <button type="submit">${escapeXml(o.submitLabel)}</button>
-    <button type="submit" name="action" value="cancel" class="cancel" formnovalidate title="End the session without returning a cart (empty PunchOutOrderMessage, Status 204)">Cancel</button>
-  </form>
-</div></body></html>`;
-}
+// A line taken from the buyer's cart rather than from this catalog.
+const carriedRow = (it: CartItem, field: string | undefined, tag?: string): CatalogRow => ({
+  field,
+  description: it.description ?? "",
+  partId: it.supplierPartId ?? "",
+  auxId: it.supplierPartAuxiliaryId,
+  manufacturer: it.manufacturerName,
+  uom: it.uom ?? "EA",
+  currency: it.currency ?? "USD",
+  price: it.unitPriceAmount ?? 0,
+  classification: classificationLabel(it.classifications),
+  quantity: it.quantity,
+  fractional: true,
+  tag,
+});
 
 simRoute.get("/:id/catalog", (c) => {
   const supplier = getSupplier(c.req.param("id"));
@@ -455,36 +376,50 @@ simRoute.get("/:id/catalog", (c) => {
   const cookie = c.req.query("cookie") ?? "";
   const items = catalogOf(supplier);
   const ctx = setupContextFor(cookie, supplier.id);
-  const page = (banner: string, rows: string, submitLabel: string) =>
-    c.html(catalogPage({ supplier, banner, rows, submitLabel, cookie }));
 
-  // inspect: the buyer wants to view the carried item(s). Show them read-only and
-  // return them unchanged. (Falls through to the catalog if none were carried.)
+  // The charges this buyer will be quoted, so the cart can show them before
+  // the cart is returned (the same resolution the checkout uses).
+  const charges = resolveCharges(findConnectionBySupplierAndBuyerIdentity(supplier.id, ctx.buyerAll)?.connection.cartCharges, {
+    tax: supplier.cartTax,
+    shipping: supplier.cartShipping,
+  });
+  const buyer = ctx.found ? buyerCredential(supplier.id, ctx.buyerAll) : undefined;
+  const page = (operation: string, rows: CatalogRow[]) =>
+    c.html(
+      catalogPage({
+        supplierName: supplier.name,
+        checkoutUrl: `${getPublicUrl()}/sim/${encodeURIComponent(supplier.id)}/checkout`,
+        cookie,
+        operation,
+        hasSession: ctx.found,
+        buyerLabel: buyer?.identity ? `${buyer.domain} ${buyer.identity}`.trim() : undefined,
+        rows,
+        quote: {
+          taxRatePercent: charges.tax?.ratePercent,
+          taxLabel: charges.tax?.description,
+          shippingAmount: charges.shipping?.amount,
+          shippingLabel: charges.shipping?.description,
+        },
+      }),
+    );
+
+  // inspect: the buyer wants to look at the carried item(s). They are shown
+  // read-only, and nothing is sent back. (Falls through to the catalog if none
+  // were carried.)
   if (ctx.operation === "inspect" && ctx.items.length > 0) {
-    const rows = ctx.items.map((it) => readonlyRow(cartView(it), it.quantity)).join("\n");
-    const banner = `<div class="banner inspect">Inspect — ${ctx.items.length} item(s), read-only. Returning the cart unchanged to the buyer.</div>`;
-    return page(banner, rows, "Return to buyer →");
+    return page("inspect", ctx.items.map((it) => carriedRow(it, undefined)));
   }
 
   // create / edit. For edit, pre-fill quantities from the carried cart and add
-  // any carried items the catalog doesn't list as extra editable rows.
+  // any carried items the catalog doesn't list as extra editable lines.
   const isEdit = ctx.operation === "edit";
   const prefill = (it: CatalogItem): number =>
     isEdit ? (ctx.items.find((p) => sameProduct(p, it))?.quantity ?? 0) : 0;
-  const catalogRows = items
-    .map((it, i) => qtyRow(catalogView(it), `q_${i}`, prefill(it), !!it.allowFractional))
-    .join("\n");
-
   const extras = isEdit ? ctx.items.filter((p) => !items.some((it) => sameProduct(p, it))) : [];
-  const extraRows = extras
-    .map((p, j) => qtyRow(cartView(p), `qx_${j}`, p.quantity, true, "from cart"))
-    .join("\n");
-
-  const banner = isEdit
-    ? `<div class="banner edit">Edit — ${ctx.items.length} item(s) pre-loaded from the buyer's cart. Adjust quantities and return.</div>`
-    : "";
-  const rows = extraRows ? `${catalogRows}\n${extraRows}` : catalogRows;
-  return page(banner, rows, "Return cart to buyer →");
+  return page(isEdit ? "edit" : "create", [
+    ...items.map((it, i) => catalogRow(it, `q_${i}`, prefill(it))),
+    ...extras.map((p, j) => carriedRow(p, `qx_${j}`, "from cart")),
+  ]);
 });
 
 // --- 3. Checkout -> auto-submit punchback ------------------------------------

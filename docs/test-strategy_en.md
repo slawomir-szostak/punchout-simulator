@@ -32,7 +32,7 @@ call the real implementations on temporary data directories.
 
 All tests live in `test/**/*.test.ts` and run under **Vitest** (`environment:
 node`, 20-second timeout, one process-isolated environment per file). The suite
-is currently 26 files across four layers, one of them opt-in:
+is currently 27 files across four layers, one of them opt-in:
 
 ```plantuml
 @startuml test-layers
@@ -104,6 +104,9 @@ routing, no network:
   of a ProfileResponse, and — over real HTTP — the tool as buyer asking the tool
   as supplier, including a wrong shared secret, URLs that differ from the
   configuration, and an endpoint that does not speak cXML.
+- `catalog-page.test.ts` — the mock supplier's webshop page: the quantity
+  inputs the checkout reads, the edit / inspect / preview variants, and that
+  nothing a catalog or a buyer supplies is rendered unescaped.
 - `rate-limit.test.ts` and `static.test.ts` — abuse limits (per-client and
   global when exposed, the looser global cap on localhost) and SPA serving.
 - `backup.test.ts` — configuration export/import: secrets blanked unless asked

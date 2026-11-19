@@ -5,6 +5,30 @@ corresponding [GitHub Release](https://github.com/slawomir-szostak/punchout-simu
 Versions follow [Semantic Versioning](https://semver.org); while the project is
 pre-1.0, new features may arrive in patch releases.
 
+## v0.15.0 — A mock catalog you can actually shop in
+
+*Released 2026-11-19*
+
+Minor release. The mock supplier's catalog is now a small webshop.
+
+The catalog a tester shops in was a bare table: one row per product and a tiny number field whose up and down arrows were the only way to choose a quantity, short of typing. With a real product list it was slow to use and looked nothing like a supplier's catalog, which matters when the point of a test is to walk through a PunchOut session the way a buyer would.
+
+### The new catalog
+- **Search** by name, part number or maker — press `/` to jump to it — and **sort** by catalog order, name, price, or with the cart's items first.
+- **Quantity steppers** on every product: large − and + buttons, and the number can still be typed. Products that allow fractional quantities accept decimals.
+- **A live cart** beside the list, with its own steppers and *Remove*, showing goods, the shipping and tax this supplier quotes this buyer, and the amount to pay. A mixed-currency cart shows one figure per currency.
+- **Return cart to buyer** and **Cancel** at the bottom of the cart.
+- On a narrow screen, or in a small procurement frame, the products stack and the cart docks to the bottom with the total.
+- It looks like a trade-counter catalog — dense rows, part numbers set like bin labels — in light and dark. It uses only system fonts and no external files, so it still works offline and inside a buyer platform's iframe.
+
+### Also
+- A catalog opened without a PunchOut session (the *Catalog (preview)* link) says so and disables its buttons, instead of failing after you click.
+- Pressing Enter in the search box or a quantity field no longer returns the cart by accident.
+
+Edit sessions still load the buyer's cart into the page, including lines the catalog does not list; inspect sessions show the items without controls. The form fields the checkout reads are unchanged.
+
+**Full Changelog**: https://github.com/slawomir-szostak/punchout-simulator/compare/v0.14.1...v0.15.0
+
 ## v0.14.1 — Profile check: a setup-only endpoint is not a failure
 
 *Released 2026-11-19*
