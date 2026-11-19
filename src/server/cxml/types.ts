@@ -154,6 +154,67 @@ export interface ProductList {
 // Supplier and holds only what is specific to that pair (credentials, mode).
 
 /** A buyer party. Its `identity` is the cXML `From` credential it presents. */
+/**
+ * How a party computes tax: a single rate applied to the goods subtotal.
+ * Emitted as `<Tax>` with one `<TaxDetail category percentageRate>`.
+ */
+export interface TaxSettings {
+  /** Percentage, e.g. 23 for 23 %. */
+  ratePercent: number;
+  /** TaxDetail/@category (required by the DTD): sales, vat, gst, usage, … */
+  category: string;
+  description?: string;
+  /**
+   * Buyer side only: `order` puts one Tax in the OrderRequestHeader (the
+   * default); `lines` additionally gives every ItemOut its own Tax.
+   */
+  level?: "order" | "lines";
+}
+
+/** A flat shipping charge, emitted as `<Shipping>` (Money + Description). */
+export interface ShippingSettings {
+  amount: number;
+  description?: string;
+}
+
+/** One accounting code: `<AccountingSegment id><Name/><Description/>`. */
+export interface AccountingSegmentDef {
+  /** The kind of code — "Cost Center", "G/L Account", … (element Name). */
+  name: string;
+  /** The code itself (attribute id). */
+  id: string;
+  description: string;
+}
+
+/**
+ * Who is charged for an order line. Emitted on every ItemOut as one
+ * `<Distribution>` whose Charge is the line amount.
+ */
+export interface AccountingSettings {
+  /** Accounting/@name — the name of this accounting combination. */
+  name: string;
+  segments: AccountingSegmentDef[];
+}
+
+/**
+ * Tax and shipping for one buyer–supplier pair, overriding the party's own
+ * defaults. Suppliers set this up per customer in practice: not every buyer
+ * wants tax in the cart it gets back. Absent on a connection = use the party's
+ * defaults; `none` = send neither; `custom` = send exactly what is given here.
+ */
+export interface ChargeOverride {
+  mode: "none" | "custom";
+  tax?: TaxSettings;
+  shipping?: ShippingSettings;
+}
+
+/** A charge as carried in a document (parsed, or computed for emission). */
+export interface ChargeAmount {
+  amount: number;
+  currency: string;
+  description?: string;
+}
+
 export interface Buyer {
   id: string;
   name: string;
@@ -169,6 +230,14 @@ export interface Buyer {
   shipTo?: Address;
   billTo?: Address;
   contact?: Contact;
+  /**
+   * Charges and accounting this buyer adds to its OrderRequests. All optional.
+   * "This element is present if the buying organization computes tax"; without
+   * `tax` / `shipping` here an order carries what the supplier quoted in the cart.
+   */
+  tax?: TaxSettings;
+  shipping?: ShippingSettings;
+  accounting?: AccountingSettings;
   createdAt: string;
   updatedAt: string;
 }
@@ -201,6 +270,13 @@ export interface Supplier {
    * Defaults to `edit`, since the mock catalog can reopen carts.
    */
   operationAllowed?: "create" | "inspect" | "edit";
+  /**
+   * Charges the mock supplier quotes with a returned cart, emitted in
+   * PunchOutOrderMessageHeader as Tax and Shipping ("computed on the remote
+   * website"). The header Total stays the goods amount, excluding both.
+   */
+  cartTax?: TaxSettings;
+  cartShipping?: ShippingSettings;
   /**
    * @deprecated Legacy inline catalog. Read only, for one-time migration into a
    * generated Product List (see store/config.ts). No longer written from the UI.
@@ -237,6 +313,18 @@ export interface Connection {
    * `binary` when unset.
    */
   attachmentEncoding?: AttachmentEncoding;
+
+  /**
+   * Tax and shipping on the OrderRequests this buyer sends to this supplier.
+   * Unset: the buyer's own settings apply (and, where it has none, the order
+   * carries what the supplier quoted with the cart).
+   */
+  orderCharges?: ChargeOverride;
+  /**
+   * Tax and shipping the mock supplier quotes in carts returned to this buyer.
+   * Unset: the supplier's own settings apply.
+   */
+  cartCharges?: ChargeOverride;
 
   createdAt: string;
   updatedAt: string;
@@ -357,6 +445,10 @@ export interface Cart {
   statusCode?: string;
   /** How the buyer must treat this punchback; set once the session's operation is known. */
   outcome?: CartOutcome;
+  /** Header Total: the goods amount, excluding tax and shipping. */
   total?: { amount: number; currency: string };
+  /** PunchOutOrderMessageHeader/Shipping and /Tax, when the supplier quoted them. */
+  shipping?: ChargeAmount;
+  tax?: ChargeAmount;
   items: CartItem[];
 }

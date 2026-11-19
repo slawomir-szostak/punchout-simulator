@@ -112,6 +112,15 @@ a { color: var(--link); }
 .cred-pair { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
 .catalog-row { display: grid; grid-template-columns: 1.2fr 1.6fr .7fr .5fr .5fr .9fr auto auto; gap: .35rem; align-items: center; margin-bottom: .4rem; }
 .catalog-row input { padding: .35rem .4rem; font-size: .78rem; }
+/* Tax / shipping / accounting rows: a leading label, short number and select
+   cells, and a description that takes the remaining width. */
+.charge-row { display: grid; gap: .45rem; align-items: center; margin-bottom: .5rem; }
+.charge-row.tax { grid-template-columns: 5rem 6.5rem 7.5rem 1fr; }
+.charge-row.tax.with-level { grid-template-columns: 5rem 6.5rem 7.5rem 1fr 13rem; }
+.charge-row.shipping { grid-template-columns: 5rem 6.5rem 1fr; }
+.charge-row.segment { grid-template-columns: 1fr 1fr 1.5fr auto; }
+.charge-row input, .charge-row select { padding: .4rem .5rem; font-size: .8rem; width: 100%; box-sizing: border-box; }
+.charge-label { font-size: .8rem; color: var(--muted); }
 .check-inline { display: inline-flex; align-items: center; gap: .25rem; font-size: .72rem; color: var(--muted); white-space: nowrap; }
 .check-inline input { width: auto; padding: 0; }
 .check-row { display: flex; align-items: baseline; gap: .45rem; cursor: pointer; }

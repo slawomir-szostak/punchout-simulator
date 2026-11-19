@@ -489,18 +489,159 @@ function checkPunchback(doc: ParsedDoc, ctx: ValidationContext, issues: Issues) 
     ctx.allowMixedCurrency,
   );
 
+  const headerPath = "cXML/.../PunchOutOrderMessageHeader";
+  const charges = checkCharges(headerNode, items, totalCurrency, headerPath, issues);
+
   // Total consistency: sum of (quantity * unit price) vs the header Total. Only
   // meaningful when the document is single-currency (otherwise the mock supplier
   // deliberately sends Total 0 and the mixed-currency error above already fired).
   if (singleCurrency && totalAmount != null && items.length > 0) {
-    const diff = Math.abs(totalAmount - lineSum);
-    if (diff > 0.01) {
+    checkTotal(totalAmount, lineSum, charges, `${headerPath}/Total`, issues);
+  }
+}
+
+// The Total "contains the total cost for the items …, excluding any tax and
+// shipping" (Reference Guide, for the order and the punchback alike). A Total
+// that equals goods + charges is the classic mistake, so it gets its own message.
+function checkTotal(total: number, lineSum: number, charges: number, path: string, issues: Issues): void {
+  if (Math.abs(total - lineSum) <= 0.01) return;
+  if (charges > 0 && Math.abs(total - (lineSum + charges)) <= 0.01) {
+    issues.warn(
+      "total-includes-charges",
+      `Header Total (${total.toFixed(2)}) includes tax and/or shipping (${charges.toFixed(2)}); the Total must be the cost of the items only (${lineSum.toFixed(2)})`,
+      path,
+    );
+    return;
+  }
+  issues.warn("total-mismatch", `Header Total (${total.toFixed(2)}) does not equal the sum of line totals (${lineSum.toFixed(2)})`, path);
+}
+
+const moneyOf = (node: any): { amount?: number; currency?: string } => {
+  const m = node?.Money;
+  return m == null ? {} : { amount: num(text(m)), currency: attr(m, "currency") };
+};
+
+// One <Tax> element: structure the DTD requires, and internal consistency.
+// Returns the tax amount (0 when unreadable).
+function checkTax(tax: any, path: string, issues: Issues): number {
+  const total = moneyOf(tax);
+  if (total.amount == null || text(tax?.Description) == null) {
+    issues.error("tax-incomplete", `${path} must contain Money and a Description`, path);
+  }
+  const details = asArray(tax?.TaxDetail);
+  let detailSum = 0;
+  let readable = details.length > 0;
+  details.forEach((d, i) => {
+    const dp = `${path}/TaxDetail[${i + 1}]`;
+    if (!attr(d, "category")) issues.error("taxdetail-missing-category", `${dp} is missing the required @category (e.g. sales, vat, gst)`, dp);
+    const amount = moneyOf(d?.TaxAmount).amount;
+    if (amount == null) {
+      issues.error("taxdetail-missing-amount", `${dp} is missing TaxAmount/Money`, dp);
+      readable = false;
+      return;
+    }
+    detailSum += amount;
+    const rate = num(attr(d, "percentageRate"));
+    const taxable = moneyOf(d?.TaxableAmount).amount;
+    if (rate != null && taxable != null && Math.abs((taxable * rate) / 100 - amount) > 0.011) {
       issues.warn(
-        "total-mismatch",
-        `Header Total (${totalAmount.toFixed(2)}) does not equal the sum of line totals (${lineSum.toFixed(2)})`,
-        "cXML/.../PunchOutOrderMessageHeader/Total",
+        "tax-rate-mismatch",
+        `${dp}: ${rate}% of ${taxable.toFixed(2)} is ${((taxable * rate) / 100).toFixed(2)}, but TaxAmount is ${amount.toFixed(2)}`,
+        dp,
       );
     }
+  });
+  if (readable && total.amount != null && Math.abs(detailSum - total.amount) > 0.011) {
+    issues.warn("tax-detail-mismatch", `${path}/Money (${total.amount.toFixed(2)}) does not equal the sum of its TaxDetail amounts (${detailSum.toFixed(2)})`, path);
+  }
+  return total.amount ?? 0;
+}
+
+// Shipping and Tax at header and line level, for an OrderRequestHeader or a
+// PunchOutOrderMessageHeader with its items. Returns header tax + shipping.
+function checkCharges(header: any, items: any[], currency: string | undefined, path: string, issues: Issues): number {
+  let charges = 0;
+  const shipping = header?.Shipping;
+  if (shipping != null) {
+    const m = moneyOf(shipping);
+    if (m.amount == null || text(shipping?.Description) == null) {
+      issues.error("shipping-incomplete", `${path}/Shipping must contain Money and a Description`, `${path}/Shipping`);
+    }
+    if (m.currency && currency && m.currency !== currency) {
+      issues.warn("charge-currency-differs", `${path}/Shipping is in ${m.currency}, the Total in ${currency}`, `${path}/Shipping`);
+    }
+    charges += m.amount ?? 0;
+    // "If the Shipping element is present in the OrderRequestHeader, it must
+    // not appear in the ItemOut elements."
+    const lines = items.map((it, i) => (it?.Shipping != null ? i + 1 : 0)).filter(Boolean);
+    if (lines.length > 0) {
+      issues.warn("shipping-at-both-levels", `Shipping appears in the header and on line(s) ${lines.join(", ")}; it must be at one level only`, `${path}/Shipping`);
+    }
+  }
+
+  let lineTax = 0;
+  let linesWithTax = 0;
+  items.forEach((it, i) => {
+    if (it?.Tax == null) return;
+    linesWithTax += 1;
+    lineTax += checkTax(it.Tax, `cXML/.../Item[${i + 1}]/Tax`, issues);
+  });
+  if (header?.Tax != null) {
+    const amount = checkTax(header.Tax, `${path}/Tax`, issues);
+    const cur = moneyOf(header.Tax).currency;
+    if (cur && currency && cur !== currency) {
+      issues.warn("charge-currency-differs", `${path}/Tax is in ${cur}, the Total in ${currency}`, `${path}/Tax`);
+    }
+    charges += amount;
+    // A header Tax "describes the total tax for an order"; line-level Tax
+    // elements describe the line amounts, so they should add up to it.
+    if (linesWithTax > 0 && Math.abs(lineTax - amount) > 0.01 * Math.max(1, linesWithTax)) {
+      issues.warn("tax-lines-mismatch", `${path}/Tax (${amount.toFixed(2)}) does not equal the sum of the line-level Tax amounts (${lineTax.toFixed(2)})`, `${path}/Tax`);
+    }
+  }
+  return charges;
+}
+
+// Distribution "divides the cost of an item among multiple parties".
+//   Distribution (Accounting, Charge); Accounting @name #REQUIRED with
+//   AccountingSegment+ (@id #REQUIRED) or the deprecated Segment+.
+function checkDistributions(item: any, index: number, lineAmount: number | undefined, issues: Issues): void {
+  const list = asArray(item?.Distribution);
+  if (list.length === 0) return;
+  const base = `cXML/.../ItemOut[${index}]/Distribution`;
+  let sum = 0;
+  let readable = true;
+  list.forEach((d, j) => {
+    const dp = list.length > 1 ? `${base}[${j + 1}]` : base;
+    const acc = d?.Accounting;
+    if (acc == null || !attr(acc, "name")) {
+      issues.error("accounting-missing-name", `${dp}/Accounting is missing or has no @name`, `${dp}/Accounting`);
+    }
+    const segments = asArray(acc?.AccountingSegment);
+    const legacy = asArray(acc?.Segment);
+    if (segments.length === 0 && legacy.length === 0) {
+      issues.error("accounting-no-segments", `${dp}/Accounting has no AccountingSegment`, `${dp}/Accounting`);
+    }
+    if (legacy.length > 0) {
+      issues.info("segment-deprecated", `${dp} uses <Segment>; it is deprecated in favour of <AccountingSegment>`, `${dp}/Accounting`);
+    }
+    if (segments.some((s) => !attr(s, "id"))) {
+      issues.error("accountingsegment-missing-id", `${dp}: an AccountingSegment is missing the required @id`, `${dp}/Accounting`);
+    }
+    const charge = moneyOf(d?.Charge).amount;
+    if (charge == null) {
+      issues.error("distribution-missing-charge", `${dp} is missing Charge/Money`, `${dp}/Charge`);
+      readable = false;
+    } else {
+      sum += charge;
+    }
+  });
+  if (readable && lineAmount != null && Math.abs(sum - lineAmount) > 0.011) {
+    issues.warn(
+      "distribution-sum-mismatch",
+      `ItemOut[${index}]: its Distribution charges add up to ${sum.toFixed(2)}, but the line amount is ${lineAmount.toFixed(2)}`,
+      base,
+    );
   }
 }
 
@@ -595,24 +736,39 @@ function checkOrderRequest(doc: ParsedDoc, ctx: ValidationContext, issues: Issue
     issues.error("no-itemout", "OrderRequest contains no ItemOut elements", "cXML/.../OrderRequest");
   }
   const lineCurrencies: string[] = [];
+  let lineSum = 0;
+  let allPriced = items.length > 0;
   items.forEach((it, i) => {
     const base = `cXML/.../ItemOut[${i + 1}]`;
     if (!text(it?.ItemID?.SupplierPartID)) {
       issues.error("itemout-missing-id", `ItemOut[${i + 1}] is missing ItemID/SupplierPartID`, `${base}/ItemID`);
     }
     const up = it?.ItemDetail?.UnitPrice?.Money;
+    const qty = num(attr(it, "quantity"));
+    const price = num(text(up));
     if (up == null) {
       issues.error("itemout-missing-unitprice", `ItemOut[${i + 1}] is missing ItemDetail/UnitPrice/Money`, `${base}/ItemDetail/UnitPrice`);
     } else {
       const cur = attr(up, "currency");
       if (cur) lineCurrencies.push(cur);
     }
-    if (num(attr(it, "quantity")) == null) {
+    if (qty == null) {
       issues.error("itemout-missing-quantity", `ItemOut[${i + 1}] is missing @quantity`, base);
     }
+    const lineAmount = qty != null && price != null ? qty * price : undefined;
+    if (lineAmount == null) allPriced = false;
+    else lineSum += lineAmount;
+    checkDistributions(it, i + 1, lineAmount, issues);
   });
 
-  checkSingleCurrency(lineCurrencies, attr(header?.Total?.Money, "currency"), issues, "cXML/.../OrderRequestHeader/Total", ctx.allowMixedCurrency);
+  const totalCurrency = attr(header?.Total?.Money, "currency");
+  const singleCurrency = checkSingleCurrency(lineCurrencies, totalCurrency, issues, "cXML/.../OrderRequestHeader/Total", ctx.allowMixedCurrency);
+  const charges = checkCharges(header, items, totalCurrency, "cXML/.../OrderRequestHeader", issues);
+  // A blanket order's Total is a maximum commitment, not a sum of its lines.
+  const orderTotal = num(text(header?.Total?.Money));
+  if (singleCurrency && allPriced && orderTotal != null && attr(header, "orderType") !== "blanket") {
+    checkTotal(orderTotal, lineSum, charges, "cXML/.../OrderRequestHeader/Total", issues);
+  }
 
   // Attachment cid resolution (spec section 11). Scan Comments at both levels.
   const refs = collectCidReferences(doc);

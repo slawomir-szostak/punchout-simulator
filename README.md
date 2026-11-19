@@ -177,6 +177,7 @@ Document-specific:
 | **PunchOutOrderMessage** (punchback) | `BuyerCookie` matches the session; **`operationAllowed`** present and valid; header `Total`/`Money`+currency; each `ItemIn` has quantity, `SupplierPartID`, `UnitPrice`+currency, `Description`, `UnitOfMeasure`, `Classification`@domain; **single currency** (mixed-currency is an error unless the supplier allows it); **Total consistency** (sum of line totals); an **empty cart** is explained rather than flagged (cancelled, emptied, or unchanged with `Status 204`); items returned for an `inspect` session or beside a `204`; a `SharedSecret` travelling through the browser |
 | **OrderRequest** | `orderID`/`orderDate` (and its format)/`Total`; **`type`** is `new`/`update`/`delete`; an `update` or `delete` carries a **`DocumentReference`** to the previous OrderRequest and a rising **`orderVersion`**; `ShipTo`/`BillTo` present **and complete** (an `addressID` or a postal Street/City — an empty block is flagged); `Contact@role`; each `ItemOut`; **single currency** (as above); **attachment `cid:` resolution** (see below) |
 | **OrderResponse** | `Status` code present / not an error |
+| **Tax, Shipping, Distribution** (order and punchback) | `Tax` and `Shipping` carry `Money` and a `Description`; `TaxDetail@category`; the tax **arithmetic** (rate × taxable amount, details vs. total, line taxes vs. header tax); `Shipping` at one level only; charge currency; a **Total that includes tax or shipping** (it must be goods only); each `Distribution` has `Accounting@name`, at least one `AccountingSegment` with an `id`, and charges that add up to the line amount |
 
 > Note: full cXML DTD validation would require a native validating XML parser,
 > which would hurt `npx` portability. Instead the tool does well-formedness plus
@@ -214,6 +215,15 @@ receiver detects the missing attachment. `<Comments>` (and therefore
   `orderVersion`, and a `DocumentReference` to the previous document. Edit it
   like any other order before sending. The mock supplier checks the chain and
   answers under the order number it first acknowledged.
+- **Tax, shipping and accounting.** A buyer can add tax (a rate, stated for the
+  order or for every line as well), a flat shipping charge, and an accounting
+  assignment sent as a `Distribution` on each line. Without buyer settings the
+  order carries whatever tax and shipping the supplier quoted with the cart. The
+  mock supplier can quote both with the carts it returns. Because charges are
+  usually agreed customer by customer, each **connection** can override them for
+  its buyer–supplier pair — off, or its own figures — separately for orders and
+  for returned carts. The `Total` is always the goods amount alone, as the
+  standard requires.
 - The flow is a **persistent per-connection session**: switching between the
   Flow and Settings tabs (or connections) keeps your in-progress order, and you
   can **edit and re-send** after a supplier rejection. "New session" starts a
@@ -331,7 +341,7 @@ The config is normalized into five entities:
 
 - **Buyer** — a reusable party holding its own cXML identity (the `From` credential), an optional **platform profile** reference (see below), and optional default **ShipTo / BillTo addresses** and an end-user **Contact** (see below).
 - **Supplier** — a reusable party holding its cXML identity (`To`) plus its **endpoints** (PunchOut URL, Order URL) and the **product lists** it serves as its Mode-B catalog. Endpoints are intrinsic to the supplier — defined once, not per relationship. An optional `allowMixedCurrency` flag relaxes the multi-currency check for this supplier (see below).
-- **Connection** — the edge pairing one Buyer with one Supplier. It holds only what is specific to that pair: which side the tool simulates (`mode`), the `sharedSecret`, an optional per-pair Sender identity override (defaults to the buyer's identity), `deploymentMode`, and `attachmentEncoding`.
+- **Connection** — the edge pairing one Buyer with one Supplier. It holds only what is specific to that pair: which side the tool simulates (`mode`), the `sharedSecret`, an optional per-pair Sender identity override (defaults to the buyer's identity), `deploymentMode`, `attachmentEncoding`, and optional per-pair tax and shipping (`orderCharges`, `cartCharges`) overriding the parties' defaults.
 - **Product List** — a reusable, named set of catalog products. Assigned to one or more Suppliers; each supplier serves the **union** of its lists as its mock catalog. See below.
 - **Profile** — a reusable **procurement-platform profile** (Ariba/Coupa/Jaggaer/…) referenced by a Buyer. See below.
 

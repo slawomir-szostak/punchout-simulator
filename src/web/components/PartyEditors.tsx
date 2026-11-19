@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import type { Address, Buyer, Contact, Credential, ProductList, Profile, Supplier } from "../types";
 import { AddressFields, ContactFields } from "./AddressFields";
+import { AccountingFields, ShippingFields, TaxFields } from "./ChargeFields";
+import type { AccountingSettings, ShippingSettings, TaxSettings } from "../types";
 import { Field } from "./Field";
 
 // Editors for the standalone Buyer and Supplier entities. Each holds only the
@@ -254,6 +256,25 @@ export function BuyerEditor({
         <legend>Contact <span className="hint">(end-user / requisitioner — name, email, phone)</span></legend>
         <ContactFields value={(draft.contact ?? { role: "endUser" }) as Contact} onChange={(contact: Contact) => setDraft({ ...draft, contact })} />
       </fieldset>
+      <fieldset>
+        <legend>Tax <span className="hint">(added to this buyer's OrderRequests when a rate is set)</span></legend>
+        <TaxFields value={draft.tax} withLevel onChange={(tax) => setDraft({ ...draft, tax: tax as TaxSettings })} />
+        <p className="hint">
+          Charged on the goods total. Leave the rate empty and the order carries whatever tax the supplier quoted with the cart, if any.
+        </p>
+      </fieldset>
+      <fieldset>
+        <legend>Shipping <span className="hint">(a flat charge in the order header)</span></legend>
+        <ShippingFields value={draft.shipping} onChange={(shipping) => setDraft({ ...draft, shipping: shipping as ShippingSettings })} />
+        <p className="hint">Leave the amount empty to carry the shipping the supplier quoted with the cart, if any.</p>
+      </fieldset>
+      <fieldset>
+        <legend>Accounting <span className="hint">(who is charged — sent as a Distribution on every order line)</span></legend>
+        <Field label={<>Name <span className="hint">(of this accounting combination)</span></>}>
+          <input value={draft.accounting?.name ?? ""} onChange={(e) => setDraft({ ...draft, accounting: { ...(draft.accounting ?? { segments: [] }), name: e.target.value } })} placeholder="DistributionCharge" />
+        </Field>
+        <AccountingFields value={draft.accounting} onChange={(accounting) => setDraft({ ...draft, accounting: accounting as AccountingSettings })} />
+      </fieldset>
 
       <Actions saving={saving} err={err} isNew={!buyer} noun="buyer" onSave={save} onError={setErr} onDelete={buyer && onDelete ? () => onDelete(buyer.id) : undefined} onDuplicate={onDuplicate} onDiscard={onDiscard} />
     </div>
@@ -342,6 +363,14 @@ export function SupplierEditor({
           <option value="create">create — not reopened at all</option>
         </select>
       </Field>
+      <fieldset>
+        <legend>Charges quoted with a cart <span className="hint">(mock supplier: Tax and Shipping in the returned cart's header)</span></legend>
+        <TaxFields value={draft.cartTax} onChange={(cartTax) => setDraft({ ...draft, cartTax: cartTax as TaxSettings })} />
+        <ShippingFields value={draft.cartShipping} onChange={(cartShipping) => setDraft({ ...draft, cartShipping: cartShipping as ShippingSettings })} />
+        <p className="hint">
+          Leave both empty for a cart with no charges. The cart's Total is always the goods amount alone — tax and shipping are stated beside it, never added in.
+        </p>
+      </fieldset>
 
       <fieldset>
         <legend>Mock catalog <span className="hint">(product lists served when the tool acts as this supplier)</span></legend>

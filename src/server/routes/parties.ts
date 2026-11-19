@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { readJsonBody } from "./json-body.js";
+import { accountingSettings, shippingSettings, taxSettings } from "./charges.js";
 import {
   createBuyer,
   createSupplier,
@@ -65,6 +66,9 @@ function normalizeBuyer(body: any): BuyerInput {
     shipTo: address(body?.shipTo),
     billTo: address(body?.billTo),
     contact: contact(body?.contact),
+    tax: taxSettings(body?.tax),
+    shipping: shippingSettings(body?.shipping),
+    accounting: accountingSettings(body?.accounting),
   };
 }
 
@@ -113,6 +117,8 @@ function normalizeSupplier(body: any): SupplierInput {
       body?.operationAllowed === "create" || body?.operationAllowed === "inspect" || body?.operationAllowed === "edit"
         ? body.operationAllowed
         : undefined,
+    cartTax: taxSettings(body?.cartTax),
+    cartShipping: shippingSettings(body?.cartShipping),
   };
 }
 

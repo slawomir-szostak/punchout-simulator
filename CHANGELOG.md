@@ -5,6 +5,41 @@ corresponding [GitHub Release](https://github.com/slawomir-szostak/punchout-simu
 Versions follow [Semantic Versioning](https://semver.org); while the project is
 pre-1.0, new features may arrive in patch releases.
 
+## v0.13.0 — Tax, shipping and accounting, per buyer, supplier and pair
+
+*Released 2026-11-19*
+
+Minor release. Adds tax, shipping and accounting to orders and returned carts, configurable per buyer, per supplier, and per buyer–supplier pair.
+
+Real orders carry more than items. Buyers send tax, a shipping charge, and the accounting codes that say who pays; suppliers quote tax and shipping with the cart. Until now the tool sent and understood none of it, so the part of an integration where the numbers most often go wrong could not be tested. The rule those numbers follow is the one the cXML Reference Guide states for the order and the returned cart alike: the `Total` is the cost of the items, "excluding any tax and shipping". A `Total` with the charges added in is a classic integration mistake, and the validator now names it.
+
+### What a buyer adds to its orders
+- **Tax** — a rate and a category (`sales`, `vat`, `gst`, …), sent as a `Tax` in the order header with one `TaxDetail` (category, rate, taxable amount). Optionally also a `Tax` on every line; the line taxes add up to the header tax.
+- **Shipping** — a flat amount in the order header. It is only sent there: the standard forbids it at both levels.
+- **Accounting** — segments such as *Cost Center / 4711 / Marketing*, sent as a `Distribution` on every line with a `Charge` equal to the line amount.
+- With no tax or shipping set, an order carries what the supplier quoted with the cart.
+
+### What the mock supplier quotes
+- A tax rate and a shipping amount, returned in the cart header beside a goods-only `Total`. The session's cart panel shows goods total, shipping, tax and the amount to pay.
+
+### Per buyer–supplier pair
+- Charges are usually agreed customer by customer — one buyer wants tax in the cart it gets back, another wants none. The buyer and supplier settings are defaults; each **connection** can override them for its pair, separately for orders and for returned carts: follow the party's settings, send none, or send its own figures.
+
+### Validation
+- `Tax` and `Shipping` must carry an amount and a description, and a `TaxDetail` its category.
+- The tax arithmetic: rate × taxable amount, details against the tax total, line taxes against the header tax.
+- The `Total` against the sum of the lines — for orders too, not only returned carts — with a specific message when it equals lines plus tax and shipping. Blanket orders are exempt.
+- `Shipping` at one level only; charges in the document's currency.
+- Each `Distribution`: an accounting name, at least one segment with an id, and charges that add up to the line amount.
+
+### Good to know
+- Tax is charged on the goods total, not on shipping, and there is one rate per party.
+- A mixed-currency order gets neither tax nor shipping, since there is no single `Total` to charge against.
+- An order whose `Total` does not match its lines now gets a warning; previously only returned carts were checked.
+- All of this is valid for every DTD version a buyer profile declares (1.2.008 to 1.2.045) and for the current 1.2.072.
+
+**Full Changelog**: https://github.com/slawomir-szostak/punchout-simulator/compare/v0.12.0...v0.13.0
+
 ## v0.12.0 — Built against the cXML standard: change orders, cancelled sessions, operationAllowed
 
 *Released 2026-11-19*

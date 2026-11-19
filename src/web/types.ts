@@ -1,6 +1,7 @@
 // The SPA reuses the server's domain types directly (type-only imports, erased
 // at build) so the two halves never drift.
 export type {
+  AccountingSettings,
   Address,
   AddressMode,
   AttachmentEncoding,
@@ -10,6 +11,7 @@ export type {
   ContactRole,
   Cart,
   CartItem,
+  ChargeOverride,
   CartReturnTransport,
   CatalogItem,
   Classification,
@@ -26,7 +28,9 @@ export type {
   Profile,
   ProfileExtrinsic,
   SetupOperation,
+  ShippingSettings,
   Supplier,
+  TaxSettings,
   ValidationIssue,
   ValidationResult,
   ValidationSeverity,

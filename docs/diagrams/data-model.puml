@@ -10,6 +10,7 @@ entity Buyer {
   profileId : -> Profile
   shipTo / billTo : Address
   contact : Contact
+  tax / shipping / accounting
 }
 
 entity Supplier {
@@ -20,6 +21,8 @@ entity Supplier {
   punchoutUrl / orderUrl
   productListIds : -> ProductList[]
   allowMixedCurrency
+  operationAllowed
+  cartTax / cartShipping
 }
 
 entity Connection {
@@ -32,6 +35,7 @@ entity Connection {
   senderIdentity : Credential
   deploymentMode
   attachmentEncoding
+  orderCharges / cartCharges
 }
 
 entity Profile {

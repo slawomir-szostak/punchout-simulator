@@ -195,6 +195,11 @@ consequences shape the code:
   `BuyerCookie, Extrinsic*, BrowserFormPost, Contact*, ShipTo, ItemOut*`;
   item-level `Comments` after `ItemDetail` inside `ItemOut`; a `TelephoneNumber`
   as `CountryCode, AreaOrCityCode, Number`. A `Response` carries no `Header`.
+- **Totals exclude charges.** `Tax`, `Shipping` and `Distribution` are emitted
+  from one place in `build.ts` in the DTD's positions (header: after `BillTo`;
+  line: after `ItemDetail`, before `Comments`), using only the parts of their
+  content models that are identical from DTD 1.2.008 to 1.2.072. The `Total`
+  never includes them — in an order or in a punchback.
 - **Dates use the cXML form.** `cxmlTimestamp()` writes local time with a
   numeric UTC offset; the Reference Guide does not allow the `Z` designator.
 - **Output depends on the declared DTD version.** A buyer profile may declare a
@@ -305,6 +310,7 @@ entity Buyer {
   profileId : -> Profile
   shipTo / billTo : Address
   contact : Contact
+  tax / shipping / accounting
 }
 
 entity Supplier {
@@ -315,6 +321,8 @@ entity Supplier {
   punchoutUrl / orderUrl
   productListIds : -> ProductList[]
   allowMixedCurrency
+  operationAllowed
+  cartTax / cartShipping
 }
 
 entity Connection {
@@ -327,6 +335,7 @@ entity Connection {
   senderIdentity : Credential
   deploymentMode
   attachmentEncoding
+  orderCharges / cartCharges
 }
 
 entity Profile {

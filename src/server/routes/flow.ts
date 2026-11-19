@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { nanoid } from "nanoid";
 import { readJsonBody } from "./json-body.js";
+import { resolveCharges } from "./charges.js";
 import {
   dtdVersionFor,
   effectiveProfile,
@@ -10,7 +11,7 @@ import {
 } from "../store/config.js";
 import { appendLog, readSession } from "../store/log.js";
 import { saveAttachment } from "../store/attachments.js";
-import { rememberOrderSession, rememberSessionConnection } from "../cart-store.js";
+import { getCart, rememberOrderSession, rememberSessionConnection } from "../cart-store.js";
 import { sendCxml } from "../http.js";
 import { browserFormPostUrl, getPublicUrl } from "../runtime.js";
 import {
@@ -19,6 +20,7 @@ import {
   buildSetupRequest,
   lineItemsTotal,
   makePayloadId,
+  computeTax,
   cxmlTimestamp,
   type ExtrinsicVal,
   type OrderAttachmentMeta,
@@ -27,7 +29,7 @@ import {
 import { buildMultipartRelated, type MultipartAttachment } from "../cxml/multipart.js";
 import { getOrderInfo, getStartPage, getStatus, parseXml } from "../cxml/parse.js";
 import { validateDocument, type ExpectedCredentials } from "../cxml/validate.js";
-import type { Address, AddressMode, AttachmentEncoding, AttachmentRef, CartItem, Contact, Credential, DocType, ResolvedConnection, SetupOperation } from "../cxml/types.js";
+import type { Address, AddressMode, AttachmentEncoding, AttachmentRef, CartItem, Contact, Credential, DocType, ResolvedConnection, SetupOperation, AccountingSettings, ShippingSettings, TaxSettings, ChargeAmount } from "../cxml/types.js";
 import type { OrderResult, SetupResult } from "./dto.js";
 
 const coerceOperation = (v: unknown): SetupOperation | undefined =>
@@ -68,6 +70,16 @@ interface BuyerContext {
   shipTo?: Address;
   billTo?: Address;
   contact?: Contact;
+  /** Tax and shipping on orders to this supplier: the connection's override, else the buyer's. */
+  tax?: TaxSettings;
+  shipping?: ShippingSettings;
+  /**
+   * True when tax/shipping came from the buyer's defaults, so an order with
+   * none may still carry the supplier's quote. A connection that says "none"
+   * or sets its own figures has decided, and the quote is not used.
+   */
+  chargesInherited: boolean;
+  accounting?: AccountingSettings;
 }
 
 function buyerContext(r: ResolvedConnection): BuyerContext {
@@ -76,6 +88,7 @@ function buyerContext(r: ResolvedConnection): BuyerContext {
   const to = supplier.identity;
   const sender = connection.senderIdentity ?? buyer.identity;
   const eff = effectiveProfile(connection, buyer);
+  const orderCharges = resolveCharges(connection.orderCharges, { tax: buyer.tax, shipping: buyer.shipping });
   return {
     from,
     to,
@@ -92,6 +105,10 @@ function buyerContext(r: ResolvedConnection): BuyerContext {
     shipTo: buyer.shipTo,
     billTo: buyer.billTo,
     contact: buyer.contact,
+    tax: orderCharges.tax,
+    shipping: orderCharges.shipping,
+    chargesInherited: orderCharges.inherited,
+    accounting: buyer.accounting,
   };
 }
 
@@ -320,6 +337,18 @@ function buildOrderXml(ctx: BuyerContext, body: OrderBody): { xml: string; order
     throw new HTTPException(400, { message: "this session has not sent an OrderRequest yet — there is no order to change or cancel" });
   }
   const orderId = previous?.orderId || body.orderId || `PO-${nanoid(8)}`;
+  // Shipping and tax: what the buyer computes itself wins; otherwise the order
+  // carries what the supplier quoted with the cart. Tax is charged on the goods
+  // (the Total), which excludes tax and shipping. A mixed-currency order has no
+  // single Total to charge against, so it gets neither.
+  const mixed = new Set(items.map((it) => it.currency || currency)).size > 1;
+  const quoted = ctx.chargesInherited && body.sessionId ? getCart(body.sessionId) : undefined;
+  const shipping: ChargeAmount | undefined = mixed
+    ? undefined
+    : ctx.shipping
+      ? { amount: ctx.shipping.amount, currency, description: ctx.shipping.description }
+      : quoted?.shipping;
+  const tax = mixed ? undefined : ctx.tax ? computeTax(ctx.tax, total, currency) : quoted?.tax;
   const attMeta: OrderAttachmentMeta[] = (body.attachments ?? []).map((a) => ({
     contentId: a.contentId,
     scope: a.scope === "order" || a.scope == null ? "order" : { itemIndex: Number(a.scope) },
@@ -347,6 +376,10 @@ function buildOrderXml(ctx: BuyerContext, body: OrderBody): { xml: string; order
     dtdVersion: dtdVersionFor(ctx.eff, "OrderRequest"),
     userAgent: ctx.eff.userAgent,
     extrinsics: orderExtrinsics(ctx, orderId),
+    shipping,
+    tax,
+    lineTax: !mixed && ctx.tax?.level === "lines" ? ctx.tax : undefined,
+    accounting: ctx.accounting,
     type,
     orderVersion: previous ? previous.orderVersion + 1 : undefined,
     documentReferencePayloadId: previous?.payloadId,

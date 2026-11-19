@@ -32,7 +32,7 @@ call the real implementations on temporary data directories.
 
 All tests live in `test/**/*.test.ts` and run under **Vitest** (`environment:
 node`, 20-second timeout, one process-isolated environment per file). The suite
-is currently 24 files across four layers, one of them opt-in:
+is currently 25 files across four layers, one of them opt-in:
 
 ```plantuml
 @startuml test-layers
@@ -40,7 +40,7 @@ is currently 24 files across four layers, one of them opt-in:
 title Test layers (bottom = most tests, fastest)
 
 rectangle "Integration over real HTTP\nintegration.test.ts — full Mode-A roundtrip,\nephemeral port, seeded demo data" as L4
-rectangle "HTTP app-level (no sockets)\nsecurity / rate-limit / static / backup / hardening /\nduplicate / standard —\nHono app.request() against the real app" as L3
+rectangle "HTTP app-level (no sockets)\nsecurity / rate-limit / static / backup / hardening /\nduplicate / standard / charges —\nHono app.request() against the real app" as L3
 rectangle "Store & persistence\nmigrations / products / profiles /\nlog-dedup / log-summary / cart-store" as L2
 rectangle "Pure units\ncXML core: build / parse / validate / multipart / xml-format\nhelpers: csv / geo · proxy: proxy / proxy-detect (fixtures)" as L1
 
@@ -95,6 +95,11 @@ routing, no network:
   `orderVersion`), several credentials per party, `operationAllowed`, and how an
   empty cart is read for each operation — including the mock supplier's Cancel
   button and the buyer side keeping an inspected cart.
+- `charges.test.ts` — tax, shipping and accounting: where the builders place
+  them, that the `Total` stays goods-only, the validator's arithmetic and
+  structure checks (including the "Total includes tax and shipping" case), and
+  the round trip — the mock supplier quoting charges, the cart reading them
+  back, and an order carrying either the quote or the buyer's own figures.
 - `rate-limit.test.ts` and `static.test.ts` — abuse limits (per-client and
   global when exposed, the looser global cap on localhost) and SPA serving.
 - `backup.test.ts` — configuration export/import: secrets blanked unless asked
@@ -144,8 +149,8 @@ traffic takes — including the loopback proxy bypass.
 
 `dtd-conformance.test.ts` builds every document the tool can produce — setup
 requests for each operation, new / update / delete orders, with attachments,
-contacts and extrinsics, both responses, and full, empty and cancelled
-punchbacks — and validates each against the **real cXML DTD** with `xmllint`.
+contacts, extrinsics, tax, shipping and accounting, both responses, and full,
+empty, cancelled and charge-bearing punchbacks — and validates each against the **real cXML DTD** with `xmllint`.
 
 It is **opt-in**. The DTD belongs to the cXML project and is not redistributed
 in this repository, and the published package deliberately has no native

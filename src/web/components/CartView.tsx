@@ -19,6 +19,8 @@ export function CartView({ cart }: { cart: Cart | null }) {
   if (cart.items.length === 0) {
     return <p className="hint">{note ?? "Punchback received but the cart is empty."}</p>;
   }
+  // The supplier may quote shipping and tax beside the Total, which is goods only.
+  const charges = !!(cart.shipping || cart.tax);
   return (
     <>
     {note && <p className="hint">{note}</p>}
@@ -55,11 +57,34 @@ export function CartView({ cart }: { cart: Cart | null }) {
         <tfoot>
           <tr>
             <td colSpan={5}></td>
-            <td className="num">Total</td>
+            <td className="num">{charges ? "Goods total" : "Total"}</td>
             <td className="num cart-total">
               {cart.total.currency} {cart.total.amount.toFixed(2)}
             </td>
           </tr>
+          {cart.shipping && (
+            <tr>
+              <td colSpan={5} className="num hint">{cart.shipping.description}</td>
+              <td className="num">Shipping</td>
+              <td className="num">{cart.shipping.currency} {cart.shipping.amount.toFixed(2)}</td>
+            </tr>
+          )}
+          {cart.tax && (
+            <tr>
+              <td colSpan={5} className="num hint">{cart.tax.description}</td>
+              <td className="num">Tax</td>
+              <td className="num">{cart.tax.currency} {cart.tax.amount.toFixed(2)}</td>
+            </tr>
+          )}
+          {charges && (
+            <tr>
+              <td colSpan={5}></td>
+              <td className="num">To pay</td>
+              <td className="num cart-total">
+                {cart.total.currency} {(cart.total.amount + (cart.shipping?.amount ?? 0) + (cart.tax?.amount ?? 0)).toFixed(2)}
+              </td>
+            </tr>
+          )}
         </tfoot>
       )}
     </table>

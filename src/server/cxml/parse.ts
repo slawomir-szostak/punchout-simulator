@@ -1,5 +1,5 @@
 import { XMLParser, XMLValidator } from "fast-xml-parser";
-import type { Cart, CartItem, Credential, DocType } from "./types.js";
+import type { Cart, CartItem, ChargeAmount, Credential, DocType } from "./types.js";
 
 // fast-xml-parser configuration. We keep all tag/attribute values as raw
 // strings (no number coercion) so money amounts like "100.00" survive intact;
@@ -203,6 +203,13 @@ function money(node: any): { amount?: number; currency?: string } {
   };
 }
 
+/** A `<Shipping>` or `<Tax>` element as an amount: its Money and Description. */
+export function chargeOf(node: any): ChargeAmount | undefined {
+  const m = money(node);
+  if (m.amount == null || !m.currency) return undefined;
+  return { amount: m.amount, currency: m.currency, description: text(node?.Description)?.trim() || undefined };
+}
+
 // --- attachment cid references (OrderRequest) --------------------------------
 
 export interface CidReference {
@@ -343,6 +350,8 @@ export function parseCart(doc: ParsedDoc): Cart {
     sessionId,
     operationAllowed: attr(headerNode, "operationAllowed"),
     statusCode: getMessageStatusCode(doc),
+    shipping: chargeOf(headerNode?.Shipping),
+    tax: chargeOf(headerNode?.Tax),
     total:
       total.amount != null && total.currency
         ? { amount: total.amount, currency: total.currency }

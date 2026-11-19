@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Buyer, Connection, ConnectionMode, Supplier } from "../types";
 import { Field } from "./Field";
+import { ChargeOverrideFields, describeCharges } from "./ChargeFields";
 import { ConfirmButton, draftNameProps } from "./PartyEditors";
 
 /** The connection a duplicate draft was copied from, when it has a secret. */
@@ -60,6 +61,9 @@ export function ConnectionEditor({ connection, seed, secretSource, buyers, suppl
 
   const set = (patch: Partial<Connection>) => setForm((f) => ({ ...f, ...patch }));
   const buyer = buyers.find((b) => b.id === form.buyerId);
+  // The parties whose defaults the per-pair charge settings fall back to.
+  const pairBuyer = buyer;
+  const pairSupplier = suppliers.find((x) => x.id === form.supplierId);
 
   const save = async () => {
     setSaving(true);
@@ -197,6 +201,28 @@ export function ConnectionEditor({ connection, seed, secretSource, buyers, suppl
           <option value="base64">base64 — what most Ariba/Coupa receivers expect</option>
         </select>
       </Field>
+
+      <fieldset>
+        <legend>Tax and shipping for this pair <span className="hint">(overrides the buyer's and the supplier's own settings)</span></legend>
+        <p className="hint">
+          Charges are often agreed per customer — one buyer wants tax in the cart it gets back, another does not. Decide it here for this buyer and this supplier.
+        </p>
+        <Field label={<>On orders <span className="hint">({pairBuyer?.name ?? "the buyer"} → {pairSupplier?.name ?? "the supplier"})</span></>}>
+          <ChargeOverrideFields
+            value={form.orderCharges}
+            withLevel
+            inheritLabel={`as set on the buyer (${describeCharges(pairBuyer?.tax, pairBuyer?.shipping)}; else the supplier's quote)`}
+            onChange={(orderCharges) => set({ orderCharges })}
+          />
+        </Field>
+        <Field label={<>In returned carts <span className="hint">(when the tool acts as {pairSupplier?.name ?? "the supplier"} for this buyer)</span></>}>
+          <ChargeOverrideFields
+            value={form.cartCharges}
+            inheritLabel={`as set on the supplier (${describeCharges(pairSupplier?.cartTax, pairSupplier?.cartShipping)})`}
+            onChange={(cartCharges) => set({ cartCharges })}
+          />
+        </Field>
+      </fieldset>
 
       {err && <div className="form-error">{err}</div>}
       <div className="form-actions">

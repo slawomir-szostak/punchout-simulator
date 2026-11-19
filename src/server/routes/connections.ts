@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { readJsonBody } from "./json-body.js";
+import { chargeOverride } from "./charges.js";
 import {
   createConnection,
   deleteConnection,
@@ -33,6 +34,8 @@ function normalize(body: any): ConnectionInput {
     senderIdentity: sender,
     deploymentMode: body?.deploymentMode === "production" ? "production" : "test",
     attachmentEncoding: body?.attachmentEncoding === "base64" ? "base64" : "binary",
+    orderCharges: chargeOverride(body?.orderCharges),
+    cartCharges: chargeOverride(body?.cartCharges),
   };
 }
 

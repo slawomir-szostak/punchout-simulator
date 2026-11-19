@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildOrderRequest, buildPunchOutOrderMessage, buildResponseStatus, buildSetupRequest, buildSetupResponse, cxmlTimestamp } from "../src/server/cxml/build.js";
+import { buildOrderRequest, buildPunchOutOrderMessage, buildResponseStatus, buildSetupRequest, buildSetupResponse, computeTax, cxmlTimestamp } from "../src/server/cxml/build.js";
 
 // Validates every document the tool can build against the real cXML DTD.
 //
@@ -44,6 +44,22 @@ const documents: Record<string, string> = {
   "OrderRequest (id-only addresses)": buildOrderRequest({ ...order, addressMode: "id-only" }),
   "OrderRequest (update)": buildOrderRequest({ ...order, type: "update", orderVersion: 2, documentReferencePayloadId: "p0@host", extrinsics: [{ name: "X", value: "y" }] }),
   "OrderRequest (delete)": buildOrderRequest({ ...order, type: "delete", orderVersion: 3, documentReferencePayloadId: "p1@host" }),
+  "OrderRequest (header shipping + tax, line tax, accounting distribution)": buildOrderRequest({
+    ...order,
+    shipping: { amount: 9.5, currency: "USD", description: "Ground" },
+    tax: computeTax({ ratePercent: 8, category: "sales", description: "Sales tax" }, 50, "USD"),
+    lineTax: { ratePercent: 8, category: "sales" },
+    accounting: { name: "DistributionCharge", segments: [{ name: "Cost Center", id: "4711", description: "Marketing" }, { name: "G/L Account", id: "6000", description: "Supplies" }] },
+    attachments: [{ contentId: "b@x", scope: { itemIndex: 1 } }],
+  }),
+  "OrderRequest (tax as a total only, no detail)": buildOrderRequest({ ...order, tax: { amount: 4, currency: "USD", description: "Tax" } }),
+  "PunchOutOrderMessage (shipping + tax quoted)": buildPunchOutOrderMessage({
+    ...pom,
+    items: [item],
+    operationAllowed: "edit",
+    shipping: { amount: 5, currency: "USD", description: "Ground" },
+    tax: computeTax({ ratePercent: 23, category: "vat", description: "VAT 23%" }, 25, "USD"),
+  }),
   "PunchOutSetupResponse": buildSetupResponse({ dtdVersion, payloadId: "p@host", timestamp: cxmlTimestamp(), startPageUrl: "http://supplier/catalog?cookie=c1" }),
   "OrderResponse (accepted)": buildResponseStatus({ dtdVersion, payloadId: "p@host", timestamp: cxmlTimestamp(), statusCode: "200", statusText: "OK", message: "OK. Order number SO-1 received." }),
   "OrderResponse (rejected)": buildResponseStatus({ dtdVersion, payloadId: "p@host", timestamp: cxmlTimestamp(), statusCode: "400", statusText: "Bad Request", message: "Rejected." }),

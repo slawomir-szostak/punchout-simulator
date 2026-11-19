@@ -1,5 +1,5 @@
 import { nanoid } from "nanoid";
-import type { Address, AddressMode, CartItem, Contact, Credential } from "./types.js";
+import type { AccountingSettings, Address, AddressMode, CartItem, ChargeAmount, Contact, Credential, TaxSettings } from "./types.js";
 
 // cXML document builders. We use template literals (not an XML library) so we
 // keep full control over element order, attributes and xml:lang — see spec
@@ -160,6 +160,91 @@ function extrinsicBlock(items: ExtrinsicVal[] | undefined, indent: string): stri
   );
 }
 
+// --- Tax, Shipping, Distribution ----------------------------------------------
+//
+// Content models (identical in the parts used here from DTD 1.2.008 to 1.2.072):
+//   Shipping     (Money, Description, …)
+//   Tax          (Money, …, Description, TaxDetail*, …)
+//   TaxDetail    (TaxableAmount?, TaxAmount, TaxLocation?, …, Description?, …)
+//                @category #REQUIRED, @percentageRate, @purpose
+//   Distribution (Accounting, Charge)
+//   Accounting   (AccountingSegment+)   @name #REQUIRED
+//   AccountingSegment (Name, Description)   @id #REQUIRED
+//   Charge       (Money)
+// A Total — in an order and in a punchback alike — is the cost of the items
+// "excluding any tax and shipping" (Reference Guide), so none of these change it.
+
+const money = (amount: number, currency: string): string =>
+  `<Money currency="${escapeXml(currency)}">${escapeXml(amount.toFixed(2))}</Money>`;
+
+/** Round to cents, the precision amounts are written with. */
+export const cents = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
+
+/** A tax to emit: the total, and the single rate line it was computed from. */
+export interface TaxValue extends ChargeAmount {
+  category?: string;
+  ratePercent?: number;
+  /** The amount the rate was applied to (TaxDetail/TaxableAmount). */
+  taxableAmount?: number;
+}
+
+/** Apply a party's tax settings to a taxable amount. */
+export function computeTax(settings: TaxSettings, taxableAmount: number, currency: string): TaxValue {
+  return {
+    amount: cents((taxableAmount * settings.ratePercent) / 100),
+    currency,
+    description: settings.description,
+    category: settings.category,
+    ratePercent: settings.ratePercent,
+    taxableAmount: cents(taxableAmount),
+  };
+}
+
+function shippingBlock(s: ChargeAmount | undefined, indent: string): string {
+  if (!s) return "";
+  return `\n${indent}<Shipping>
+${indent}  ${money(s.amount, s.currency)}
+${indent}  <Description xml:lang="en">${escapeXml(s.description || "Shipping")}</Description>
+${indent}</Shipping>`;
+}
+
+function taxBlock(t: TaxValue | undefined, indent: string): string {
+  if (!t) return "";
+  // A TaxDetail needs a category; without one (a tax carried over from a cart
+  // that gave only a total) the Tax is emitted as the total alone.
+  const rate = t.ratePercent != null ? ` percentageRate="${escapeXml(t.ratePercent)}"` : "";
+  const taxable = t.taxableAmount != null ? `\n${indent}    <TaxableAmount>${money(t.taxableAmount, t.currency)}</TaxableAmount>` : "";
+  const detail = t.category
+    ? `\n${indent}  <TaxDetail purpose="tax" category="${escapeXml(t.category)}"${rate}>${taxable}
+${indent}    <TaxAmount>${money(t.amount, t.currency)}</TaxAmount>
+${indent}  </TaxDetail>`
+    : "";
+  return `\n${indent}<Tax>
+${indent}  ${money(t.amount, t.currency)}
+${indent}  <Description xml:lang="en">${escapeXml(t.description || "Tax")}</Description>${detail}
+${indent}</Tax>`;
+}
+
+function distributionBlock(a: AccountingSettings | undefined, amount: number, currency: string, indent: string): string {
+  if (!a || a.segments.length === 0) return "";
+  const segments = a.segments
+    .map(
+      (seg) => `${indent}    <AccountingSegment id="${escapeXml(seg.id)}">
+${indent}      <Name xml:lang="en">${escapeXml(seg.name)}</Name>
+${indent}      <Description xml:lang="en">${escapeXml(seg.description)}</Description>
+${indent}    </AccountingSegment>`,
+    )
+    .join("\n");
+  return `\n${indent}<Distribution>
+${indent}  <Accounting name="${escapeXml(a.name)}">
+${segments}
+${indent}  </Accounting>
+${indent}  <Charge>
+${indent}    ${money(amount, currency)}
+${indent}  </Charge>
+${indent}</Distribution>`;
+}
+
 // --- SetupRequest (Mode A: buyer -> supplier) --------------------------------
 
 export interface SetupRequestOptions {
@@ -273,6 +358,17 @@ export interface OrderRequestOptions {
   dtdVersion?: string;
   userAgent?: string;
   extrinsics?: ExtrinsicVal[];
+  /**
+   * Header Shipping and Tax. "If the Shipping element is present in the
+   * OrderRequestHeader, it must not appear in the ItemOut elements", so shipping
+   * is only ever emitted here. A header Tax is the total tax for the order.
+   */
+  shipping?: ChargeAmount;
+  tax?: TaxValue;
+  /** When set, every ItemOut also carries its own Tax, computed from these settings. */
+  lineTax?: TaxSettings;
+  /** When set, every ItemOut carries a Distribution charging its line amount to this accounting. */
+  accounting?: AccountingSettings;
   /** OrderRequestHeader/@type: a new order (default), a change, or a cancellation. */
   type?: OrderType;
   /** OrderRequestHeader/@orderVersion — 1 for the original, +1 per change order. */
@@ -386,6 +482,9 @@ export function buildOrderRequest(o: OrderRequestOptions): string {
     .map((it, i) => {
       const idx = i + 1;
       const cids = itemCids(idx);
+      // ItemOut child order: ItemID, ItemDetail, …, Tax?, …, Distribution*, …, Comments*.
+      const lineCurrency = it.currency ?? o.currency;
+      const lineAmount = cents((it.unitPriceAmount ?? 0) * it.quantity);
       return `      <ItemOut quantity="${escapeXml(it.quantity)}" lineNumber="${idx}">
         <ItemID>
           <SupplierPartID>${escapeXml(it.supplierPartId ?? "")}</SupplierPartID>${
@@ -411,7 +510,10 @@ ${classificationBlock(it, "          ")}${
               ? `\n          <ManufacturerName>${escapeXml(it.manufacturerName)}</ManufacturerName>`
               : ""
           }
-        </ItemDetail>${commentsWithAttachments(cids, "        ")}
+        </ItemDetail>${taxBlock(
+          o.lineTax ? computeTax(o.lineTax, lineAmount, lineCurrency) : undefined,
+          "        ",
+        )}${distributionBlock(o.accounting, lineAmount, lineCurrency, "        ")}${commentsWithAttachments(cids, "        ")}
       </ItemOut>`;
     })
     .join("\n");
@@ -424,7 +526,8 @@ ${classificationBlock(it, "          ")}${
   const docRef = o.documentReferencePayloadId
     ? `\n        <DocumentReference payloadID="${escapeXml(o.documentReferencePayloadId)}"/>`
     : "";
-  // Header child order is fixed by the DTD: … Contact*, Comments*, Followup?,
+  // Header child order is fixed by the DTD: Total, ShipTo?, BillTo, …,
+  // Shipping?, Tax?, Payment?, PaymentTerm*, Contact*, Comments*, Followup?,
   // ControlKeys?, DocumentReference?, … Extrinsic*. Item-level Comments belong
   // to ItemOut (after ItemDetail), not inside ItemDetail.
   const inner = `${header({
@@ -443,7 +546,7 @@ ${classificationBlock(it, "          ")}${
           <Money currency="${escapeXml(o.currency)}">${escapeXml(o.total)}</Money>
         </Total>
 ${addressBlock("ShipTo", o.shipTo ?? {}, mode, o.dtdVersion)}
-${addressBlock("BillTo", o.billTo ?? {}, mode, o.dtdVersion)}${contact}${commentsWithAttachments(orderLevelCids, "        ")}${docRef}${extrinsicBlock(
+${addressBlock("BillTo", o.billTo ?? {}, mode, o.dtdVersion)}${shippingBlock(o.shipping, "        ")}${taxBlock(o.tax, "        ")}${contact}${commentsWithAttachments(orderLevelCids, "        ")}${docRef}${extrinsicBlock(
         o.extrinsics,
         "        ",
       )}
@@ -517,6 +620,9 @@ export interface PunchbackOptions {
    * attribute): `create` allows none, `inspect` a read-only reopen, `edit` both.
    */
   operationAllowed?: OperationAllowed;
+  /** Shipping and tax the supplier computed for this cart (header level). */
+  shipping?: ChargeAmount;
+  tax?: TaxValue;
   /**
    * Optional Message/Status. Code 204 "No Content" ends the session without any
    * change to the shopping cart (the user cancelled); the cart is then empty.
@@ -566,7 +672,7 @@ ${classificationBlock(it, "        ")}${
       <PunchOutOrderMessageHeader operationAllowed="${escapeXml(o.operationAllowed ?? "create")}">
         <Total>
           <Money currency="${escapeXml(o.currency)}">${escapeXml(total.toFixed(2))}</Money>
-        </Total>
+        </Total>${shippingBlock(o.shipping, "        ")}${taxBlock(o.tax, "        ")}
       </PunchOutOrderMessageHeader>${items ? `\n${items}` : ""}
     </PunchOutOrderMessage>
   </Message>`;

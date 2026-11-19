@@ -348,6 +348,7 @@ figure.diagram figcaption {
 <li><a href="#validation">Validation</a></li>
 <li><a href="#addresses-and-contact">Addresses and contact</a></li>
 <li><a href="#attachments">Attachments</a><ul>
+<li><a href="#tax-shipping-and-accounting">Tax, shipping and accounting</a></li>
 <li><a href="#changing-or-cancelling-an-order">Changing or cancelling an order</a></li>
 </ul>
 </li>
@@ -823,6 +824,18 @@ field-level; it surfaces typed <strong>errors</strong> and <strong>warnings</str
 <td>Must be present on a punchback and be <code>create</code>, <code>inspect</code> or <code>edit</code>.</td>
 </tr>
 <tr>
+<td>Tax and shipping</td>
+<td><code>Tax</code> and <code>Shipping</code> need <code>Money</code> and a <code>Description</code>, a <code>TaxDetail</code> its <code>category</code> (<strong>errors</strong>). Arithmetic that doesn't hold — rate × taxable amount, details vs. the tax total, line taxes vs. the header tax — is a <strong>warning</strong>, as is <code>Shipping</code> at both levels or a charge in another currency.</td>
+</tr>
+<tr>
+<td>Total</td>
+<td>The <code>Total</code> must equal the sum of the lines. If it equals lines <strong>plus</strong> tax and shipping, the warning says exactly that. Blanket orders are exempt (their Total is a maximum commitment).</td>
+</tr>
+<tr>
+<td>Accounting</td>
+<td>Each <code>Distribution</code> needs <code>Accounting@name</code>, at least one <code>AccountingSegment</code> with an <code>id</code>, and a <code>Charge</code> (<strong>errors</strong>); charges that don't add up to the line amount are a <strong>warning</strong>; the old <code>Segment</code> element is noted as deprecated.</td>
+</tr>
+<tr>
 <td>Change orders</td>
 <td><code>type</code> must be <code>new</code>, <code>update</code> or <code>delete</code>; an <code>update</code>/<code>delete</code> needs a <code>DocumentReference</code> (<strong>error</strong>) to the most recent OrderRequest for that order, and a rising <code>orderVersion</code>.</td>
 </tr>
@@ -867,6 +880,86 @@ dangling reference in its own validation as well, so you can see both sides.</p>
 toggle. <em>Raw</em> shows the headers and, for an order with attachments, the whole
 <code>multipart/related</code> envelope — boundaries, part headers, <code>Content-ID</code>s and each
 part. It is rebuilt on demand from the document and the stored attachments.</p>
+<h3 id="tax-shipping-and-accounting">Tax, shipping and accounting</h3>
+<p>Real orders carry more than items: tax, a shipping charge, and the accounting
+codes that say who pays. The tool can send and receive all three.</p>
+<p>One rule governs the numbers: <strong>the <code>Total</code> is the cost of the items only.</strong> The
+standard says so for the order and for the returned cart alike — "excluding any
+tax and shipping". Tax and shipping are stated beside the Total, never added
+into it. A Total that includes them is a common integration mistake, and the
+validator names it specifically.</p>
+<p><strong>What a buyer adds to its orders</strong> (Buyers → <em>Tax</em>, <em>Shipping</em>, <em>Accounting</em>):</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>What is sent</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Tax rate + category</td>
+<td>A <code>Tax</code> in the order header: the amount, a description, and one <code>TaxDetail</code> with the category (<code>sales</code>, <code>vat</code>, <code>gst</code>, …), the rate and the taxable amount. Tax is charged on the goods total.</td>
+</tr>
+<tr>
+<td>Tax "order total + every line"</td>
+<td>Additionally a <code>Tax</code> on each <code>ItemOut</code>, computed on that line. The line taxes add up to the header tax.</td>
+</tr>
+<tr>
+<td>Shipping amount</td>
+<td>A <code>Shipping</code> in the order header. It is only ever sent there: the standard forbids it at both levels.</td>
+</tr>
+<tr>
+<td>Accounting segments</td>
+<td>A <code>Distribution</code> on every <code>ItemOut</code>: an <code>Accounting</code> holding your segments (type, code, description — e.g. <em>Cost Center / 4711 / Marketing</em>) and a <code>Charge</code> equal to the line amount.</td>
+</tr>
+</tbody>
+</table>
+<p>Leave the tax rate or the shipping amount empty and the order instead carries
+<strong>what the supplier quoted</strong> with the cart, if it quoted anything. That mirrors
+the two real situations: a buying organization that computes tax itself, and one
+that takes the supplier's figure.</p>
+<p><strong>What the mock supplier quotes</strong> (Suppliers → <em>Charges quoted with a cart</em>): a
+tax rate and a shipping amount, returned in the cart header beside a goods-only
+Total. The session's cart panel then shows <em>Goods total</em>, <em>Shipping</em>, <em>Tax</em> and
+<em>To pay</em>. A cancelled or empty cart carries no charges.</p>
+<p><strong>Per buyer–supplier pair</strong> (Connections → <em>Tax and shipping for this pair</em>).
+Charges are usually agreed customer by customer: one buyer wants tax in the cart
+it gets back, another wants none. The buyer and supplier settings above are only
+defaults; each connection can override them, separately for the two directions:</p>
+<table>
+<thead>
+<tr>
+<th>Direction</th>
+<th><em>as set on the buyer / supplier</em></th>
+<th><em>none</em></th>
+<th><em>specific to this pair</em></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>On orders</strong> this buyer sends this supplier</td>
+<td>the buyer's settings, else the supplier's quote</td>
+<td>no tax or shipping at all — the quote is not used either</td>
+<td>exactly the tax and shipping filled in here</td>
+</tr>
+<tr>
+<td><strong>In returned carts</strong> when the tool acts as this supplier for this buyer</td>
+<td>the supplier's settings</td>
+<td>no tax or shipping in the cart</td>
+<td>exactly what is filled in here</td>
+</tr>
+</tbody>
+</table>
+<p>A buyer the supplier has no connection for gets the supplier's defaults. In a
+loopback setup one connection governs both directions, because the tool plays
+both parties.</p>
+<div class="alert alert-note">
+<div class="alert-label">Note</div>
+<p>A mixed-currency order gets neither tax nor shipping: there is no single Total
+to charge against. Accounting distributions are still sent, each in its
+line's currency.</p>
+</div>
 <h3 id="changing-or-cancelling-an-order">Changing or cancelling an order</h3>
 <p>After the supplier accepts an order, two buttons appear under its response:</p>
 <ul>

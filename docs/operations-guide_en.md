@@ -391,6 +391,9 @@ field-level; it surfaces typed **errors** and **warnings**:
 | `xml:lang` | Required on `Description` and `Name` (**error** when missing); recommended on `Comments`, `Status` and the root. |
 | Several credentials | A party may send more than one (e.g. NetworkID and DUNS). One in a domain the connection knows must match; unknown domains are left alone; two identities in one domain are an **error**. |
 | `operationAllowed` | Must be present on a punchback and be `create`, `inspect` or `edit`. |
+| Tax and shipping | `Tax` and `Shipping` need `Money` and a `Description`, a `TaxDetail` its `category` (**errors**). Arithmetic that doesn't hold — rate × taxable amount, details vs. the tax total, line taxes vs. the header tax — is a **warning**, as is `Shipping` at both levels or a charge in another currency. |
+| Total | The `Total` must equal the sum of the lines. If it equals lines **plus** tax and shipping, the warning says exactly that. Blanket orders are exempt (their Total is a maximum commitment). |
+| Accounting | Each `Distribution` needs `Accounting@name`, at least one `AccountingSegment` with an `id`, and a `Charge` (**errors**); charges that don't add up to the line amount are a **warning**; the old `Segment` element is noted as deprecated. |
 | Change orders | `type` must be `new`, `update` or `delete`; an `update`/`delete` needs a `DocumentReference` (**error**) to the most recent OrderRequest for that order, and a rising `orderVersion`. |
 
 The rules follow the cXML 1.2.072 DTD and the cXML Reference Guide. An **error**
@@ -438,6 +441,55 @@ dangling reference in its own validation as well, so you can see both sides.
 toggle. *Raw* shows the headers and, for an order with attachments, the whole
 `multipart/related` envelope — boundaries, part headers, `Content-ID`s and each
 part. It is rebuilt on demand from the document and the stored attachments.
+
+### Tax, shipping and accounting
+
+Real orders carry more than items: tax, a shipping charge, and the accounting
+codes that say who pays. The tool can send and receive all three.
+
+One rule governs the numbers: **the `Total` is the cost of the items only.** The
+standard says so for the order and for the returned cart alike — "excluding any
+tax and shipping". Tax and shipping are stated beside the Total, never added
+into it. A Total that includes them is a common integration mistake, and the
+validator names it specifically.
+
+**What a buyer adds to its orders** (Buyers → *Tax*, *Shipping*, *Accounting*):
+
+| Setting | What is sent |
+|---|---|
+| Tax rate + category | A `Tax` in the order header: the amount, a description, and one `TaxDetail` with the category (`sales`, `vat`, `gst`, …), the rate and the taxable amount. Tax is charged on the goods total. |
+| Tax "order total + every line" | Additionally a `Tax` on each `ItemOut`, computed on that line. The line taxes add up to the header tax. |
+| Shipping amount | A `Shipping` in the order header. It is only ever sent there: the standard forbids it at both levels. |
+| Accounting segments | A `Distribution` on every `ItemOut`: an `Accounting` holding your segments (type, code, description — e.g. *Cost Center / 4711 / Marketing*) and a `Charge` equal to the line amount. |
+
+Leave the tax rate or the shipping amount empty and the order instead carries
+**what the supplier quoted** with the cart, if it quoted anything. That mirrors
+the two real situations: a buying organization that computes tax itself, and one
+that takes the supplier's figure.
+
+**What the mock supplier quotes** (Suppliers → *Charges quoted with a cart*): a
+tax rate and a shipping amount, returned in the cart header beside a goods-only
+Total. The session's cart panel then shows *Goods total*, *Shipping*, *Tax* and
+*To pay*. A cancelled or empty cart carries no charges.
+
+**Per buyer–supplier pair** (Connections → *Tax and shipping for this pair*).
+Charges are usually agreed customer by customer: one buyer wants tax in the cart
+it gets back, another wants none. The buyer and supplier settings above are only
+defaults; each connection can override them, separately for the two directions:
+
+| Direction | *as set on the buyer / supplier* | *none* | *specific to this pair* |
+|---|---|---|---|
+| **On orders** this buyer sends this supplier | the buyer's settings, else the supplier's quote | no tax or shipping at all — the quote is not used either | exactly the tax and shipping filled in here |
+| **In returned carts** when the tool acts as this supplier for this buyer | the supplier's settings | no tax or shipping in the cart | exactly what is filled in here |
+
+A buyer the supplier has no connection for gets the supplier's defaults. In a
+loopback setup one connection governs both directions, because the tool plays
+both parties.
+
+> [!NOTE]
+> A mixed-currency order gets neither tax nor shipping: there is no single Total
+> to charge against. Accounting distributions are still sent, each in its
+> line's currency.
 
 ### Changing or cancelling an order
 

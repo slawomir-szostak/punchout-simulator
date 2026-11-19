@@ -13,11 +13,14 @@ import { appendLog, readSession } from "../store/log.js";
 import { saveAttachment } from "../store/attachments.js";
 import { getPublicUrl, getToken } from "../runtime.js";
 import { authClientKey, authThrottle } from "../rate-limit.js";
+import { resolveCharges } from "./charges.js";
 import {
   buildPunchOutOrderMessage,
   buildResponseStatus,
   buildSetupResponse,
+  computeTax,
   cxmlTimestamp,
+  lineItemsTotal,
   escapeXml,
   makePayloadId,
   type OperationAllowed,
@@ -454,6 +457,21 @@ simRoute.post("/:id/checkout", async (c) => {
 
   const currency = items[0]?.currency ?? "USD";
   const eff = effFor(supplier.id, buyerCred);
+  // Shipping and tax "computed on the remote website", quoted in the header
+  // beside a Total that excludes them. Only for a cart that has goods in one
+  // currency: an empty or mixed-currency cart has nothing to charge against.
+  // Which charges this buyer gets is a per-customer decision: the connection
+  // for this buyer overrides the supplier's defaults (some buyers want no tax
+  // in the cart at all).
+  const goods = lineItemsTotal(items, currency);
+  const chargeable = items.length > 0 && goods > 0;
+  const quote = resolveCharges(findConnectionBySupplierAndBuyerIdentity(supplier.id, ctx.buyerAll)?.connection.cartCharges, {
+    tax: supplier.cartTax,
+    shipping: supplier.cartShipping,
+  });
+  const shipping =
+    chargeable && quote.shipping ? { amount: quote.shipping.amount, currency, description: quote.shipping.description } : undefined;
+  const tax = chargeable && quote.tax ? computeTax(quote.tax, goods, currency) : undefined;
   const xml = buildPunchOutOrderMessage({
     from: supplier.identity,
     to: buyerCred,
@@ -465,6 +483,8 @@ simRoute.post("/:id/checkout", async (c) => {
     items,
     dtdVersion: eff ? dtdVersionFor(eff, "PunchOutOrderMessage") : undefined,
     operationAllowed: operationAllowedOf(supplier),
+    shipping,
+    tax,
     status: cancelled ? { code: "204", text: "No Content" } : undefined,
   });
 
