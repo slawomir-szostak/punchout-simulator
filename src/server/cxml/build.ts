@@ -110,6 +110,7 @@ const DEFAULT_DTD_VERSION = "1.2.045";
 // than the oldest profile DTD (found by validating against each version):
 const ADDRESS_ID_DOMAIN_SINCE = "1.2.025"; // Address/@addressIDDomain, Contact/@addressIDDomain
 const ORDER_VERSION_SINCE = "1.2.009"; // OrderRequestHeader/@orderVersion
+export const SCHEDULE_LINE_SINCE = "1.2.025"; // ItemOut/ScheduleLine
 
 /** True when DTD `version` is at least `min` (both "major.minor.patch"). */
 export function dtdAtLeast(version: string | undefined, min: string): boolean {
@@ -158,6 +159,35 @@ function extrinsicBlock(items: ExtrinsicVal[] | undefined, indent: string): stri
       .map((e) => `${indent}<Extrinsic name="${escapeXml(e.name)}">${escapeXml(e.value)}</Extrinsic>`)
       .join("\n")
   );
+}
+
+// --- Delivery schedule -----------------------------------------------------------
+//
+// "ScheduleLine contains information related to delivery schedules for a line
+// item": ScheduleLine (UnitOfMeasure, …) with @quantity and
+// @requestedDeliveryDate both #REQUIRED and an optional @lineNumber. It follows
+// Comments inside ItemOut, and exists from DTD 1.2.025.
+
+/**
+ * A requested delivery date as the datetime.tz the attribute needs. A plain date
+ * becomes noon local time (the Reference Guide's own example is
+ * `2019-03-15T12:00:00+01:00`); anything else is passed through as given.
+ */
+export function scheduleDateTime(value: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  return m ? cxmlTimestamp(new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0)) : value.trim();
+}
+
+function scheduleLinesBlock(it: CartItem, dtdVersion: string | undefined, indent: string): string {
+  const lines = it.scheduleLines ?? [];
+  if (lines.length === 0 || !dtdAtLeast(dtdVersion, SCHEDULE_LINE_SINCE)) return "";
+  return lines
+    .map(
+      (l, i) => `\n${indent}<ScheduleLine quantity="${escapeXml(l.quantity)}" requestedDeliveryDate="${escapeXml(scheduleDateTime(l.requestedDeliveryDate))}" lineNumber="${escapeXml(l.lineNumber ?? i + 1)}">
+${indent}  <UnitOfMeasure>${escapeXml(it.uom ?? "EA")}</UnitOfMeasure>
+${indent}</ScheduleLine>`,
+    )
+    .join("");
 }
 
 // --- Profile transaction -------------------------------------------------------
@@ -561,7 +591,8 @@ export function buildOrderRequest(o: OrderRequestOptions): string {
     .map((it, i) => {
       const idx = i + 1;
       const cids = itemCids(idx);
-      // ItemOut child order: ItemID, ItemDetail, …, Tax?, …, Distribution*, …, Comments*.
+      // ItemOut child order: ItemID, ItemDetail, …, Tax?, …, Distribution*, …,
+      // Comments*, …, ScheduleLine*.
       const lineCurrency = it.currency ?? o.currency;
       const lineAmount = cents((it.unitPriceAmount ?? 0) * it.quantity);
       return `      <ItemOut quantity="${escapeXml(it.quantity)}" lineNumber="${idx}">
@@ -592,7 +623,7 @@ ${classificationBlock(it, "          ")}${
         </ItemDetail>${taxBlock(
           o.lineTax ? computeTax(o.lineTax, lineAmount, lineCurrency) : undefined,
           "        ",
-        )}${distributionBlock(o.accounting, lineAmount, lineCurrency, "        ")}${commentsWithAttachments(cids, "        ")}
+        )}${distributionBlock(o.accounting, lineAmount, lineCurrency, "        ")}${commentsWithAttachments(cids, "        ")}${scheduleLinesBlock(it, o.dtdVersion, "        ")}
       </ItemOut>`;
     })
     .join("\n");

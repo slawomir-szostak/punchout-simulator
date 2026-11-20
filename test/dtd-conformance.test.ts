@@ -42,6 +42,12 @@ const documents: Record<string, string> = {
   "SetupRequest (inspect)": buildSetupRequest({ ...base, sharedSecret: "s", buyerCookie: "c1", browserFormPostUrl: "http://buyer/return", operation: "inspect", items: [item] }),
   "OrderRequest (new)": buildOrderRequest(order),
   "OrderRequest (contact, extrinsics, attachments at both levels)": buildOrderRequest({ ...order, contact: { ...addr, role: "buyer" }, addressMode: "both", extrinsics: [{ name: "CostCenter", value: "42" }], attachments: [{ contentId: "a@x", scope: "order" }, { contentId: "b@x", scope: { itemIndex: 1 } }] }),
+  "OrderRequest (delivery schedule, with attachment comments and a distribution)": buildOrderRequest({
+    ...order,
+    items: [{ ...item, quantity: 5, scheduleLines: [{ quantity: 2, requestedDeliveryDate: "2030-03-01" }, { quantity: 3, requestedDeliveryDate: "2030-03-15" }] }, item],
+    accounting: { name: "DistributionCharge", segments: [{ name: "Cost Center", id: "4711", description: "Marketing" }] },
+    attachments: [{ contentId: "b@x", scope: { itemIndex: 1 } }],
+  }),
   "OrderRequest (id-only addresses)": buildOrderRequest({ ...order, addressMode: "id-only" }),
   "OrderRequest (update)": buildOrderRequest({ ...order, type: "update", orderVersion: 2, documentReferencePayloadId: "p0@host", extrinsics: [{ name: "X", value: "y" }] }),
   "OrderRequest (delete)": buildOrderRequest({ ...order, type: "delete", orderVersion: 3, documentReferencePayloadId: "p1@host" }),

@@ -121,6 +121,11 @@ a { color: var(--link); }
 .charge-row.segment { grid-template-columns: 1fr 1fr 1.5fr auto; }
 .charge-row input, .charge-row select { padding: .4rem .5rem; font-size: .8rem; width: 100%; box-sizing: border-box; }
 .charge-label { font-size: .8rem; color: var(--muted); }
+.charge-row.delivery { grid-template-columns: 5.5rem 6.5rem 10rem auto; justify-content: start; margin: .35rem 0 0 .2rem; }
+.schedule-line { padding: .45rem 0; border-top: 1px solid var(--border); }
+.schedule-line:first-child { border-top: 0; }
+.schedule-head { display: flex; justify-content: space-between; gap: .8rem; align-items: baseline; font-size: .85rem; }
+.schedule-actions { display: flex; flex-wrap: wrap; gap: .2rem 1rem; margin: .35rem 0 0 .2rem; font-size: .8rem; }
 .check-inline { display: inline-flex; align-items: center; gap: .25rem; font-size: .72rem; color: var(--muted); white-space: nowrap; }
 .check-inline input { width: auto; padding: 0; }
 .check-row { display: flex; align-items: baseline; gap: .45rem; cursor: pointer; }

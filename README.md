@@ -178,6 +178,7 @@ Document-specific:
 | **OrderRequest** | `orderID`/`orderDate` (and its format)/`Total`; **`type`** is `new`/`update`/`delete`; an `update` or `delete` carries a **`DocumentReference`** to the previous OrderRequest and a rising **`orderVersion`**; `ShipTo`/`BillTo` present **and complete** (an `addressID` or a postal Street/City — an empty block is flagged); `Contact@role`; each `ItemOut`; **single currency** (as above); **attachment `cid:` resolution** (see below) |
 | **OrderResponse** | `Status` code present / not an error |
 | **ProfileResponse** | `Status`; `effectiveDate` present, well-formed and not in the future; at least one `Transaction`, each with a `requestName` and a valid URL; the `attachments` and `changes` options on an `OrderRequest` transaction |
+| **Delivery schedule** (order lines) | each `ScheduleLine` has a quantity, a requested delivery date and a `UnitOfMeasure`; the deliveries add up to the line's quantity; the unit matches the line's; `ScheduleLine` is not used with a DTD that predates it |
 | **Tax, Shipping, Distribution** (order and punchback) | `Tax` and `Shipping` carry `Money` and a `Description`; `TaxDetail@category`; the tax **arithmetic** (rate × taxable amount, details vs. total, line taxes vs. header tax); `Shipping` at one level only; charge currency; a **Total that includes tax or shipping** (it must be goods only); each `Distribution` has `Accounting@name`, at least one `AccountingSegment` with an `id`, and charges that add up to the line amount |
 
 > Note: full cXML DTD validation would require a native validating XML parser,
@@ -231,6 +232,11 @@ receiver detects the missing attachment. `<Comments>` (and therefore
   speaks cXML and accepts your credentials before you open a session. URLs that
   differ from what you configured are pointed out and can be taken over with one
   click. The mock supplier answers a ProfileRequest too, on any of its endpoints.
+- **Delivery schedules.** Split an order line into dated deliveries, sent as
+  `ScheduleLine` elements; *split in 2 / 3 / 4* does it in one click. The mock
+  supplier confirms the delivery plan it was given, and rescheduling is a change
+  order. (Needs a buyer profile on cXML 1.2.025 or newer; older ones can't carry
+  a schedule, and the tool says so.)
 - **Tax, shipping and accounting.** A buyer can add tax (a rate, stated for the
   order or for every line as well), a flat shipping charge, and an accounting
   assignment sent as a `Distribution` on each line. Without buyer settings the

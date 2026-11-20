@@ -27,6 +27,7 @@ export type {
   ProductList,
   Profile,
   ProfileExtrinsic,
+  ScheduleLine,
   SelectedItem,
   SetupOperation,
   ShippingSettings,
@@ -67,6 +68,8 @@ export interface FlowSession {
   danglingCid: boolean;
   /** What the OrderRequest in `orderXml` is: a new order, a change, or a cancellation. */
   orderType: "new" | "update" | "delete";
+  /** Delivery schedules per cart-line index (sent as ScheduleLine). */
+  schedules: Record<number, { quantity: number; date: string }[]>;
 }
 
 export function emptySession(): FlowSession {
@@ -79,5 +82,6 @@ export function emptySession(): FlowSession {
     attachments: [],
     danglingCid: false,
     orderType: "new",
+    schedules: {},
   };
 }

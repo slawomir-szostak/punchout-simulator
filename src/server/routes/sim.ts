@@ -27,7 +27,7 @@ import {
   makePayloadId,
   type OperationAllowed,
 } from "../cxml/build.js";
-import { getDocType, getHeaderCredentials, getOrderInfo, parseSetupItems, parseXml, root, text, type ParsedDoc, type SetupItems } from "../cxml/parse.js";
+import { getDocType, getHeaderCredentials, getOrderInfo, orderDeliveries, parseSetupItems, parseXml, root, text, type OrderDelivery, type ParsedDoc, type SetupItems } from "../cxml/parse.js";
 import {
   isMultipart,
   normalizeContentId,
@@ -704,8 +704,12 @@ simRoute.post("/:id/order", async (c) => {
       : order.type === "delete"
         ? `OK. Order number ${soNumber} cancelled${forPo}.`
         : `OK. Order number ${soNumber} received${forPo}.`;
+  // A supplier that is given a delivery schedule plans against it, so the
+  // acknowledgement says what it understood: how many deliveries, over which
+  // dates. A cancelled order has nothing left to deliver.
+  const plan = order.type === "delete" ? "" : deliveryPlan(orderDeliveries(doc));
   const message = ok
-    ? accepted
+    ? `${accepted}${plan}`
     : `Bad Request. Order rejected${poNumber ? ` (PO ${poNumber})` : ""}${firstError ? `: ${firstError}` : "."}`;
   const respXml = buildResponseStatus({
     payloadId: makePayloadId(host(), new Date().toISOString()),
@@ -754,6 +758,27 @@ function orderHistory(
     }
   }
   return { prior, supplierOrderNumber };
+}
+
+// "Delivery plan: 3 deliveries, 2026-12-01 to 2026-12-15." — the schedule the
+// order asked for, read back the way an order desk would confirm it.
+function deliveryPlan(deliveries: OrderDelivery[]): string {
+  if (deliveries.length === 0) return "";
+  const day = (d: string) => (/^\d{4}-\d{2}-\d{2}/.test(d) ? d.slice(0, 10) : d);
+  const first = day(deliveries[0].date);
+  const last = day(deliveries[deliveries.length - 1].date);
+  const lines = new Set(deliveries.map((d) => d.line)).size;
+  const span = first === last ? `on ${first}` : `${first} to ${last}`;
+  const count = `${deliveries.length} ${deliveries.length === 1 ? "delivery" : "deliveries"}`;
+  // A date that has already passed cannot be met; say so rather than accept silently.
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const late = deliveries.filter((d) => {
+    const t = Date.parse(d.date);
+    return !Number.isNaN(t) && t < startOfToday.getTime();
+  }).length;
+  const overdue = late > 0 ? ` ${late} of them ${late === 1 ? "is" : "are"} requested for a date already past and will ship as soon as possible.` : "";
+  return ` Delivery plan: ${count} for ${lines} ${lines === 1 ? "line" : "lines"}, ${span}.${overdue}`;
 }
 
 function orderIdOf(doc: ReturnType<typeof parseXml>): string | undefined {

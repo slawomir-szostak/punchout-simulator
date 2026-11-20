@@ -587,6 +587,10 @@ order from the first version to the last.</p>
 </figure>
 
 <p><em>Fig. 2: An order's life — the original, any number of changes, and possibly a cancellation, each referring to the one before.</em></p>
+<p><strong>Delivery schedules.</strong> An order line need not arrive all at once. A buyer can
+ask for a quantity spread over dates — a third now, the rest over the following
+weeks — and a supplier plans production and shipping against that schedule.
+Changing the dates later is, again, a change order.</p>
 <p>Suppliers differ in what they accept: some take change orders automatically,
 some only before shipping, some not at all. A supplier can advertise this (see
 the next section), and it is worth establishing during onboarding rather than
@@ -662,8 +666,8 @@ fully inspectable end so you can isolate the real system under test.</p>
   standard, and say plainly what a problem means for the business flow.</li>
 <li><strong>The whole life of a purchase, not just the happy path.</strong> Punching out from
   a catalog item; a cancelled session; an emptied cart; tax, shipping and cost
-  allocation, per customer; change orders and cancellations; asking a supplier
-  what it supports.</li>
+  allocation, per customer; delivery schedules; change orders and
+  cancellations; asking a supplier what it supports.</li>
 <li><strong>A mock catalog that behaves like a shop,</strong> so a test walks through the
   session the way a buyer user would.</li>
 <li><strong>Profiles and product lists.</strong> Platform-specific quirks (cXML version,

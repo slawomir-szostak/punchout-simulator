@@ -259,6 +259,9 @@ questions for onboarding, not something to infer from the platform's name:
   whether it sends its own in the order. The `Total` excludes both either way.
 - **Accounting (`Distribution`)** — whether orders carry cost-allocation data
   the supplier must tolerate and return on invoices.
+- **Delivery schedules (`ScheduleLine`)** — whether order lines are split into
+  dated deliveries. They exist only from cXML 1.2.025, so a buyer on an older
+  DTD cannot send them at all.
 - **Change and cancel orders** — whether the buyer sends `type="update"` /
   `type="delete"` OrderRequests, or handles changes outside the integration.
 - **The Profile transaction** — whether anything asks the supplier for a

@@ -499,6 +499,7 @@ field-level; it surfaces typed **errors** and **warnings**:
 | `operationAllowed` | Must be present on a punchback and be `create`, `inspect` or `edit`. |
 | Tax and shipping | `Tax` and `Shipping` need `Money` and a `Description`, a `TaxDetail` its `category` (**errors**). Arithmetic that doesn't hold — rate × taxable amount, details vs. the tax total, line taxes vs. the header tax — is a **warning**, as is `Shipping` at both levels or a charge in another currency. |
 | Total | The `Total` must equal the sum of the lines. If it equals lines **plus** tax and shipping, the warning says exactly that. Blanket orders are exempt (their Total is a maximum commitment). |
+| Delivery schedule | Each `ScheduleLine` needs a quantity, a requested delivery date and a `UnitOfMeasure` (**errors**), and a valid date-time. Deliveries that don't add up to the line's quantity, a unit that differs from the line's, duplicate line numbers, or a `ScheduleLine` in a document whose declared DTD predates it are **warnings**. |
 | Accounting | Each `Distribution` needs `Accounting@name`, at least one `AccountingSegment` with an `id`, and a `Charge` (**errors**); charges that don't add up to the line amount are a **warning**; the old `Segment` element is noted as deprecated. |
 | Change orders | `type` must be `new`, `update` or `delete`; an `update`/`delete` needs a `DocumentReference` (**error**) to the most recent OrderRequest for that order, and a rising `orderVersion`. |
 
@@ -596,6 +597,38 @@ both parties.
 > A mixed-currency order gets neither tax nor shipping: there is no single Total
 > to charge against. Accounting distributions are still sent, each in its
 > line's currency.
+
+### Delivery schedules
+
+An order line does not have to arrive in one go. A buyer can ask for *10 pieces:
+4 on the 26th, 3 a week later, 3 the week after* — in cXML, a `ScheduleLine` per
+delivery on the order line, each with a quantity, a requested delivery date and
+the unit of measure.
+
+In the order step, **Delivery schedule** lists the cart's lines. *Schedule
+deliveries* splits a line in two, a week apart, as a starting point; from there:
+
+- edit each delivery's quantity and date, add or remove deliveries;
+- *split in 2 / 3 / 4* redistributes the line evenly over weekly deliveries
+  (whole quantities stay whole);
+- *deliver in one go* removes the schedule.
+
+The line shows how much of its quantity is scheduled, and warns while the
+deliveries don't add up to it. Build (or rebuild) the OrderRequest to put the
+schedule in; the digest then shows the number of deliveries. A date is sent as
+noon local time, in the date-time form cXML requires.
+
+**The mock supplier** reads the schedule the way an order desk would and
+confirms it in its answer: *"Delivery plan: 3 deliveries for 1 line, 2026-11-26
+to 2026-12-10."* If a requested date has already passed, it says how many and
+that they will ship as soon as possible. Rescheduling is a change order: change
+the deliveries, choose **Change order…**, and the answer confirms the new plan.
+
+> [!NOTE]
+> `ScheduleLine` exists only from cXML 1.2.025. A buyer profile that sends
+> orders with an older DTD (several built-in presets do) cannot carry a
+> schedule: the tool leaves it out and tells you so when the order is built.
+> Choose a profile with a newer DTD to send one.
 
 ### Changing or cancelling an order
 

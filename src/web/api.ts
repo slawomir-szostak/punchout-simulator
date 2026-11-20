@@ -144,7 +144,7 @@ export const api = {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
-    }).then((r) => jsonOrThrow<{ xml: string; orderId: string }>(r)),
+    }).then((r) => jsonOrThrow<{ xml: string; orderId: string; notes?: string[] }>(r)),
 
   sendOrder: (id: string, body: unknown) =>
     authFetch(`/api/connections/${encodeURIComponent(id)}/order`, {

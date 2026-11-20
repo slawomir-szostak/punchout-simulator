@@ -251,6 +251,11 @@ end note
 
 *Fig. 2: An order's life — the original, any number of changes, and possibly a cancellation, each referring to the one before.*
 
+**Delivery schedules.** An order line need not arrive all at once. A buyer can
+ask for a quantity spread over dates — a third now, the rest over the following
+weeks — and a supplier plans production and shipping against that schedule.
+Changing the dates later is, again, a change order.
+
 Suppliers differ in what they accept: some take change orders automatically,
 some only before shipping, some not at all. A supplier can advertise this (see
 the next section), and it is worth establishing during onboarding rather than
@@ -366,8 +371,8 @@ rectangle "Mode B — virtual supplier" as B {
   standard, and say plainly what a problem means for the business flow.
 - **The whole life of a purchase, not just the happy path.** Punching out from
   a catalog item; a cancelled session; an emptied cart; tax, shipping and cost
-  allocation, per customer; change orders and cancellations; asking a supplier
-  what it supports.
+  allocation, per customer; delivery schedules; change orders and
+  cancellations; asking a supplier what it supports.
 - **A mock catalog that behaves like a shop,** so a test walks through the
   session the way a buyer user would.
 - **Profiles and product lists.** Platform-specific quirks (cXML version,

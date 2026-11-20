@@ -351,6 +351,7 @@ figure.diagram figcaption {
 <li><a href="#addresses-and-contact">Addresses and contact</a></li>
 <li><a href="#attachments">Attachments</a><ul>
 <li><a href="#tax-shipping-and-accounting">Tax, shipping and accounting</a></li>
+<li><a href="#delivery-schedules">Delivery schedules</a></li>
 <li><a href="#changing-or-cancelling-an-order">Changing or cancelling an order</a></li>
 </ul>
 </li>
@@ -966,6 +967,10 @@ field-level; it surfaces typed <strong>errors</strong> and <strong>warnings</str
 <td>The <code>Total</code> must equal the sum of the lines. If it equals lines <strong>plus</strong> tax and shipping, the warning says exactly that. Blanket orders are exempt (their Total is a maximum commitment).</td>
 </tr>
 <tr>
+<td>Delivery schedule</td>
+<td>Each <code>ScheduleLine</code> needs a quantity, a requested delivery date and a <code>UnitOfMeasure</code> (<strong>errors</strong>), and a valid date-time. Deliveries that don't add up to the line's quantity, a unit that differs from the line's, duplicate line numbers, or a <code>ScheduleLine</code> in a document whose declared DTD predates it are <strong>warnings</strong>.</td>
+</tr>
+<tr>
 <td>Accounting</td>
 <td>Each <code>Distribution</code> needs <code>Accounting@name</code>, at least one <code>AccountingSegment</code> with an <code>id</code>, and a <code>Charge</code> (<strong>errors</strong>); charges that don't add up to the line amount are a <strong>warning</strong>; the old <code>Segment</code> element is noted as deprecated.</td>
 </tr>
@@ -1093,6 +1098,35 @@ both parties.</p>
 <p>A mixed-currency order gets neither tax nor shipping: there is no single Total
 to charge against. Accounting distributions are still sent, each in its
 line's currency.</p>
+</div>
+<h3 id="delivery-schedules">Delivery schedules</h3>
+<p>An order line does not have to arrive in one go. A buyer can ask for <em>10 pieces:
+4 on the 26th, 3 a week later, 3 the week after</em> — in cXML, a <code>ScheduleLine</code> per
+delivery on the order line, each with a quantity, a requested delivery date and
+the unit of measure.</p>
+<p>In the order step, <strong>Delivery schedule</strong> lists the cart's lines. <em>Schedule
+deliveries</em> splits a line in two, a week apart, as a starting point; from there:</p>
+<ul>
+<li>edit each delivery's quantity and date, add or remove deliveries;</li>
+<li><em>split in 2 / 3 / 4</em> redistributes the line evenly over weekly deliveries
+  (whole quantities stay whole);</li>
+<li><em>deliver in one go</em> removes the schedule.</li>
+</ul>
+<p>The line shows how much of its quantity is scheduled, and warns while the
+deliveries don't add up to it. Build (or rebuild) the OrderRequest to put the
+schedule in; the digest then shows the number of deliveries. A date is sent as
+noon local time, in the date-time form cXML requires.</p>
+<p><strong>The mock supplier</strong> reads the schedule the way an order desk would and
+confirms it in its answer: <em>"Delivery plan: 3 deliveries for 1 line, 2026-11-26
+to 2026-12-10."</em> If a requested date has already passed, it says how many and
+that they will ship as soon as possible. Rescheduling is a change order: change
+the deliveries, choose <strong>Change order…</strong>, and the answer confirms the new plan.</p>
+<div class="alert alert-note">
+<div class="alert-label">Note</div>
+<p><code>ScheduleLine</code> exists only from cXML 1.2.025. A buyer profile that sends
+orders with an older DTD (several built-in presets do) cannot carry a
+schedule: the tool leaves it out and tells you so when the order is built.
+Choose a profile with a newer DTD to send one.</p>
 </div>
 <h3 id="changing-or-cancelling-an-order">Changing or cancelling an order</h3>
 <p>After the supplier accepts an order, two buttons appear under its response:</p>

@@ -412,6 +412,17 @@ export interface LogRecord {
   note?: string;
 }
 
+/**
+ * One delivery of an order line: `<ScheduleLine quantity requestedDeliveryDate>`.
+ * Several of them split a line's quantity over dates.
+ */
+export interface ScheduleLine {
+  quantity: number;
+  /** When this quantity should arrive: a date (YYYY-MM-DD) or a cXML date-time. */
+  requestedDeliveryDate: string;
+  lineNumber?: number;
+}
+
 /** A normalized cart parsed from a PunchOutOrderMessage (punchback). */
 export interface CartItem {
   quantity: number;
@@ -431,6 +442,8 @@ export interface CartItem {
   classification?: string;
   manufacturerPartId?: string;
   manufacturerName?: string;
+  /** Delivery schedule of an order line (OrderRequest ItemOut only). */
+  scheduleLines?: ScheduleLine[];
 }
 
 /**

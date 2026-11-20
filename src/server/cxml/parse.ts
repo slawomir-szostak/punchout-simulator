@@ -1,5 +1,5 @@
 import { XMLParser, XMLValidator } from "fast-xml-parser";
-import type { Cart, CartItem, ChargeAmount, Credential, DocType, ProfileOption, SelectedItem, ServerProfile } from "./types.js";
+import type { Cart, CartItem, ChargeAmount, Credential, DocType, ProfileOption, ScheduleLine, SelectedItem, ServerProfile } from "./types.js";
 
 // fast-xml-parser configuration. We keep all tag/attribute values as raw
 // strings (no number coercion) so money amounts like "100.00" survive intact;
@@ -14,7 +14,7 @@ const parser = new XMLParser({
   // Always treat the repeated cXML containers as arrays so callers don't have
   // to special-case "one item vs many".
   isArray: (name) =>
-    ["ItemIn", "ItemOut", "Attachment", "Comments", "Extrinsic"].includes(name),
+    ["ItemIn", "ItemOut", "Attachment", "Comments", "Extrinsic", "ScheduleLine"].includes(name),
 });
 
 export interface ParsedDoc {
@@ -370,7 +370,53 @@ function itemFromNode(it: any): CartItem {
     classification: classFirst?.value,
     manufacturerPartId: text(detail?.ManufacturerPartID),
     manufacturerName: text(detail?.ManufacturerName),
+    scheduleLines: scheduleLinesOf(it),
   };
+}
+
+/** The delivery schedule of an ItemOut / ItemIn, or undefined when it has none. */
+export function scheduleLinesOf(item: any): ScheduleLine[] | undefined {
+  const lines = asArray(item?.ScheduleLine)
+    .filter((l) => l != null && typeof l === "object")
+    .map((l) => {
+      const n = Number(attr(l, "lineNumber"));
+      return {
+        quantity: Number(attr(l, "quantity")),
+        requestedDeliveryDate: attr(l, "requestedDeliveryDate") ?? "",
+        lineNumber: attr(l, "lineNumber") != null && Number.isFinite(n) ? n : undefined,
+      };
+    });
+  return lines.length > 0 ? lines : undefined;
+}
+
+/** One delivery an order asks for: which line, how much, when. */
+export interface OrderDelivery {
+  line: number;
+  part?: string;
+  quantity: number;
+  uom?: string;
+  date: string;
+}
+
+/**
+ * Every delivery an OrderRequest asks for, across its lines, in date order —
+ * what a supplier's planning would see.
+ */
+export function orderDeliveries(doc: ParsedDoc): OrderDelivery[] {
+  const out: OrderDelivery[] = [];
+  asArray(root(doc)?.Request?.OrderRequest?.ItemOut).forEach((it, i) => {
+    for (const l of asArray(it?.ScheduleLine)) {
+      if (l == null || typeof l !== "object") continue;
+      out.push({
+        line: i + 1,
+        part: text(it?.ItemID?.SupplierPartID),
+        quantity: Number(attr(l, "quantity")),
+        uom: text(l.UnitOfMeasure),
+        date: attr(l, "requestedDeliveryDate") ?? "",
+      });
+    }
+  });
+  return out.sort((a, b) => (Date.parse(a.date) || 0) - (Date.parse(b.date) || 0));
 }
 
 /** The operation + carried line items of an inbound PunchOutSetupRequest. For

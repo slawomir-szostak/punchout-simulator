@@ -20,6 +20,8 @@ export function summarizeCxml(xml: string): { label: string; value: string }[] {
     push("items", items ? String(items) : undefined);
     const total = /<Total>\s*<Money[^>]*currency="([^"]+)"[^>]*>([^<]+)</.exec(xml);
     push("total", total ? `${total[1]} ${total[2]}` : undefined);
+    const deliveries = (xml.match(/<ScheduleLine[\s>]/g) ?? []).length;
+    push("deliveries", deliveries ? String(deliveries) : undefined);
   }
   push("from", credential(xml, "From"));
   push("to", credential(xml, "To"));

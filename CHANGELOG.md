@@ -5,6 +5,35 @@ corresponding [GitHub Release](https://github.com/slawomir-szostak/punchout-simu
 Versions follow [Semantic Versioning](https://semver.org); while the project is
 pre-1.0, new features may arrive in patch releases.
 
+## v0.17.0 — Delivery schedules: split an order line into dated deliveries
+
+*Released 2026-11-20*
+
+Minor release. Adds delivery schedules (`ScheduleLine`) to the OrderRequest, on both sides.
+
+An order line does not always arrive all at once. A buyer can ask for ten units as four next week, three the week after and three the week after that, and the supplier plans against those dates. In cXML that is a `ScheduleLine` per delivery on the order line. The tool could not send one, so a supplier's handling of scheduled orders could not be tested, and a buyer system that sends schedules got no sign from the mock supplier that they had been read.
+
+### Scheduling deliveries (virtual buyer)
+- The order step has a **Delivery schedule** box listing the cart's lines. *Schedule deliveries* splits a line in two, a week apart, as a starting point.
+- Each delivery has its own quantity and date; deliveries can be added and removed. *Split in 2 / 3 / 4* redistributes the line evenly over weekly deliveries, and *deliver in one go* removes the schedule.
+- The line shows how much of its quantity is scheduled and warns while the deliveries do not add up to it.
+- The order digest shows the number of deliveries. Changing a schedule and sending again is a change order.
+- `ScheduleLine` exists only from cXML 1.2.025. With a buyer profile on an older DTD the schedule is left out, and the tool says so when the order is built.
+
+### The mock supplier confirms the plan (virtual supplier)
+- An accepted order's answer states the delivery plan it was given: how many deliveries, for how many lines, from which date to which. It also points out requested dates that are already in the past.
+
+### Validation
+- Each `ScheduleLine` needs a quantity, a requested delivery date and a `UnitOfMeasure` (errors), and a valid date-time.
+- Warnings for deliveries that do not add up to the line's quantity, a unit that differs from the line's, duplicate schedule line numbers, and a `ScheduleLine` in a document whose DTD predates it.
+
+### Documentation
+- The operations guide, README, architecture, test strategy, business primer and platform-variation documents cover delivery schedules.
+
+The document is valid for every DTD version a buyer profile declares (1.2.008 to 1.2.045) and for the current 1.2.072.
+
+**Full Changelog**: https://github.com/slawomir-szostak/punchout-simulator/compare/v0.16.0...v0.17.0
+
 ## v0.16.0 — Level 2 PunchOut: start from a catalog item
 
 *Released 2026-11-19*

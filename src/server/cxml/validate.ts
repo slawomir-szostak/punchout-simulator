@@ -610,6 +610,88 @@ function checkCharges(header: any, items: any[], currency: string | undefined, p
   return charges;
 }
 
+/** The cXML DTD version a document declares in its DOCTYPE, if any. */
+function declaredDtd(doc: ParsedDoc): string | undefined {
+  return CXML_DTD_URL.exec(DOCTYPE.exec(doc.raw)?.[3] ?? "")?.[1];
+}
+
+const olderThan = (version: string, min: string): boolean => {
+  const a = version.split(".").map(Number);
+  const b = min.split(".").map(Number);
+  for (let i = 0; i < 3; i++) if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) < (b[i] ?? 0);
+  return false;
+};
+
+// ScheduleLine (UnitOfMeasure, ScheduleLineReleaseInfo?, …): the delivery
+// schedule of a line. @quantity and @requestedDeliveryDate are #REQUIRED, as is
+// the UnitOfMeasure child; @type is backlog | immediate | forecast. The element
+// exists from DTD 1.2.025. A schedule splits the line's quantity over dates, so
+// the parts should add up to the whole.
+function checkScheduleLines(item: any, index: number, lineQty: number | undefined, dtd: string | undefined, issues: Issues): void {
+  const lines = asArray(item?.ScheduleLine).filter((l) => l != null);
+  if (lines.length === 0) return;
+  const base = `cXML/.../ItemOut[${index}]/ScheduleLine`;
+  if (dtd && olderThan(dtd, "1.2.025")) {
+    issues.warn(
+      "scheduleline-before-dtd",
+      `ItemOut[${index}] carries ScheduleLine, but the document declares cXML ${dtd}, which does not define it (it was added in 1.2.025)`,
+      base,
+    );
+  }
+  const itemUom = text(item?.ItemDetail?.UnitOfMeasure);
+  const seen = new Set<string>();
+  let sum = 0;
+  let countable = true;
+  lines.forEach((l, j) => {
+    const lp = `${base}[${j + 1}]`;
+    const q = num(attr(l, "quantity"));
+    if (q == null) {
+      issues.error("scheduleline-missing-quantity", `ItemOut[${index}] ScheduleLine[${j + 1}] is missing @quantity`, lp);
+      countable = false;
+    } else {
+      sum += q;
+    }
+    const date = attr(l, "requestedDeliveryDate");
+    if (!date) {
+      issues.error("scheduleline-missing-date", `ItemOut[${index}] ScheduleLine[${j + 1}] is missing @requestedDeliveryDate`, lp);
+    } else {
+      checkDateTime(date, "scheduleline-date", `ItemOut[${index}]/ScheduleLine[${j + 1}]/@requestedDeliveryDate`, issues);
+    }
+    const uom = text(l?.UnitOfMeasure);
+    if (!uom) {
+      issues.error("scheduleline-missing-uom", `ItemOut[${index}] ScheduleLine[${j + 1}] is missing UnitOfMeasure`, `${lp}/UnitOfMeasure`);
+    } else if (itemUom && uom !== itemUom) {
+      issues.warn("scheduleline-uom-differs", `ItemOut[${index}] ScheduleLine[${j + 1}] is in ${uom}, the line itself in ${itemUom}`, `${lp}/UnitOfMeasure`);
+    }
+    const type = attr(l, "type");
+    if (type != null && !["backlog", "immediate", "forecast"].includes(type)) {
+      issues.error("scheduleline-invalid-type", `ScheduleLine/@type="${type}" is not one of backlog, immediate, forecast`, `${lp}/@type`);
+    }
+    const lineNumber = attr(l, "lineNumber");
+    if (lineNumber != null) {
+      if (seen.has(lineNumber)) issues.warn("scheduleline-duplicate-number", `ItemOut[${index}] has two ScheduleLines numbered ${lineNumber}`, lp);
+      seen.add(lineNumber);
+    }
+    const release = l?.ScheduleLineReleaseInfo;
+    if (release != null) {
+      const code = attr(release, "commitmentCode");
+      if (!["firm", "tradeoff", "forecast"].includes(code ?? "")) {
+        issues.error("scheduleline-invalid-commitment", `ScheduleLineReleaseInfo/@commitmentCode must be firm, tradeoff or forecast${code ? ` (found "${code}")` : ""}`, `${lp}/ScheduleLineReleaseInfo`);
+      }
+      if (num(attr(release, "cumulativeScheduledQuantity")) == null) {
+        issues.error("scheduleline-missing-cumulative", "ScheduleLineReleaseInfo is missing @cumulativeScheduledQuantity", `${lp}/ScheduleLineReleaseInfo`);
+      }
+    }
+  });
+  if (countable && lineQty != null && Math.abs(sum - lineQty) > 1e-6) {
+    issues.warn(
+      "scheduleline-quantity-mismatch",
+      `ItemOut[${index}] orders ${lineQty}, but its ${lines.length} delivery line${lines.length === 1 ? "" : "s"} add up to ${Math.round(sum * 1000) / 1000}`,
+      base,
+    );
+  }
+}
+
 // Distribution "divides the cost of an item among multiple parties".
 //   Distribution (Accounting, Charge); Accounting @name #REQUIRED with
 //   AccountingSegment+ (@id #REQUIRED) or the deprecated Segment+.
@@ -767,6 +849,7 @@ function checkOrderRequest(doc: ParsedDoc, ctx: ValidationContext, issues: Issue
     if (lineAmount == null) allPriced = false;
     else lineSum += lineAmount;
     checkDistributions(it, i + 1, lineAmount, issues);
+    checkScheduleLines(it, i + 1, qty, declaredDtd(doc), issues);
   });
 
   const totalCurrency = attr(header?.Total?.Money, "currency");

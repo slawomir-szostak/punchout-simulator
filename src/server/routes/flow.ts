@@ -23,6 +23,8 @@ import {
   makePayloadId,
   computeTax,
   cxmlTimestamp,
+  dtdAtLeast,
+  SCHEDULE_LINE_SINCE,
   type ExtrinsicVal,
   type OrderAttachmentMeta,
   type OrderType,
@@ -30,7 +32,7 @@ import {
 import { buildMultipartRelated, type MultipartAttachment } from "../cxml/multipart.js";
 import { getOrderInfo, getStartPage, getStatus, parseProfileResponse, parseXml, profileUrlFor } from "../cxml/parse.js";
 import { validateDocument, type ExpectedCredentials } from "../cxml/validate.js";
-import type { Address, AddressMode, AttachmentEncoding, AttachmentRef, CartItem, Contact, Credential, DocType, ResolvedConnection, SetupOperation, AccountingSettings, ShippingSettings, TaxSettings, ChargeAmount, SelectedItem } from "../cxml/types.js";
+import type { Address, AddressMode, AttachmentEncoding, AttachmentRef, CartItem, Contact, Credential, DocType, ResolvedConnection, SetupOperation, AccountingSettings, ShippingSettings, TaxSettings, ChargeAmount, SelectedItem, ScheduleLine } from "../cxml/types.js";
 import type { OrderResult, ProfileResult, SetupResult } from "./dto.js";
 
 const coerceOperation = (v: unknown): SetupOperation | undefined =>
@@ -428,10 +430,27 @@ function sentOrders(sessionId: string, connectionId: string): SentOrder[] {
   return out;
 }
 
+// A line's delivery schedule as sent by the UI: keep the entries that name a
+// positive quantity and a date.
+function scheduleOf(item: CartItem): ScheduleLine[] | undefined {
+  const lines = (Array.isArray(item.scheduleLines) ? item.scheduleLines : [])
+    .map((l) => ({ quantity: Number(l?.quantity), requestedDeliveryDate: String(l?.requestedDeliveryDate ?? "").trim() }))
+    .filter((l) => Number.isFinite(l.quantity) && l.quantity > 0 && l.requestedDeliveryDate !== "");
+  return lines.length > 0 ? lines : undefined;
+}
+
 // Build the OrderRequest cXML from a request body. Shared by the preview and
 // send endpoints so the document you edit in the UI is exactly what gets sent.
-function buildOrderXml(ctx: BuyerContext, body: OrderBody): { xml: string; orderId: string } {
-  const items = body.items ?? [];
+// `notes` says what was asked for but could not go into the document.
+function buildOrderXml(ctx: BuyerContext, body: OrderBody): { xml: string; orderId: string; notes: string[] } {
+  const items = (body.items ?? []).map((it) => ({ ...it, scheduleLines: scheduleOf(it) }));
+  const notes: string[] = [];
+  const dtdVersion = dtdVersionFor(ctx.eff, "OrderRequest");
+  if (items.some((it) => it.scheduleLines) && !dtdAtLeast(dtdVersion, SCHEDULE_LINE_SINCE)) {
+    notes.push(
+      `The delivery schedule was left out: this buyer's profile sends orders as cXML ${dtdVersion}, and ScheduleLine only exists from ${SCHEDULE_LINE_SINCE}. Pick a profile with a newer DTD to send it.`,
+    );
+  }
   const currency = body.currency || items[0]?.currency || "USD";
   // Mixed-currency carts can't have a meaningful single Total — lineItemsTotal
   // returns 0 in that case (see build.ts), matching the mock supplier and
@@ -491,7 +510,7 @@ function buildOrderXml(ctx: BuyerContext, body: OrderBody): { xml: string; order
     orderVersion: previous ? previous.orderVersion + 1 : undefined,
     documentReferencePayloadId: previous?.payloadId,
   });
-  return { xml, orderId };
+  return { xml, orderId, notes };
 }
 
 // Preview the OrderRequest cXML (built from the cart + attachment plan) without
@@ -500,8 +519,8 @@ flowRoute.post("/:id/order/preview", async (c) => {
   const r = resolveVirtualBuyer(c.req.param("id"));
   if ("error" in r) return c.json({ error: r.error }, 400);
   const body = (await readJsonBody(c)) as OrderBody;
-  const { xml, orderId } = buildOrderXml(r.ctx, body);
-  return c.json({ xml, orderId });
+  const { xml, orderId, notes } = buildOrderXml(r.ctx, body);
+  return c.json({ xml, orderId, notes });
 });
 
 flowRoute.post("/:id/order", async (c) => {

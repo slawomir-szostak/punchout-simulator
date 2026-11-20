@@ -5,6 +5,7 @@ import { CxmlEditor } from "./CxmlEditor";
 import { CartView } from "./CartView";
 import { CatalogFrame } from "./CatalogFrame";
 import { CxmlSummary } from "./CxmlSummary";
+import { ScheduleEditor } from "./ScheduleEditor";
 import { ValidationPanel, ValidationSummary } from "./Validation";
 import { useTheme } from "../hooks/useTheme";
 
@@ -77,6 +78,10 @@ export function BuyerFlow({ connection, session, cart, operation, sourceItems, s
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [attachmentsDirty, setAttachmentsDirty] = useState(false);
+  // The delivery schedule changed after the OrderRequest was built.
+  const [scheduleDirty, setScheduleDirty] = useState(false);
+  // What the server could not put into the last OrderRequest it built.
+  const [orderNotes, setOrderNotes] = useState<string[]>([]);
   // On-demand "validate before send" results (cleared when the document is edited).
   const [setupCheck, setSetupCheck] = useState<ValidationResult | null>(null);
   const [orderCheck, setOrderCheck] = useState<ValidationResult | null>(null);
@@ -179,6 +184,15 @@ export function BuyerFlow({ connection, session, cart, operation, sourceItems, s
   const attachmentMeta = () =>
     session.attachments.map((a) => ({ contentId: a.contentId, scope: a.scope }));
 
+  // The cart's lines with their delivery schedules attached, as the order is built from them.
+  const orderItems = () =>
+    (cart?.items ?? []).map((it, i) => {
+      const deliveries = (session.schedules ?? {})[i];
+      return deliveries?.length
+        ? { ...it, scheduleLines: deliveries.map((d) => ({ quantity: d.quantity, requestedDeliveryDate: d.date })) }
+        : it;
+    });
+
   // Build the OrderRequest. `type` defaults to whatever the current document is,
   // so "Rebuild from cart" keeps a change order a change order. An update or
   // delete continues the order this session already sent: same orderID, the next
@@ -188,14 +202,16 @@ export function BuyerFlow({ connection, session, cart, operation, sourceItems, s
     setBusy(true);
     setError(null);
     try {
-      const { xml } = await api.orderPreview(connection.id, {
+      const { xml, notes } = await api.orderPreview(connection.id, {
         sessionId: session.buyerCookie,
-        items: cart.items,
+        items: orderItems(),
         currency: cart.total?.currency ?? "USD",
         attachments: attachmentMeta(),
         orderType: type,
       });
       onChange({ orderXml: xml, orderType: type });
+      setOrderNotes(notes ?? []);
+      setScheduleDirty(false);
       setOrderOpen(true);
       setOrderCheck(null);
       setAttachmentsDirty(false);
@@ -214,7 +230,7 @@ export function BuyerFlow({ connection, session, cart, operation, sourceItems, s
       const res = await api.sendOrder(connection.id, {
         sessionId: session.buyerCookie,
         xml: session.orderXml || undefined, // send the edited cXML if present
-        items: cart.items,
+        items: orderItems(),
         currency: cart.total?.currency ?? "USD",
         danglingCid: session.danglingCid,
         attachments: session.attachments,
@@ -435,6 +451,15 @@ export function BuyerFlow({ connection, session, cart, operation, sourceItems, s
               </label>
             </div>
 
+            <ScheduleEditor
+              items={cart.items}
+              schedules={session.schedules ?? {}}
+              onChange={(schedules) => {
+                onChange({ schedules });
+                setScheduleDirty(true);
+              }}
+            />
+
             {!session.orderXml && (
               <div className="step-actions">
                 <button className="btn-primary" onClick={() => buildOrder("new")} disabled={busy}>
@@ -449,6 +474,15 @@ export function BuyerFlow({ connection, session, cart, operation, sourceItems, s
                 <code>&lt;Comments&gt;</code> below by hand.
               </p>
             )}
+
+            {scheduleDirty && session.orderXml && (
+              <p className="hint warn-hint">
+                The delivery schedule changed — rebuild from cart to put it into the OrderRequest.
+              </p>
+            )}
+            {orderNotes.map((n, i) => (
+              <p key={i} className="hint warn-hint">{n}</p>
+            ))}
 
             {session.orderXml && (
               <>

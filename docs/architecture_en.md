@@ -214,9 +214,10 @@ consequences shape the code:
   numeric UTC offset; the Reference Guide does not allow the `Z` designator.
 - **Output depends on the declared DTD version.** A buyer profile may declare a
   DTD as old as 1.2.008, and a document must only use what that version
-  defines. Two attributes the builders emit are newer than that —
-  `addressIDDomain` (since 1.2.025) and `orderVersion` (since 1.2.009) — and are
-  left out below those versions.
+  defines. Three things the builders emit are newer than that —
+  `addressIDDomain` and `ScheduleLine` (both since 1.2.025) and `orderVersion`
+  (since 1.2.009) — and are left out below those versions. When a delivery
+  schedule is dropped this way, the buyer is told.
 
 Runtime validation stays field-level (no native DTD validator ships in the
 package). Conformance of the tool's *own* output is instead proven in
