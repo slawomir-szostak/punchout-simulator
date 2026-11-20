@@ -52,7 +52,7 @@
     "hono": "^4.13.13",
     "lowdb": "^7.0.1",
     "nanoid": "^5.1.16",
-    "open": "^10.1.0",
+    "open": "^11.0.4",
     "undici": "^6.29.1"
   },
   "devDependencies": {
