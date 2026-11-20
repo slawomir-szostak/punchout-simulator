@@ -1,3 +1,4 @@
+import { findOrderIssues } from "./order.js";
 import {
   asArray,
   attr,
@@ -1089,6 +1090,22 @@ function addHttpHint(ctx: ValidationContext, issues: Issues): void {
 
 // --- entry point -------------------------------------------------------------
 
+/**
+ * The DTD fixes the order of an element's children. A receiver that validates
+ * against the DTD rejects a document that breaks it; many do not validate and
+ * accept it anyway, so this is a warning.
+ */
+function checkElementOrder(raw: string, issues: Issues): void {
+  for (const o of findOrderIssues(raw)) {
+    issues.warn(
+      "element-order",
+      `<${o.child}> comes after <${o.before}> in <${o.parent}>, but the cXML DTD puts it before. ` +
+        `Expected order: ${o.expected.join(", ")}. A receiver that validates against the DTD rejects this document.`,
+      o.path,
+    );
+  }
+}
+
 export function validateDocument(raw: string, ctx: ValidationContext = {}): ValidationResult {
   const doc = parseXml(raw);
   const issues = new Issues();
@@ -1111,6 +1128,7 @@ export function validateDocument(raw: string, ctx: ValidationContext = {}): Vali
 
   const docType = ctx.forceDocType ?? getDocType(doc);
   checkGeneral(doc, ctx, issues, docType);
+  checkElementOrder(raw, issues);
 
   switch (docType) {
     case "SetupRequest": {

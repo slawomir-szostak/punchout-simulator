@@ -5,6 +5,29 @@ corresponding [GitHub Release](https://github.com/slawomir-szostak/punchout-simu
 Versions follow [Semantic Versioning](https://semver.org); while the project is
 pre-1.0, new features may arrive in patch releases.
 
+## v0.18.0 — Element order: the right elements in the wrong order
+
+*Released 2026-11-20*
+
+Minor release. Adds validation of the order of an element's children against the cXML DTD.
+
+The DTD does not only say which elements a document may contain, it fixes their order: `From`, `To`, `Sender`; `ShipTo` before `BillTo`; `ItemID` before `ItemDetail`. A receiver that validates against the DTD rejects a document that has everything it needs in another order, often with a parser message that says little. Many receivers do not validate and accept the same document, so the fault can stay hidden until the day a stricter system is on the other end. The tool checked what a document contains, but not the order, and let this class of fault through.
+
+### Validation
+- Every cXML document the tool validates, inbound or outbound, is checked for the order of each element's children. Children in another order are a **warning** (`element-order`) that names the element, the two children and the order expected.
+- It is a warning, not an error: the mock supplier still accepts such an order, as a receiver that does not validate against the DTD would.
+- One warning per affected element, with its place in the document (for example `cXML/Request/OrderRequest/ItemOut[2]`).
+- Elements the DTD does not know and the content of an `Extrinsic` are left alone.
+
+### Built from the standard
+- The order table is generated from the cXML 1.2.072 DTD by a new script, `scripts/gen-element-order.mjs`, and compared against every older DTD back to 1.2.008, so a document on an old DTD is not held to an order its own DTD does not require.
+- The check finds nothing in any document the tool itself builds, and flags a document that `xmllint` rejects for its element order.
+
+### Documentation
+- README, operations guide, architecture and test strategy describe the check.
+
+**Full Changelog**: https://github.com/slawomir-szostak/punchout-simulator/compare/v0.17.0...v0.18.0
+
 ## v0.17.0 — Delivery schedules: split an order line into dated deliveries
 
 *Released 2026-11-20*

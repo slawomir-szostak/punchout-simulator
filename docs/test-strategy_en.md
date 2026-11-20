@@ -111,6 +111,11 @@ routing, no network:
   version gate, validation, the editor's even-split helper, and — over real
   HTTP — the mock supplier confirming a plan, a rescheduling change order, and
   the note a buyer gets when its profile's DTD is too old.
+- `element-order.test.ts` — the element-order check: the order table generated
+  from the DTD, a warning (never an error) for children out of order, one per
+  element and with the place named, and silence for repeated elements, unknown
+  elements and `Extrinsic` content. The DTD suite adds that the check finds
+  nothing in any document the tool builds, and flags one that `xmllint` rejects.
 - `catalog-page.test.ts` — the mock supplier's webshop page: the quantity
   inputs the checkout reads, the edit / inspect / preview variants, and that
   nothing a catalog or a buyer supplies is rendered unescaped.

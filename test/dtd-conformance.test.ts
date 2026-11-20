@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { findOrderIssues } from "../src/server/cxml/order.js";
 import { buildOrderRequest, buildProfileRequest, buildProfileResponse, buildPunchOutOrderMessage, buildResponseStatus, buildSetupRequest, buildSetupResponse, computeTax, cxmlTimestamp } from "../src/server/cxml/build.js";
 
 // Validates every document the tool can build against the real cXML DTD.
@@ -106,4 +107,25 @@ describe.skipIf(!enabled)("documents built by the tool are valid against the cXM
       expect(output.split("\n").filter((l) => l.includes("error")).join("\n")).toBe("");
     });
   }
+});
+
+// The tool's own order check must agree with the DTD: silent on everything the
+// DTD accepts (this part always runs), and awake where xmllint objects.
+describe("the element-order check agrees with the DTD", () => {
+  for (const [name, xml] of Object.entries(documents)) {
+    it(`finds nothing in: ${name}`, () => {
+      expect(findOrderIssues(xml)).toEqual([]);
+    });
+  }
+
+  it.skipIf(!enabled)("flags a document that xmllint rejects for its element order", () => {
+    const xml = Object.values(documents)[0];
+    const from = /[ \t]*<From>[\s\S]*?<\/From>\n/.exec(xml)![0];
+    const swapped = xml.replace(from, "").replace(/([ \t]*<Sender>)/, `${from}$1`);
+    const dir = mkdtempSync(join(tmpdir(), "pos-dtd-"));
+    const file = join(dir, "swapped.xml");
+    writeFileSync(file, swapped.replace(/<!DOCTYPE cXML SYSTEM "[^"]*">/, `<!DOCTYPE cXML SYSTEM "file://${dtd}">`));
+    expect(spawnSync("xmllint", ["--noout", "--nonet", "--valid", file]).status).not.toBe(0);
+    expect(findOrderIssues(swapped).map((i) => i.parent)).toEqual(["Header"]);
+  });
 });

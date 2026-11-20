@@ -312,7 +312,7 @@ figure.diagram figcaption {
 <header class="header">
   <div class="brand"></div>
   <h1>punchout-simulator — Operations & Usage Guide</h1>
-  <p class="subtitle">Sessions, operations, profiles, product lists, addresses, attachments, and validation · 2026-11-19</p>
+  <p class="subtitle">Sessions, operations, profiles, product lists, addresses, attachments, and validation · 2026-11-20</p>
   <span class="version">v1.2 — October 2026</span>
 </header>
 
@@ -969,6 +969,10 @@ field-level; it surfaces typed <strong>errors</strong> and <strong>warnings</str
 <tr>
 <td>Delivery schedule</td>
 <td>Each <code>ScheduleLine</code> needs a quantity, a requested delivery date and a <code>UnitOfMeasure</code> (<strong>errors</strong>), and a valid date-time. Deliveries that don't add up to the line's quantity, a unit that differs from the line's, duplicate line numbers, or a <code>ScheduleLine</code> in a document whose declared DTD predates it are <strong>warnings</strong>.</td>
+</tr>
+<tr>
+<td>Element order</td>
+<td>The DTD fixes the order of an element's children (<code>From</code>, <code>To</code>, <code>Sender</code>; <code>ShipTo</code> before <code>BillTo</code>; <code>ItemID</code> before <code>ItemDetail</code>). Children in another order are a <strong>warning</strong> that names the element, the two children and the order expected: a receiver that validates against the DTD rejects such a document, many others accept it. One warning per element; the content of an <code>Extrinsic</code> is not checked.</td>
 </tr>
 <tr>
 <td>Accounting</td>

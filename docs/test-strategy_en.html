@@ -312,7 +312,7 @@ figure.diagram figcaption {
 <header class="header">
   <div class="brand"></div>
   <h1>punchout-simulator — Test Strategy</h1>
-  <p class="subtitle">What is tested, at which layer, with which techniques — and what is deliberately left out · 2026-11-19</p>
+  <p class="subtitle">What is tested, at which layer, with which techniques — and what is deliberately left out · 2026-11-20</p>
   <span class="version">v1.1 — October 2026</span>
 </header>
 
@@ -445,6 +445,11 @@ routing, no network:</p>
   version gate, validation, the editor's even-split helper, and — over real
   HTTP — the mock supplier confirming a plan, a rescheduling change order, and
   the note a buyer gets when its profile's DTD is too old.</li>
+<li><code>element-order.test.ts</code> — the element-order check: the order table generated
+  from the DTD, a warning (never an error) for children out of order, one per
+  element and with the place named, and silence for repeated elements, unknown
+  elements and <code>Extrinsic</code> content. The DTD suite adds that the check finds
+  nothing in any document the tool builds, and flags one that <code>xmllint</code> rejects.</li>
 <li><code>catalog-page.test.ts</code> — the mock supplier's webshop page: the quantity
   inputs the checkout reads, the edit / inspect / preview variants, and that
   nothing a catalog or a buyer supplies is rendered unescaped.</li>

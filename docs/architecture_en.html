@@ -312,7 +312,7 @@ figure.diagram figcaption {
 <header class="header">
   <div class="brand"></div>
   <h1>punchout-simulator — Architecture</h1>
-  <p class="subtitle">Components, data model, and message flows of the cXML PunchOut simulator · 2026-11-19</p>
+  <p class="subtitle">Components, data model, and message flows of the cXML PunchOut simulator · 2026-11-20</p>
   <span class="version">v1.2 — October 2026</span>
 </header>
 
@@ -431,6 +431,10 @@ the tool takes no PDF library dependency.</p>
 <tr>
 <td><code>validate.ts</code></td>
 <td>Bidirectional, field-level validation written against the cXML DTD and Reference Guide: credentials (only on header-bearing docs, several per party), date-time format, DOCTYPE, <code>xml:lang</code>, single-currency, address completeness, operation/items coherence, <code>operationAllowed</code>, order <code>type</code> / <code>DocumentReference</code> / <code>orderVersion</code>. Produces typed issues: <strong>error</strong> (the DTD requires it), <strong>warning</strong> (the Guide says must/should), <strong>info</strong> (deprecated or informative).</td>
+</tr>
+<tr>
+<td><code>order.ts</code>, <code>element-order.ts</code></td>
+<td>Element-order check. <code>element-order.ts</code> is generated from the cXML DTD by <code>scripts/gen-element-order.mjs</code> (child order per element, kept only where every DTD version from 1.2.008 agrees); <code>order.ts</code> re-reads the document with child order preserved and reports children that break it, as <strong>warnings</strong>.</td>
 </tr>
 <tr>
 <td><code>multipart.ts</code></td>
