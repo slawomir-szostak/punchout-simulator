@@ -59,7 +59,7 @@
     "hono": "^4.13.13",
     "lowdb": "^7.0.1",
     "monaco-editor": "^0.52.2",
-    "nanoid": "^5.1.16",
+    "nanoid": "^6.0.2",
     "open": "^10.1.0",
     "playwright-core": "^1.65.1",
     "react": "^18.3.1",
