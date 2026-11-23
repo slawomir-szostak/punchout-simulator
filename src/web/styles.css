@@ -110,6 +110,8 @@ a { color: var(--link); }
 .session-log { margin-top: 1rem; border-top: 1px solid var(--border); }
 .session-log .logpane-head { padding: .6rem 0 .4rem; font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
 .cred-pair { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+.cred-add .btn-link { margin-left: 0; }
+.cred-pair.extra { grid-template-columns: 1fr 1fr auto; align-items: center; margin-bottom: .4rem; }
 .catalog-row { display: grid; grid-template-columns: 1.2fr 1.6fr .7fr .5fr .5fr .9fr auto auto; gap: .35rem; align-items: center; margin-bottom: .4rem; }
 .catalog-row input { padding: .35rem .4rem; font-size: .78rem; }
 /* Tax / shipping / accounting rows: a leading label, short number and select

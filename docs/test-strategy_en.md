@@ -116,6 +116,14 @@ routing, no network:
   element and with the place named, and silence for repeated elements, unknown
   elements and `Extrinsic` content. The DTD suite adds that the check finds
   nothing in any document the tool builds, and flags one that `xmllint` rejects.
+- `codes.test.ts` — unit and currency codes: the lists know the codes in use,
+  take package codes with their `X` prefix, tell a withdrawn unit (a note, with
+  its replacement) from an unknown one (a warning), report each code once, and
+  the tool's own catalogs use only codes that are on the lists.
+- `multi-credentials.test.ts` — several credentials per party: one `Credential`
+  per identity in `From` and `To`, validation against all of a party's
+  identities, a party refused when it has two values in one domain, and — over
+  real HTTP — an order naming both parties twice that the mock supplier accepts.
 - `catalog-page.test.ts` — the mock supplier's webshop page: the quantity
   inputs the checkout reads, the edit / inspect / preview variants, and that
   nothing a catalog or a buyer supplies is rendered unescaped.

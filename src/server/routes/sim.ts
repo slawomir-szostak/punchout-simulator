@@ -1,3 +1,4 @@
+import { identitiesOf } from "../cxml/types.js";
 import { Hono, type Context } from "hono";
 import { sessionForOrder } from "../cart-store.js";
 import { nanoid } from "nanoid";
@@ -46,8 +47,8 @@ export const simRoute = new Hono();
 
 const DEMO_CATALOG: CatalogItem[] = [
   { supplierPartId: "WIDGET-001", description: "Premium Steel Widget", unitPrice: 12.5, currency: "USD", uom: "EA", classifications: [{ domain: "UNSPSC", value: "31161500" }], manufacturerPartId: "MFR-W001", manufacturerName: "Acme Manufacturing" },
-  { supplierPartId: "BOLT-250", description: "M8 Hex Bolt (pack of 250)", unitPrice: 34.0, currency: "USD", uom: "PK", classifications: [{ domain: "UNSPSC", value: "31161600" }], manufacturerPartId: "MFR-B250", manufacturerName: "Acme Manufacturing" },
-  { supplierPartId: "TAPE-RED", description: "Industrial Marking Tape, Red", unitPrice: 5.75, currency: "USD", uom: "RL", classifications: [{ domain: "UNSPSC", value: "31201500" }] },
+  { supplierPartId: "BOLT-250", description: "M8 Hex Bolt (pack of 250)", unitPrice: 34.0, currency: "USD", uom: "XPK", classifications: [{ domain: "UNSPSC", value: "31161600" }], manufacturerPartId: "MFR-B250", manufacturerName: "Acme Manufacturing" },
+  { supplierPartId: "TAPE-RED", description: "Industrial Marking Tape, Red", unitPrice: 5.75, currency: "USD", uom: "XRL", classifications: [{ domain: "UNSPSC", value: "31201500" }] },
 ];
 
 function host(): string {
@@ -162,8 +163,8 @@ function expectedFor(supplierId: string, from: Credential | Credential[] | undef
   const r = findConnectionBySupplierAndBuyerIdentity(supplierId, from);
   if (!r) return undefined;
   return {
-    from: r.buyer.identity,
-    to: r.supplier.identity,
+    from: identitiesOf(r.buyer),
+    to: identitiesOf(r.supplier),
     sender: r.connection.senderIdentity ?? r.buyer.identity,
     sharedSecret: r.connection.sharedSecret,
   };
@@ -531,7 +532,7 @@ simRoute.post("/:id/checkout", async (c) => {
     chargeable && quote.shipping ? { amount: quote.shipping.amount, currency, description: quote.shipping.description } : undefined;
   const tax = chargeable && quote.tax ? computeTax(quote.tax, goods, currency) : undefined;
   const xml = buildPunchOutOrderMessage({
-    from: supplier.identity,
+    from: identitiesOf(supplier),
     to: buyerCred,
     sender: supplier.identity,
     buyerCookie: cookie,

@@ -66,19 +66,25 @@ function classificationBlock(it: CartItem, indent: string): string {
 }
 
 export interface HeaderParts {
-  from: Credential;
-  to: Credential;
+  from: Credential | Credential[];
+  to: Credential | Credential[];
   sender: Credential;
   /** Included only when present (responses and the punchback omit it). */
   sharedSecret?: string;
   userAgent?: string;
 }
 
-function credentialBlock(tag: string, c: Credential): string {
+function credentialBlock(tag: string, c: Credential | Credential[]): string {
+  // A party may go by several credentials: one organization, different domains.
+  const credentials = (Array.isArray(c) ? c : [c])
+    .map(
+      (one) => `      <Credential domain="${escapeXml(one.domain)}">
+        <Identity>${escapeXml(one.identity)}</Identity>
+      </Credential>`,
+    )
+    .join("\n");
   return `    <${tag}>
-      <Credential domain="${escapeXml(c.domain)}">
-        <Identity>${escapeXml(c.identity)}</Identity>
-      </Credential>
+${credentials}
     </${tag}>`;
 }
 
@@ -201,8 +207,8 @@ ${indent}</ScheduleLine>`,
 //   Option          (#PCDATA)                 @name #REQUIRED
 
 export function buildProfileRequest(o: {
-  from: Credential;
-  to: Credential;
+  from: Credential | Credential[];
+  to: Credential | Credential[];
   sender: Credential;
   sharedSecret?: string;
   payloadId: string;
@@ -339,8 +345,8 @@ ${indent}</Distribution>`;
 // --- SetupRequest (Mode A: buyer -> supplier) --------------------------------
 
 export interface SetupRequestOptions {
-  from: Credential;
-  to: Credential;
+  from: Credential | Credential[];
+  to: Credential | Credential[];
   sender: Credential;
   sharedSecret?: string;
   buyerCookie: string;
@@ -445,8 +451,8 @@ export interface OrderAttachmentMeta {
 }
 
 export interface OrderRequestOptions {
-  from: Credential;
-  to: Credential;
+  from: Credential | Credential[];
+  to: Credential | Credential[];
   sender: Credential;
   sharedSecret?: string;
   orderId: string;
@@ -715,8 +721,8 @@ export function buildResponseStatus(o: {
 }
 
 export interface PunchbackOptions {
-  from: Credential;
-  to: Credential;
+  from: Credential | Credential[];
+  to: Credential | Credential[];
   sender: Credential;
   buyerCookie: string;
   payloadId: string;

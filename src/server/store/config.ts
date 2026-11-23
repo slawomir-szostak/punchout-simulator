@@ -1,3 +1,4 @@
+import { identitiesOf } from "../cxml/types.js";
 import { chmodSync } from "node:fs";
 import { Low } from "lowdb";
 import { JSONFile } from "lowdb/node";
@@ -261,7 +262,8 @@ export function findConnectionBySupplierAndBuyerIdentity(
     if (connection.supplierId !== supplierId) continue;
     const buyer = getBuyer(connection.buyerId);
     if (!buyer) continue;
-    if (candidates.some((c) => buyer.identity.domain === c.domain && buyer.identity.identity === c.identity)) {
+    const own = identitiesOf(buyer);
+    if (candidates.some((c) => own.some((o) => o.domain === c.domain && o.identity === c.identity))) {
       const supplier = getSupplier(supplierId);
       if (supplier) return { connection, buyer, supplier };
     }

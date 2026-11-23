@@ -1,3 +1,4 @@
+import { identitiesOf } from "../cxml/types.js";
 import { Hono } from "hono";
 import { bus } from "../bus.js";
 import {
@@ -81,8 +82,8 @@ punchoutReturnRoute.post("/return", async (c) => {
   // identities validates the swap.
   const expected: ExpectedCredentials | undefined = resolved
     ? {
-        from: resolved.buyer.identity,
-        to: resolved.supplier.identity,
+        from: identitiesOf(resolved.buyer),
+        to: identitiesOf(resolved.supplier),
         sender: resolved.connection.senderIdentity ?? resolved.supplier.identity,
       }
     : undefined;

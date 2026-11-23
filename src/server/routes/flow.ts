@@ -1,3 +1,4 @@
+import { identitiesOf } from "../cxml/types.js";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { nanoid } from "nanoid";
@@ -62,8 +63,8 @@ function host(): string {
 
 /** The cXML credentials/endpoints derived from a resolved virtual-buyer connection. */
 interface BuyerContext {
-  from: Credential; // buyer.identity
-  to: Credential; // supplier.identity
+  from: Credential[]; // every identity of the buyer, the main one first
+  to: Credential[]; // every identity of the supplier
   sender: Credential; // connection.senderIdentity ?? buyer.identity
   sharedSecret: string;
   punchoutUrl?: string;
@@ -102,8 +103,8 @@ interface BuyerContext {
 
 function buyerContext(r: ResolvedConnection): BuyerContext {
   const { connection, buyer, supplier } = r;
-  const from = buyer.identity;
-  const to = supplier.identity;
+  const from = identitiesOf(buyer);
+  const to = identitiesOf(supplier);
   const sender = connection.senderIdentity ?? buyer.identity;
   const eff = effectiveProfile(connection, buyer);
   const orderCharges = resolveCharges(connection.orderCharges, { tax: buyer.tax, shipping: buyer.shipping });

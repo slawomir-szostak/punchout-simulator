@@ -42,6 +42,7 @@ const documents: Record<string, string> = {
   "SetupRequest (SelectedItem with ship-to and items)": buildSetupRequest({ ...base, sharedSecret: "s", buyerCookie: "c1", browserFormPostUrl: "http://buyer/return", operation: "edit", shipTo: addr, contact: { ...addr, role: "endUser" }, selectedItem: { supplierPartId: "P1", supplierPartAuxiliaryId: "AUX" }, items: [item] }),
   "SetupRequest (inspect)": buildSetupRequest({ ...base, sharedSecret: "s", buyerCookie: "c1", browserFormPostUrl: "http://buyer/return", operation: "inspect", items: [item] }),
   "OrderRequest (new)": buildOrderRequest(order),
+  "OrderRequest (several credentials per party)": buildOrderRequest({ ...order, from: [cred("DUNS", "111"), cred("NetworkID", "AN01000000001")], to: [cred("DUNS", "222"), cred("NetworkID", "AN01000000002")] }),
   "OrderRequest (contact, extrinsics, attachments at both levels)": buildOrderRequest({ ...order, contact: { ...addr, role: "buyer" }, addressMode: "both", extrinsics: [{ name: "CostCenter", value: "42" }], attachments: [{ contentId: "a@x", scope: "order" }, { contentId: "b@x", scope: { itemIndex: 1 } }] }),
   "OrderRequest (delivery schedule, with attachment comments and a distribution)": buildOrderRequest({
     ...order,

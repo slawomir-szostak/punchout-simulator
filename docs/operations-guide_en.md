@@ -94,6 +94,22 @@ A **Buyer** is the procurement-platform side: a credential identity, an optional
 its `punchoutUrl` / `orderUrl` endpoints, the **product lists** it serves in
 Mode B, and an `allowMixedCurrency` flag.
 
+**Additional identities.** An organization is often known in more than one
+domain — a DUNS number and a network ID, say — and cXML lets `From` and `To`
+carry a `Credential` for each. Under a buyer's or supplier's identity,
+*+ Add identity* adds one. From then on:
+
+- every document the tool sends names that party by all its identities, the
+  main one first;
+- on the way in, any one of them identifies the party — the mock supplier finds
+  the buyer's connection by whichever credential the buyer sent;
+- validation accepts all of them, and still warns about a credential that is
+  wrong in a domain the party is known in.
+
+A party has one identity per domain: two different values in the same domain
+cannot be saved, because a receiver is expected to reject such a document. The
+`Sender` keeps a single credential, the one the shared secret belongs to.
+
 > [!TIP]
 > Endpoints belong to the Supplier, not the Connection — they are the same for
 > every buyer that talks to that supplier. Pair-specific data (shared secret,
@@ -501,6 +517,7 @@ field-level; it surfaces typed **errors** and **warnings**:
 | Total | The `Total` must equal the sum of the lines. If it equals lines **plus** tax and shipping, the warning says exactly that. Blanket orders are exempt (their Total is a maximum commitment). |
 | Delivery schedule | Each `ScheduleLine` needs a quantity, a requested delivery date and a `UnitOfMeasure` (**errors**), and a valid date-time. Deliveries that don't add up to the line's quantity, a unit that differs from the line's, duplicate line numbers, or a `ScheduleLine` in a document whose declared DTD predates it are **warnings**. |
 | Element order | The DTD fixes the order of an element's children (`From`, `To`, `Sender`; `ShipTo` before `BillTo`; `ItemID` before `ItemDetail`). Children in another order are a **warning** that names the element, the two children and the order expected: a receiver that validates against the DTD rejects such a document, many others accept it. One warning per element; the content of an `Extrinsic` is not checked. |
+| Unit and currency codes | cXML takes its units from UN/CEFACT Recommendation 20 and its currencies from ISO 4217. A `UnitOfMeasure` or currency that is on neither list (`EACH`, `PCE`, `usd`) is a **warning**; when only the letter case is off, the message gives the right code. A unit that Recommendation 20 has marked as deleted or deprecated — `BX`, `PK`, `CS`, `RL` and other packaging codes that many systems still send — is an **info** note naming the current code (`XBX`, `XPK`…: the Recommendation 21 package code with an `X` in front). Each code is reported once per document. |
 | Accounting | Each `Distribution` needs `Accounting@name`, at least one `AccountingSegment` with an `id`, and a `Charge` (**errors**); charges that don't add up to the line amount are a **warning**; the old `Segment` element is noted as deprecated. |
 | Change orders | `type` must be `new`, `update` or `delete`; an `update`/`delete` needs a `DocumentReference` (**error**) to the most recent OrderRequest for that order, and a rising `orderVersion`. |
 

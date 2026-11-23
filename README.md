@@ -167,6 +167,8 @@ General checks, on every document:
   identities. A party may carry **several credentials** (say a NetworkID and a
   DUNS): one in a known domain must match, others are left alone, and two
   different identities in the same domain are an error.
+  The tool sends several too: a buyer or supplier can be given **additional
+  identities**, which go out as further `Credential` elements in `From` / `To`.
 
 Document-specific:
 
@@ -180,6 +182,7 @@ Document-specific:
 | **ProfileResponse** | `Status`; `effectiveDate` present, well-formed and not in the future; at least one `Transaction`, each with a `requestName` and a valid URL; the `attachments` and `changes` options on an `OrderRequest` transaction |
 | **Delivery schedule** (order lines) | each `ScheduleLine` has a quantity, a requested delivery date and a `UnitOfMeasure`; the deliveries add up to the line's quantity; the unit matches the line's; `ScheduleLine` is not used with a DTD that predates it |
 | **Element order** (every document) | an element's children come in the order the cXML DTD fixes — `From`, `To`, `Sender`; `ShipTo` before `BillTo`; `ItemID` before `ItemDetail` — reported as a **warning**, because a receiver that validates against the DTD rejects the document while many others accept it |
+| **Unit and currency codes** (every document) | each `UnitOfMeasure` is a UN/CEFACT Recommendation 20 common code (or a Recommendation 21 package code with its `X` prefix, such as `XBX`), each currency an ISO 4217 code — an unknown code is a **warning**; a unit the list has withdrawn (`BX`, `PK`, `CS`…) is a note that names the current code |
 | **Tax, Shipping, Distribution** (order and punchback) | `Tax` and `Shipping` carry `Money` and a `Description`; `TaxDetail@category`; the tax **arithmetic** (rate × taxable amount, details vs. total, line taxes vs. header tax); `Shipping` at one level only; charge currency; a **Total that includes tax or shipping** (it must be goods only); each `Distribution` has `Accounting@name`, at least one `AccountingSegment` with an `id`, and charges that add up to the line amount |
 
 > Note: full cXML DTD validation would require a native validating XML parser,
@@ -471,6 +474,7 @@ npm run typecheck
 node scripts/smoke.mjs       # full roundtrip over HTTP (server must be running)
 node scripts/verify-ui.mjs   # headless-browser walk through a full session (server must be running)
 node scripts/gen-element-order.mjs <dir of cXML DTDs>   # regenerate the element-order table from the DTD
+node scripts/gen-code-lists.mjs <dir of code lists>      # regenerate the unit and currency code tables
 ```
 
 `verify-ui.mjs` drives the real UI in headless Chromium and fails on any console

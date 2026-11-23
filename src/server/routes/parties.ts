@@ -24,6 +24,33 @@ const cred = (c: any): Credential => ({
   identity: String(c?.identity ?? ""),
 });
 
+/** Extra identities: rows with nothing in them are dropped; none at all is undefined. */
+const extraCreds = (list: any): Credential[] | undefined => {
+  const out = (Array.isArray(list) ? list : []).map(cred).filter((c) => c.domain.trim() !== "" || c.identity.trim() !== "");
+  return out.length > 0 ? out : undefined;
+};
+
+/**
+ * "The receiver should reject the document if there are multiple credentials in
+ * a To, From, or Sender section that use different values but use the same
+ * domain" — so a party is not allowed to be set up that way.
+ */
+function identityErrors(p: { identity: Credential; additionalIdentities?: Credential[] }): string[] {
+  const errors: string[] = [];
+  const seen = new Map<string, string>([[p.identity.domain, p.identity.identity]]);
+  for (const c of p.additionalIdentities ?? []) {
+    if (!c.domain.trim() || !c.identity.trim()) errors.push("an additional identity needs both a domain and an identity");
+    else if (seen.has(c.domain)) {
+      errors.push(
+        seen.get(c.domain) === c.identity
+          ? `the identity ${c.domain}/${c.identity} is listed twice`
+          : `two identities in domain "${c.domain}" with different values (${seen.get(c.domain)}, ${c.identity}) — a party has one identity per domain`,
+      );
+    } else seen.set(c.domain, c.identity);
+  }
+  return errors;
+}
+
 const str = (v: any): string | undefined => (v != null && String(v) !== "" ? String(v) : undefined);
 
 // Normalize an address, returning undefined when every field is empty so a buyer
@@ -62,6 +89,7 @@ function normalizeBuyer(body: any): BuyerInput {
   return {
     name: String(body?.name ?? "Untitled buyer"),
     identity: cred(body?.identity),
+    additionalIdentities: extraCreds(body?.additionalIdentities),
     profileId: body?.profileId ? String(body.profileId) : undefined,
     shipTo: address(body?.shipTo),
     billTo: address(body?.billTo),
@@ -76,6 +104,8 @@ buyersRoute.get("/", (c) => c.json(listBuyers()));
 buyersRoute.post("/", async (c) => {
   const input = normalizeBuyer(await readJsonBody(c));
   if (!input.name.trim()) return c.json({ errors: ["name is required"] }, 400);
+  const errors = identityErrors(input);
+  if (errors.length > 0) return c.json({ errors }, 400);
   return c.json(await createBuyer(input), 201);
 });
 buyersRoute.get("/:id", (c) => {
@@ -85,6 +115,8 @@ buyersRoute.get("/:id", (c) => {
 buyersRoute.put("/:id", async (c) => {
   if (!getBuyer(c.req.param("id"))) return c.json({ error: "not found" }, 404);
   const input = normalizeBuyer(await readJsonBody(c));
+  const errors = identityErrors(input);
+  if (errors.length > 0) return c.json({ errors }, 400);
   return c.json(await updateBuyer(c.req.param("id"), input));
 });
 buyersRoute.delete("/:id", async (c) => {
@@ -109,6 +141,7 @@ function normalizeSupplier(body: any): SupplierInput {
   return {
     name: String(body?.name ?? "Untitled supplier"),
     identity: cred(body?.identity),
+    additionalIdentities: extraCreds(body?.additionalIdentities),
     punchoutUrl: body?.punchoutUrl ? String(body.punchoutUrl) : undefined,
     orderUrl: body?.orderUrl ? String(body.orderUrl) : undefined,
     profileUrl: body?.profileUrl ? String(body.profileUrl) : undefined,
@@ -127,6 +160,8 @@ suppliersRoute.get("/", (c) => c.json(listSuppliers()));
 suppliersRoute.post("/", async (c) => {
   const input = normalizeSupplier(await readJsonBody(c));
   if (!input.name.trim()) return c.json({ errors: ["name is required"] }, 400);
+  const errors = identityErrors(input);
+  if (errors.length > 0) return c.json({ errors }, 400);
   return c.json(await createSupplier(input), 201);
 });
 suppliersRoute.get("/:id", (c) => {
@@ -136,6 +171,8 @@ suppliersRoute.get("/:id", (c) => {
 suppliersRoute.put("/:id", async (c) => {
   if (!getSupplier(c.req.param("id"))) return c.json({ error: "not found" }, 404);
   const input = normalizeSupplier(await readJsonBody(c));
+  const errors = identityErrors(input);
+  if (errors.length > 0) return c.json({ errors }, 400);
   return c.json(await updateSupplier(c.req.param("id"), input));
 });
 suppliersRoute.delete("/:id", async (c) => {

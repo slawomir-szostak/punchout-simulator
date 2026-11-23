@@ -488,6 +488,21 @@ services and CI:</p>
 <strong>end-user contact</strong>. A <strong>Supplier</strong> is the catalog side: a credential identity,
 its <code>punchoutUrl</code> / <code>orderUrl</code> endpoints, the <strong>product lists</strong> it serves in
 Mode B, and an <code>allowMixedCurrency</code> flag.</p>
+<p><strong>Additional identities.</strong> An organization is often known in more than one
+domain — a DUNS number and a network ID, say — and cXML lets <code>From</code> and <code>To</code>
+carry a <code>Credential</code> for each. Under a buyer's or supplier's identity,
+<em>+ Add identity</em> adds one. From then on:</p>
+<ul>
+<li>every document the tool sends names that party by all its identities, the
+  main one first;</li>
+<li>on the way in, any one of them identifies the party — the mock supplier finds
+  the buyer's connection by whichever credential the buyer sent;</li>
+<li>validation accepts all of them, and still warns about a credential that is
+  wrong in a domain the party is known in.</li>
+</ul>
+<p>A party has one identity per domain: two different values in the same domain
+cannot be saved, because a receiver is expected to reject such a document. The
+<code>Sender</code> keeps a single credential, the one the shared secret belongs to.</p>
 <div class="alert alert-tip">
 <div class="alert-label">Tip</div>
 <p>Endpoints belong to the Supplier, not the Connection — they are the same for
@@ -973,6 +988,10 @@ field-level; it surfaces typed <strong>errors</strong> and <strong>warnings</str
 <tr>
 <td>Element order</td>
 <td>The DTD fixes the order of an element's children (<code>From</code>, <code>To</code>, <code>Sender</code>; <code>ShipTo</code> before <code>BillTo</code>; <code>ItemID</code> before <code>ItemDetail</code>). Children in another order are a <strong>warning</strong> that names the element, the two children and the order expected: a receiver that validates against the DTD rejects such a document, many others accept it. One warning per element; the content of an <code>Extrinsic</code> is not checked.</td>
+</tr>
+<tr>
+<td>Unit and currency codes</td>
+<td>cXML takes its units from UN/CEFACT Recommendation 20 and its currencies from ISO 4217. A <code>UnitOfMeasure</code> or currency that is on neither list (<code>EACH</code>, <code>PCE</code>, <code>usd</code>) is a <strong>warning</strong>; when only the letter case is off, the message gives the right code. A unit that Recommendation 20 has marked as deleted or deprecated — <code>BX</code>, <code>PK</code>, <code>CS</code>, <code>RL</code> and other packaging codes that many systems still send — is an <strong>info</strong> note naming the current code (<code>XBX</code>, <code>XPK</code>…: the Recommendation 21 package code with an <code>X</code> in front). Each code is reported once per document.</td>
 </tr>
 <tr>
 <td>Accounting</td>

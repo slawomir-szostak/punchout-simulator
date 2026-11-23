@@ -1,3 +1,4 @@
+import { currencySuggestion, isCurrency, unitStatus } from "./codes.js";
 import { findOrderIssues } from "./order.js";
 import {
   asArray,
@@ -39,8 +40,9 @@ import type {
 
 /** The credentials/auth expected for this exchange, resolved from a connection. */
 export interface ExpectedCredentials {
-  from?: Credential;
-  to?: Credential;
+  /** A party may go by several credentials; any of them is its own. */
+  from?: Credential | Credential[];
+  to?: Credential | Credential[];
   sender?: Credential;
   sharedSecret?: string;
 }
@@ -114,9 +116,12 @@ function credEq(a: Credential | undefined, b: Credential | undefined): boolean {
   return a.domain === b.domain && a.identity === b.identity;
 }
 
+const expectedList = (exp: ExpectedCredentials): Credential[] =>
+  [exp.from, exp.to, exp.sender].flatMap((k) => (k == null ? [] : Array.isArray(k) ? k : [k]));
+
 function credKnown(c: Credential | undefined, exp: ExpectedCredentials): boolean {
   if (!c) return false;
-  return [exp.from, exp.to, exp.sender].some((k) => credEq(c, k));
+  return expectedList(exp).some((k) => credEq(c, k));
 }
 
 // --- general checks ----------------------------------------------------------
@@ -157,9 +162,7 @@ function checkGeneral(doc: ParsedDoc, ctx: ValidationContext, issues: Issues, do
   // whose domain we recognize and reject a mismatch; reject two credentials of
   // the same domain with different values. Credentials in domains we don't
   // know are not ours to judge.
-  const knownDomains = new Set(
-    [exp.from, exp.to, exp.sender].filter((k): k is Credential => !!k).map((k) => k.domain),
-  );
+  const knownDomains = new Set(expectedList(exp).map((k) => k.domain));
 
   for (const [name, list] of [
     ["From", creds.fromAll],
@@ -1106,6 +1109,65 @@ function checkElementOrder(raw: string, issues: Issues): void {
   }
 }
 
+/**
+ * Units and currencies come from code lists the standard points at:
+ * UnitOfMeasure "must conform with UN/CEFACT (Recommendation 20) Unit of
+ * Measure Common Codes", a currency "must be a three-letter ISO 4217 currency
+ * code". A code on neither list is a warning — the receiver cannot be expected
+ * to know it — and one the list has withdrawn is a note. Each code is reported
+ * once, however often the document uses it.
+ */
+function checkCodes(doc: ParsedDoc, issues: Issues): void {
+  const units = new Map<string, number>();
+  const currencies = new Map<string, number>();
+  const count = (map: Map<string, number>, value: string | undefined) => {
+    const v = value?.trim();
+    if (v) map.set(v, (map.get(v) ?? 0) + 1);
+  };
+  const walk = (node: any): void => {
+    if (Array.isArray(node)) return node.forEach(walk);
+    if (node == null || typeof node !== "object") return;
+    for (const [key, value] of Object.entries(node)) {
+      // Extrinsic is declared ANY: what it holds is the sender's own business.
+      if (key === "Extrinsic") continue;
+      if (key === "UnitOfMeasure") asArray(value).forEach((u) => count(units, text(u)));
+      else if (key === "@_currency" || key === "@_alternateCurrency") count(currencies, String(value));
+      else walk(value);
+    }
+  };
+  walk(doc.tree);
+
+  const times = (n: number) => (n > 1 ? ` (used ${n} times)` : "");
+  for (const [code, n] of units) {
+    const status = unitStatus(code);
+    if (status.kind === "withdrawn") {
+      issues.info(
+        "uom-withdrawn",
+        `UnitOfMeasure "${code}" is marked as deleted or deprecated in UN/CEFACT Recommendation 20` +
+          `${status.replacement ? `; the current code is "${status.replacement}"` : ""}. Many systems still use it${times(n)}.`,
+        "cXML/.../UnitOfMeasure",
+      );
+    } else if (status.kind === "unknown") {
+      issues.warn(
+        "uom-unknown",
+        `UnitOfMeasure "${code}" is not a UN/CEFACT unit of measure common code (Recommendation 20)` +
+          `${status.suggestion ? ` — the codes are upper case: "${status.suggestion}"` : ""}${times(n)}`,
+        "cXML/.../UnitOfMeasure",
+      );
+    }
+  }
+  for (const [code, n] of currencies) {
+    if (isCurrency(code)) continue;
+    const suggestion = currencySuggestion(code);
+    issues.warn(
+      "currency-unknown",
+      `currency "${code}" is not an ISO 4217 currency code` +
+        `${suggestion ? ` — the codes are upper case: "${suggestion}"` : ""}${times(n)}`,
+      "cXML/.../Money/@currency",
+    );
+  }
+}
+
 export function validateDocument(raw: string, ctx: ValidationContext = {}): ValidationResult {
   const doc = parseXml(raw);
   const issues = new Issues();
@@ -1129,6 +1191,7 @@ export function validateDocument(raw: string, ctx: ValidationContext = {}): Vali
   const docType = ctx.forceDocType ?? getDocType(doc);
   checkGeneral(doc, ctx, issues, docType);
   checkElementOrder(raw, issues);
+  checkCodes(doc, issues);
 
   switch (docType) {
     case "SetupRequest": {

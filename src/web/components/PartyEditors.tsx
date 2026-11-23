@@ -159,6 +159,71 @@ export function Actions({
   );
 }
 
+/**
+ * The same organization in other domains — a NetworkID next to a DUNS. Each one
+ * is sent as a further Credential wherever the party is named.
+ */
+function AdditionalIdentities({
+  party,
+  main,
+  value,
+  onChange,
+}: {
+  party: "From" | "To";
+  main: Credential;
+  value: Credential[];
+  onChange: (list: Credential[]) => void;
+}) {
+  const set = (i: number, patch: Partial<Credential>) => onChange(value.map((c, k) => (k === i ? { ...c, ...patch } : c)));
+  // One identity per domain: a receiver rejects two values in the same domain.
+  const clash = (c: Credential, i: number) =>
+    c.domain.trim() !== "" &&
+    [main, ...value.slice(0, i)].some((o) => o.domain === c.domain);
+  return (
+    <div className="form-row">
+      <label>
+        Additional identities <span className="hint">— optional; the same organization in other domains</span>
+      </label>
+      {value.map((c, i) => (
+        <div key={i}>
+          <div className="cred-pair extra">
+            <input
+              placeholder="domain (e.g. NetworkID)"
+              aria-label={`Additional identity ${i + 1} — domain`}
+              value={c.domain}
+              onChange={(e) => set(i, { domain: e.target.value })}
+            />
+            <input
+              placeholder="identity"
+              aria-label={`Additional identity ${i + 1} — identity`}
+              value={c.identity}
+              onChange={(e) => set(i, { identity: e.target.value })}
+            />
+            <button type="button" className="btn-link" onClick={() => onChange(value.filter((_, k) => k !== i))} aria-label={`Remove additional identity ${i + 1}`}>
+              Remove
+            </button>
+          </div>
+          {clash(c, i) && (
+            <p className="hint warn-hint" role="status">
+              This party already has an identity in domain “{c.domain}”. A party has one identity per domain.
+            </p>
+          )}
+        </div>
+      ))}
+      <div className="cred-add">
+        <button type="button" className="btn-link" onClick={() => onChange([...value, { domain: "", identity: "" }])}>
+          + Add identity
+        </button>
+      </div>
+      {value.length > 0 && (
+        <p className="hint">
+          Sent as further <code>Credential</code> elements in <code>{party}</code>, after the main identity. The mock side accepts any of them.
+        </p>
+      )}
+    </div>
+  );
+}
+
 const blankCred = (): Credential => ({ domain: "DUNS", identity: "" });
 
 export function BuyerEditor({
@@ -211,6 +276,12 @@ export function BuyerEditor({
         label="Identity (From)"
         value={draft.identity ?? blankCred()}
         onChange={(identity) => setDraft({ ...draft, identity })}
+      />
+      <AdditionalIdentities
+        party="From"
+        main={draft.identity ?? blankCred()}
+        value={draft.additionalIdentities ?? []}
+        onChange={(additionalIdentities) => setDraft({ ...draft, additionalIdentities })}
       />
       {twin && (
         <p className="hint warn-hint" role="status">
@@ -328,6 +399,12 @@ export function SupplierEditor({
         label="Identity (To)"
         value={draft.identity ?? blankCred()}
         onChange={(identity) => setDraft({ ...draft, identity })}
+      />
+      <AdditionalIdentities
+        party="To"
+        main={draft.identity ?? blankCred()}
+        value={draft.additionalIdentities ?? []}
+        onChange={(additionalIdentities) => setDraft({ ...draft, additionalIdentities })}
       />
       <Field label={<>PunchOut URL <span className="hint">(setup endpoint)</span></>}>
         <input value={draft.punchoutUrl ?? ""} onChange={(e) => setDraft({ ...draft, punchoutUrl: e.target.value })} placeholder="https://supplier.example.com/punchout" />

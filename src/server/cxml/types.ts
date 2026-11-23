@@ -63,6 +63,16 @@ export interface Profile {
   updatedAt: string;
 }
 
+/**
+ * Every credential a party goes by, its main identity first. "The purpose of
+ * supplying multiple credentials is to identify a single organization using
+ * different domains."
+ */
+export const identitiesOf = (p: { identity: Credential; additionalIdentities?: Credential[] }): Credential[] => [
+  p.identity,
+  ...(p.additionalIdentities ?? []),
+];
+
 /** A cXML credential: the `domain`/identity pair used in From/To/Sender. */
 export interface Credential {
   domain: string;
@@ -220,6 +230,11 @@ export interface Buyer {
   name: string;
   identity: Credential;
   /**
+   * The same organization in other domains (a NetworkID next to a DUNS). Sent
+   * after `identity` wherever this party is named, and accepted on the way in.
+   */
+  additionalIdentities?: Credential[];
+  /**
    * Optional reference to a procurement-platform Profile. When unset, the
    * built-in "Generic" profile defaults apply (today's behavior).
    */
@@ -250,6 +265,8 @@ export interface Supplier {
   id: string;
   name: string;
   identity: Credential; // cXML `To` credential
+  /** The same organization in other domains; see Buyer.additionalIdentities. */
+  additionalIdentities?: Credential[];
   punchoutUrl?: string; // the supplier's PunchOut setup endpoint
   orderUrl?: string; // the supplier's order endpoint
   /**

@@ -312,7 +312,7 @@ figure.diagram figcaption {
 <header class="header">
   <div class="brand"></div>
   <h1>How Procurement Platforms Differ in PunchOut Requests</h1>
-  <p class="subtitle">A practical analysis of cXML versions and per-platform variation in the requests suppliers receive · 2026-11-19</p>
+  <p class="subtitle">A practical analysis of cXML versions and per-platform variation in the requests suppliers receive · 2026-11-20</p>
   <span class="version">v1.0 — June 2026</span>
 </header>
 
@@ -608,6 +608,9 @@ questions for onboarding, not something to infer from the platform's name:</p>
   whether it sends its own in the order. The <code>Total</code> excludes both either way.</li>
 <li><strong>Accounting (<code>Distribution</code>)</strong> — whether orders carry cost-allocation data
   the supplier must tolerate and return on invoices.</li>
+<li><strong>Several credentials per party</strong> — whether <code>From</code> / <code>To</code> carry one
+  <code>Credential</code> or one per domain the organization is known in (DUNS and a
+  network ID). Set as additional identities on the buyer or supplier.</li>
 <li><strong>Delivery schedules (<code>ScheduleLine</code>)</strong> — whether order lines are split into
   dated deliveries. They exist only from cXML 1.2.025, so a buyer on an older
   DTD cannot send them at all.</li>

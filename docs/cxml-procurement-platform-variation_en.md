@@ -259,6 +259,9 @@ questions for onboarding, not something to infer from the platform's name:
   whether it sends its own in the order. The `Total` excludes both either way.
 - **Accounting (`Distribution`)** — whether orders carry cost-allocation data
   the supplier must tolerate and return on invoices.
+- **Several credentials per party** — whether `From` / `To` carry one
+  `Credential` or one per domain the organization is known in (DUNS and a
+  network ID). Set as additional identities on the buyer or supplier.
 - **Delivery schedules (`ScheduleLine`)** — whether order lines are split into
   dated deliveries. They exist only from cXML 1.2.025, so a buyer on an older
   DTD cannot send them at all.

@@ -534,12 +534,12 @@ export function App() {
           {view === "buyers" && (
             <EntityList title="Buyers" items={buyers} selectedId={selectedBuyerId} draft={dupFor("buyers")}
               onSelect={leaveDraft(setSelectedBuyerId)} onNew={leaveDraft(() => setSelectedBuyerId(NEW))}
-              subtitle={(b) => `${b.identity.domain}/${b.identity.identity}`} />
+              subtitle={(b) => `${b.identity.domain}/${b.identity.identity}${b.additionalIdentities?.length ? ` +${b.additionalIdentities.length}` : ""}`} />
           )}
           {view === "suppliers" && (
             <EntityList title="Suppliers" items={suppliers} selectedId={selectedSupplierId} draft={dupFor("suppliers")}
               onSelect={leaveDraft(setSelectedSupplierId)} onNew={leaveDraft(() => setSelectedSupplierId(NEW))}
-              subtitle={(s) => `${s.identity.domain}/${s.identity.identity}`} />
+              subtitle={(s) => `${s.identity.domain}/${s.identity.identity}${s.additionalIdentities?.length ? ` +${s.additionalIdentities.length}` : ""}`} />
           )}
           {view === "products" && (
             <EntityList title="Product lists" items={productLists} selectedId={selectedProductListId} draft={dupFor("products")}
