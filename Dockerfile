@@ -1,5 +1,5 @@
 # Multi-stage build: compile the SPA + server, then ship a slim runtime image
-# that only carries dist/ and production dependencies.
+# that only carries dist/ — no node_modules at all.
 FROM node:24-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json* ./
@@ -10,9 +10,9 @@ RUN npm run build
 FROM node:24-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
-COPY package.json package-lock.json* ./
-# --ignore-scripts: don't run dependency lifecycle scripts in the runtime image.
-RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
+# Nothing is installed here: the package has no runtime dependencies (they are
+# built into dist/server/cli.js). package.json is only read for the version.
+COPY package.json ./
 COPY --from=build /app/dist ./dist
 
 # Run as the unprivileged built-in `node` user and own the data volume.

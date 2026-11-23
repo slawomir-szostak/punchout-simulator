@@ -3,11 +3,11 @@ import { defineConfig } from "tsup";
 // Bundles the server (Hono + CLI) into dist/server. The web SPA is built
 // separately by Vite into dist/web and shipped alongside in the npm tarball.
 //
-// Runtime dependencies are kept EXTERNAL (the default): they are declared in
-// package.json "dependencies", so `npx`/`npm i -g` resolves them normally.
-// We deliberately keep that dependency set small (see spec section 6) rather
-// than inlining packages like `open` that ship platform-specific shim files
-// which do not survive bundling.
+// Every runtime package is INLINED into the bundle (noExternal), so the
+// published package has no dependencies at all: `npx punchout-simulator`
+// installs exactly the files in the tarball and resolves nothing else at
+// install time. What is inlined is listed, with its licence, in
+// dist/THIRD-PARTY-LICENSES.txt (scripts/third-party.mjs, from the metafile).
 export default defineConfig({
   entry: {
     cli: "src/server/cli.ts",
@@ -21,7 +21,15 @@ export default defineConfig({
   // adds weight (matches the SPA build, which also ships without one).
   sourcemap: false,
   clean: true,
+  noExternal: [/.*/],
+  metafile: true,
   banner: {
-    js: "#!/usr/bin/env node",
+    // Some inlined packages are CommonJS and `require()` Node built-ins, which
+    // an ES module can only do through createRequire.
+    js: [
+      "#!/usr/bin/env node",
+      'import { createRequire as __createRequire } from "node:module";',
+      "const require = __createRequire(import.meta.url);",
+    ].join("\n"),
   },
 });

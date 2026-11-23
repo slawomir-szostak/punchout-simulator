@@ -19,6 +19,14 @@ Please report privately, not in a public issue:
 You can expect an acknowledgement within a week. Once a fix is released, the
 advisory is published and you are credited unless you prefer otherwise.
 
+## What the package installs
+
+`punchout-simulator` has no runtime dependencies: the packages the server needs
+are built into the published bundle and listed, with versions and licences, in
+`dist/THIRD-PARTY-LICENSES.txt`. Installing it downloads nothing else and runs
+no install script. Releases are built and published by GitHub Actions with npm
+provenance; CI audits the built-in packages for advisories weekly.
+
 ## What counts
 
 punchout-simulator is a developer tool for testing cXML PunchOut integrations.

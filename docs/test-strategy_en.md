@@ -120,6 +120,8 @@ routing, no network:
   take package codes with their `X` prefix, tell a withdrawn unit (a note, with
   its replacement) from an unknown one (a warning), report each code once, and
   the tool's own catalogs use only codes that are on the lists.
+- `package.test.ts` — the published package declares no dependencies of any
+  kind, runs no install script and ships only `dist/`.
 - `multi-credentials.test.ts` — several credentials per party: one `Credential`
   per identity in `From` and `To`, validation against all of a party's
   identities, a party refused when it has two values in one domain, and — over
@@ -205,8 +207,8 @@ The same three commands gate every path to a release:
 | Gate | What runs | When |
 |---|---|---|
 | Local | `npm run typecheck` · `npm test` | Before committing; also part of the release verify gate. |
-| CI (`ci.yml`) — `build-test` | `typecheck` → `build` → `test` on a **Node 20 + 24 matrix** | Every push and pull request on `main`, and every Monday. Node 20 is the declared minimum (`engines`), Node 24 the current runtime. |
-| CI — `audit` | `npm audit --omit=dev --audit-level=moderate` | Same triggers. Fails on any moderate-or-higher advisory in the dependencies that ship to users; the weekly run surfaces a new advisory even when nothing is pushed. |
+| CI (`ci.yml`) — `build-test` | `typecheck` → `build` → load the built bundle (`--version`) → `test` on a **Node 20 + 24 matrix** | Every push and pull request on `main`, and every Monday. Node 20 is the declared minimum (`engines`), Node 24 the current runtime. |
+| CI — `audit` | `build:server` → `npm run audit:bundled` | Same triggers. The published package has no dependencies — its runtime packages are built into the server bundle — so the audit is narrowed to exactly the packages the build inlined (`dist/bundled-packages.json`). Fails on any moderate-or-higher advisory in them; the weekly run surfaces a new advisory even when nothing is pushed. |
 | CI — `docker-build` | `docker build` | Same triggers. The image isn't published anywhere; this only keeps the `Dockerfile` building. |
 | Publish (`publish.yml`) | `npm ci --ignore-scripts` → `typecheck` → `build` → `test`, then `npm publish --provenance` | On GitHub Release — the suite re-runs even though CI is green, so nothing unpublishable can ship. No dependency install script runs in the job that can publish. |
 
@@ -227,7 +229,7 @@ start
 fork
   :build-test\n(Node 20 and Node 24);
 fork again
-  :audit\n(advisories in shipped dependencies);
+  :audit\n(advisories in the packages\nbuilt into the bundle);
 fork again
   :docker-build\n(the Dockerfile still builds);
 end fork

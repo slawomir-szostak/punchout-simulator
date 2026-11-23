@@ -706,8 +706,8 @@ guide.
 | Server | Hono on `@hono/node-server` |
 | SPA | React + Vite + Monaco editor |
 | Dev | `npm run dev` — Vite (`:5173`) + `tsx watch` server concurrently |
-| Build | `vite build` (SPA) + `tsup` (server) into `dist/` |
-| Publish | Only `dist/` is published; `bin` → `dist/server/cli.js` |
+| Build | `vite build` (SPA) + `tsup` (server) into `dist/`. `tsup` inlines every runtime package into `dist/server/cli.js`; `scripts/third-party.mjs` then lists what was inlined, with licences, and fails the build if the bundle still imports anything but Node built-ins |
+| Publish | Only `dist/` is published; `bin` → `dist/server/cli.js`. The package declares **no dependencies** |
 | Run | `npx punchout-simulator` (loopback, opens browser, seeds demo data) |
 
 A GitHub Release triggers the publish job, which authenticates to npm by
@@ -716,7 +716,13 @@ with provenance (SLSA). That job installs dependencies with `--ignore-scripts`
 and pins its actions to commit SHAs, so nothing third-party runs with the
 publish credential. The Test strategy shows the whole pipeline.
 
-A `Dockerfile` (two-stage build on `node:24-slim`, runs as the unprivileged
+The published package has no dependencies, so installing it resolves nothing
+else: a new release of a third-party package cannot reach users without a new
+release of the tool. The inlined packages stay in `devDependencies`, where
+Dependabot keeps updating them and CI audits them (`npm run audit:bundled`).
+
+A `Dockerfile` (two-stage build on `node:24-slim`, no `node_modules` in the
+runtime image, runs as the unprivileged
 `node` user, data in a `/data` volume) is provided for building an image
 yourself; no image is published to a registry. CI builds it on every push so it
 keeps working.

@@ -5,6 +5,31 @@ corresponding [GitHub Release](https://github.com/slawomir-szostak/punchout-simu
 Versions follow [Semantic Versioning](https://semver.org); while the project is
 pre-1.0, new features may arrive in patch releases.
 
+## v0.20.0 — No dependencies: the package installs only itself
+
+*Released 2026-11-23*
+
+Minor release. The published package now has no runtime dependencies, and a proxy bug on Node 26 is fixed.
+
+`npx punchout-simulator` used to install the tool plus 24 third-party packages, resolved fresh at install time. A new release of any of them reached users immediately, without a release of the tool and without anyone here having looked at it. For a tool that handles the shared secrets of real connections, that is a fair thing to be wary of. From this version on, the packages the server needs are built into the bundle, so what you install is exactly what was built, tested and published from this repository.
+
+### Packaging
+- `package.json` declares **no dependencies**. Installing the package downloads nothing else, and no install script runs.
+- The 24 packages the server uses are built into `dist/server/cli.js`. They are listed, with versions and licence texts, in `dist/THIRD-PARTY-LICENSES.txt` inside the package.
+- The build fails if the bundle still imports anything but Node built-ins, and a test fails if a dependency or an install script is ever added.
+- CI audits exactly the built-in packages for advisories on every push and every week (`npm run audit:bundled`), and loads the built bundle on Node 20 and Node 24.
+- The Docker image no longer installs anything: its runtime stage has no `node_modules`.
+
+### Fixed
+- **Proxy ignored on Node 26.** With `HTTP_PROXY` / `HTTPS_PROXY` set, the banner reported the proxy as in effect, but outbound cXML calls connected directly. The proxy setting and Node's built-in `fetch` only belonged together by accident of versions. Outbound calls now use the client the proxy setting belongs to, on every Node version.
+
+### Documentation
+- The README has a section on what `npx punchout-simulator` installs and how to check a version before running it. SECURITY.md, architecture and test strategy describe the new packaging.
+
+To check this version: `npm view punchout-simulator@0.20.0 dependencies dist.attestations` shows no dependencies and the provenance attestation.
+
+**Full Changelog**: https://github.com/slawomir-szostak/punchout-simulator/compare/v0.19.0...v0.20.0
+
 ## v0.19.0 — Several credentials per party; unit and currency codes checked
 
 *Released 2026-11-23*

@@ -24,11 +24,15 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run build
+      # The bundle carries every runtime package: it must load on this Node as built.
+      - run: node dist/server/cli.js --version
       - run: npm test
 
-  # Fails on any moderate+ advisory in the dependencies that ship to users
-  # (dev tooling is excluded: it never reaches the published package). Its own
-  # job, so a new advisory doesn't mask the build/test result.
+  # Fails on any moderate+ advisory in the packages that ship to users. The
+  # published package has no dependencies — they are built into the server
+  # bundle — so the audit is narrowed to exactly what the build inlined (dev
+  # tooling never reaches the published package). Its own job, so a new advisory
+  # doesn't mask the build/test result.
   audit:
     runs-on: ubuntu-latest
     steps:
@@ -36,7 +40,10 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 24
-      - run: npm audit --omit=dev --audit-level=moderate
+          cache: npm
+      - run: npm ci
+      - run: npm run build:server
+      - run: npm run audit:bundled
 
   # The image is not published anywhere; this only keeps the Dockerfile building.
   docker-build:

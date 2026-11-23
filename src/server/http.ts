@@ -1,3 +1,10 @@
+// undici's own fetch, not Node's built-in one. The proxy dispatcher is
+// installed with this package's setGlobalDispatcher (proxy.ts), and Node's
+// built-in fetch only looks at it while both happen to be the same undici
+// generation — on Node 26 they are not, and outbound calls silently bypassed
+// the proxy. This fetch and that dispatcher always belong together.
+import { fetch, type Response } from "undici";
+
 // Server-to-server cXML transport. SetupRequest and OrderRequest go out from
 // the tool here (no CORS, unlike a browser) — spec section 5.
 

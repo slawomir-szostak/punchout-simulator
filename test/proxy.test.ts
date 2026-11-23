@@ -66,3 +66,39 @@ describe("setupProxy", () => {
     expect(logs.join("\n")).not.toContain("secret"); // credentials redacted
   });
 });
+
+// The dispatcher setupProxy installs and the fetch sendCxml uses must be the
+// same undici. With Node's built-in fetch they were only the same by accident
+// of versions: on Node 26 the proxy was reported as in effect and then ignored.
+describe("an outbound call really goes through the configured proxy", () => {
+  it("asks the proxy for the supplier's host instead of resolving it itself", async () => {
+    const { createServer } = await import("node:http");
+    const { Agent } = await import("undici");
+    const { sendCxml } = await import("../src/server/http.js");
+    const asked: string[] = [];
+    const proxy = createServer();
+    // undici tunnels through a proxy with CONNECT, for http targets too.
+    proxy.on("connect", (req, socket) => {
+      asked.push(`${req.method} ${req.url}`);
+      socket.end("HTTP/1.1 502 Bad Gateway\r\n\r\n");
+    });
+    await new Promise<void>((resolve) => proxy.listen(0, "127.0.0.1", resolve));
+    const port = (proxy.address() as { port: number }).port;
+    const env = process.env;
+    const names = ["HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "NO_PROXY", "no_proxy"];
+    const before = names.map((n) => [n, env[n]] as const);
+    try {
+      for (const n of names) delete env[n];
+      env.HTTP_PROXY = `http://127.0.0.1:${port}`;
+      setupProxy(env, () => {});
+      // .invalid never resolves: only the proxy can have been asked for it.
+      const res = await sendCxml("http://supplier.invalid/punchout", "<cXML/>");
+      expect(asked).toEqual(["CONNECT supplier.invalid:80"]);
+      expect(res.error ?? "").not.toContain("ENOTFOUND");
+    } finally {
+      for (const [n, v] of before) v == null ? delete env[n] : (env[n] = v);
+      setGlobalDispatcher(new Agent());
+      proxy.close();
+    }
+  });
+});

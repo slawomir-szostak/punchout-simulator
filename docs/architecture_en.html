@@ -312,7 +312,7 @@ figure.diagram figcaption {
 <header class="header">
   <div class="brand"></div>
   <h1>punchout-simulator — Architecture</h1>
-  <p class="subtitle">Components, data model, and message flows of the cXML PunchOut simulator · 2026-11-20</p>
+  <p class="subtitle">Components, data model, and message flows of the cXML PunchOut simulator · 2026-11-23</p>
   <span class="version">v1.2 — October 2026</span>
 </header>
 
@@ -757,11 +757,11 @@ guide.</p>
 </tr>
 <tr>
 <td>Build</td>
-<td><code>vite build</code> (SPA) + <code>tsup</code> (server) into <code>dist/</code></td>
+<td><code>vite build</code> (SPA) + <code>tsup</code> (server) into <code>dist/</code>. <code>tsup</code> inlines every runtime package into <code>dist/server/cli.js</code>; <code>scripts/third-party.mjs</code> then lists what was inlined, with licences, and fails the build if the bundle still imports anything but Node built-ins</td>
 </tr>
 <tr>
 <td>Publish</td>
-<td>Only <code>dist/</code> is published; <code>bin</code> → <code>dist/server/cli.js</code></td>
+<td>Only <code>dist/</code> is published; <code>bin</code> → <code>dist/server/cli.js</code>. The package declares <strong>no dependencies</strong></td>
 </tr>
 <tr>
 <td>Run</td>
@@ -774,7 +774,12 @@ trusted publishing (the job's OIDC token, no stored npm token) and publishes
 with provenance (SLSA). That job installs dependencies with <code>--ignore-scripts</code>
 and pins its actions to commit SHAs, so nothing third-party runs with the
 publish credential. The Test strategy shows the whole pipeline.</p>
-<p>A <code>Dockerfile</code> (two-stage build on <code>node:24-slim</code>, runs as the unprivileged
+<p>The published package has no dependencies, so installing it resolves nothing
+else: a new release of a third-party package cannot reach users without a new
+release of the tool. The inlined packages stay in <code>devDependencies</code>, where
+Dependabot keeps updating them and CI audits them (<code>npm run audit:bundled</code>).</p>
+<p>A <code>Dockerfile</code> (two-stage build on <code>node:24-slim</code>, no <code>node_modules</code> in the
+runtime image, runs as the unprivileged
 <code>node</code> user, data in a <code>/data</code> volume) is provided for building an image
 yourself; no image is published to a registry. CI builds it on every push so it
 keeps working.</p>

@@ -139,6 +139,25 @@ the tool itself, so text arriving in cXML or an imported config cannot run as
 script even if it were ever rendered unescaped. To report a vulnerability, see
 [SECURITY.md](SECURITY.md).
 
+### What `npx punchout-simulator` installs
+
+Only the package itself. It has **no dependencies**: the handful of packages the
+server needs are built into `dist/server/cli.js`, so nothing else is resolved or
+downloaded at install time, and no install script runs. What is built in, with
+versions and licences, is listed in `dist/THIRD-PARTY-LICENSES.txt` inside the
+package; CI audits exactly those packages for advisories every week.
+
+Each release is built and published by GitHub Actions from this repository, with
+npm provenance and no stored npm token. To check a version before running it:
+
+```bash
+npm view punchout-simulator@0.20.0 dependencies dist.attestations   # no dependencies; provenance attached
+npx punchout-simulator@0.20.0                                       # run that exact version
+```
+
+The tool sends no telemetry and checks for no updates. The only outbound
+requests it makes go to the supplier URLs you configure.
+
 ---
 
 ## What it checks (validation / linting)
