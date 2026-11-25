@@ -58,7 +58,7 @@
     "fast-xml-parser": "^5.12.1",
     "hono": "^4.13.13",
     "lowdb": "^7.0.1",
-    "monaco-editor": "^0.52.2",
+    "monaco-editor": "^0.57.0",
     "nanoid": "^5.1.16",
     "open": "^10.1.0",
     "playwright-core": "^1.65.1",
